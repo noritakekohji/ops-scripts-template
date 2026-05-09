@@ -35,14 +35,21 @@ _ops_find_repo_root() {
 load_ops_config() {
     local name="$1"
     local env="${2:-${OPS_ENV:-common}}"
+    # 第 3 引数を渡すと、リポジトリ root の自動検出を上書きできる
+    # （主にユニットテスト用。PS 版 Get-OpsConfig の -RepoRoot と対応）
+    local override_root="${3:-}"
 
-    # config.sh の位置を起点にリポジトリ root を見つける
-    local lib_dir
-    lib_dir=$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
     local repo_root
-    if ! repo_root=$(_ops_find_repo_root "$lib_dir"); then
-        echo "config.sh: cannot determine repo root from $lib_dir" >&2
-        return 1
+    if [[ -n "$override_root" ]]; then
+        repo_root="$override_root"
+    else
+        # config.sh の位置を起点にリポジトリ root を見つける
+        local lib_dir
+        lib_dir=$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+        if ! repo_root=$(_ops_find_repo_root "$lib_dir"); then
+            echo "config.sh: cannot determine repo root from $lib_dir" >&2
+            return 1
+        fi
     fi
 
     # 連想配列を初期化（呼び出すたびにリセット）
