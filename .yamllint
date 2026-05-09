@@ -1,0 +1,20 @@
+extends: default
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  document-start: disable
+
+ignore: |
+  .git/
+  .trivycache/
+  node_modules/
+  **/.terraform/

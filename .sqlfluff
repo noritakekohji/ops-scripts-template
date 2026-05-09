@@ -1,0 +1,19 @@
+[sqlfluff]
+# Default to SQL Server (T-SQL). Change to postgres / mysql / oracle if needed.
+dialect = tsql
+templater = raw
+max_line_length = 140
+exclude_rules = layout.long_lines
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = consistent
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = upper

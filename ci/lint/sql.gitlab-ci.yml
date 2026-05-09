@@ -1,0 +1,20 @@
+sqlfluff:
+  stage: lint
+  image: python:3.12-slim
+  tags:
+    - linux
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.sql"
+        - ".sqlfluff"
+        - "ci/lint/sql.gitlab-ci.yml"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - pip install --no-cache-dir 'sqlfluff==3.2.5'
+    - |
+      if ! find . -type f -name "*.sql" ! -path "./.git/*" | grep -q .; then
+        echo "No SQL files to check."
+        exit 0
+      fi
+    - sqlfluff lint .

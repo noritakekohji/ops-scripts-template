@@ -1,0 +1,23 @@
+shellcheck:
+  stage: lint
+  image: koalaman/shellcheck-alpine:stable
+  tags:
+    - linux
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.sh"
+        - "**/*.bash"
+        - "ci/lint/shell.gitlab-ci.yml"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - apk add --no-cache findutils bash
+    - |
+      set -euo pipefail
+      mapfile -t FILES < <(find . -type f \( -name "*.sh" -o -name "*.bash" \) ! -path "./.git/*")
+      if [ ${#FILES[@]} -eq 0 ]; then
+        echo "No shell scripts to check."
+        exit 0
+      fi
+      echo "Checking ${#FILES[@]} file(s)..."
+      shellcheck --severity=warning --format=gcc "${FILES[@]}"

@@ -1,0 +1,15 @@
+yamllint:
+  stage: lint
+  image: pipelinecomponents/yamllint:latest
+  tags:
+    - linux
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.yml"
+        - "**/*.yaml"
+        - ".yamllint"
+        - "ci/lint/yaml.gitlab-ci.yml"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - yamllint -c .yamllint .

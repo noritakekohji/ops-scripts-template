@@ -1,0 +1,20 @@
+psscriptanalyzer:
+  stage: lint
+  tags:
+    - windows
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.ps1"
+        - "**/*.psm1"
+        - "**/*.psd1"
+        - "ci/lint/powershell.gitlab-ci.yml"
+        - "ci/lint/run-psscriptanalyzer.ps1"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - pwsh -NoProfile -ExecutionPolicy Bypass -File ci/lint/run-psscriptanalyzer.ps1
+  artifacts:
+    when: always
+    paths:
+      - psscriptanalyzer-report.json
+    expire_in: 1 week

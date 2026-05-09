@@ -1,0 +1,26 @@
+bats:
+  stage: test
+  image: bats/bats:latest
+  tags:
+    - linux
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.sh"
+        - "tests/bats/**/*"
+        - "ci/test/bats.gitlab-ci.yml"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - |
+      if [ ! -d tests/bats ]; then
+        echo "No bats tests found. Skipping."
+        exit 0
+      fi
+      bats --formatter junit tests/bats > bats-results.xml
+  artifacts:
+    when: always
+    paths:
+      - bats-results.xml
+    reports:
+      junit: bats-results.xml
+    expire_in: 1 week

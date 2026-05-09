@@ -1,0 +1,27 @@
+# --- secrets / credentials (must never be committed) ---
+*.pem
+*.key
+*.pfx
+*.p12
+*.kdbx
+.env
+.env.*
+!.env.example
+secrets/
+**/credentials.json
+**/credentials.yaml
+**/credentials.yml
+
+# --- CI artifacts ---
+psscriptanalyzer-report.json
+gitleaks-report.json
+trivy-report.json
+pester-results.xml
+bats-results.xml
+.trivycache/
+
+# --- editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+pester:
+  stage: test
+  tags:
+    - windows
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.ps1"
+        - "**/*.psm1"
+        - "tests/pester/**/*"
+        - "ci/test/pester.gitlab-ci.yml"
+        - "ci/test/run-pester.ps1"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - pwsh -NoProfile -ExecutionPolicy Bypass -File ci/test/run-pester.ps1
+  artifacts:
+    when: always
+    paths:
+      - pester-results.xml
+    reports:
+      junit: pester-results.xml
+    expire_in: 1 week

@@ -1,0 +1,50 @@
+# ============================================================
+# GitLab CI pipeline for ops-scripts
+# ------------------------------------------------------------
+# Stages: lint -> security -> test
+# Each module is included from ci/<category>/*.gitlab-ci.yml
+# so you can disable any check by commenting out a single line
+# in the `include:` section below.
+#
+# Runner tag conventions (adjust to your environment):
+#   - linux   : self-hosted Linux runner (Docker executor)
+#   - windows : self-hosted Windows runner (shell executor, PowerShell 7+)
+# ============================================================
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+stages:
+  - lint
+  - security
+  - test
+
+variables:
+  GIT_DEPTH: "0"  # full history needed for gitleaks
+  GIT_SUBMODULE_STRATEGY: none
+
+default:
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# ---------- modules ----------
+# Comment out any line to disable that check.
+include:
+  # lint
+  - local: ci/lint/powershell.gitlab-ci.yml
+  - local: ci/lint/shell.gitlab-ci.yml
+  - local: ci/lint/sql.gitlab-ci.yml
+  - local: ci/lint/yaml.gitlab-ci.yml
+  # security
+  - local: ci/security/secrets.gitlab-ci.yml
+  - local: ci/security/deps.gitlab-ci.yml
+  # test
+  - local: ci/test/pester.gitlab-ci.yml
+  - local: ci/test/bats.gitlab-ci.yml

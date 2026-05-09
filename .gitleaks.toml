@@ -1,0 +1,19 @@
+# gitleaks config — extends the bundled default ruleset.
+# https://github.com/gitleaks/gitleaks
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for ops-scripts repo"
+paths = [
+    '''(.*?)(README|CHANGELOG)\.md''',
+    '''docs/.*\.md''',
+    '''tests/fixtures/.*''',
+    '''config/.*/secrets\.ref\.ya?ml''',
+]
+regexes = [
+    # Vault / Key Vault style references that should never be flagged
+    '''ref://[a-z0-9_/.-]+''',
+    '''@@VAULT/[A-Za-z0-9_/.-]+@@''',
+]
