@@ -39,6 +39,7 @@ scripts/aws/linux/backup_ami.sh
 | `-p` | `<name-prefix>` | ✅ | — | AMI 名 prefix と pruning フィルタ |
 | `-r` | `<region>` | — | プロファイル既定 | AWS リージョン |
 | `-d` | `<days>` | — | `0` | Retention days（0〜3650）、0 で pruning 無効 |
+| `-m` | `<minutes>` | — | `5` | 直近 N 分以内に同 NamePrefix の AMI が存在すれば**冪等スキップ**。0 で無効。範囲 0〜1440 |
 | `-R` | — | — | off（`--no-reboot`） | リブート許可（クラッシュ整合性が許容できない場合） |
 | `-w` | — | — | off | AMI が `available` になるまで待機（`aws ec2 wait image-available`） |
 | `-h` | — | — | — | usage を表示 |
@@ -47,12 +48,13 @@ scripts/aws/linux/backup_ami.sh
 
 | Code | 意味 |
 |---|---|
-| 0 | 成功 |
+| 0 | 成功（`status=success`）または冪等スキップ（`status=skipped`） |
 | 1 | usage / 入力バリデーション失敗 |
 | 2 | インスタンスが見つからない / アクセス不可 |
 | 3 | AMI が `available` に到達しない |
 | 4 | `aws ec2 create-image` 失敗 |
 | 10 | `aws` CLI 未インストール |
+| 20 | 認証・権限エラー |
 
 ## 6. AMI に付与されるタグ
 
@@ -82,15 +84,28 @@ scripts/aws/linux/backup_ami.sh
 
 ## 8. 出力例
 
+### 通常成功
 ```
-[2026-05-09 12:14:05] [INFO ] (backup_ami.sh:18342) AMI backup start: instance=i-0abc prefix=prod-web region=ap-northeast-1 retention=7
+[2026-05-09 12:14:05] [INFO ] (backup_ami.sh:18342) Args validated: instance=i-0abc prefix=prod-web region=ap-northeast-1 retention=7 minIntervalMin=5
+[2026-05-09 12:14:05] [INFO ] (backup_ami.sh:18342) Pre-check start
+[2026-05-09 12:14:06] [INFO ] (backup_ami.sh:18342) Pre-check passed
+[2026-05-09 12:14:06] [INFO ] (backup_ami.sh:18342) Main start
 [2026-05-09 12:14:08] [INFO ] (backup_ami.sh:18342) AMI creation initiated: ami_id=ami-0xyz name=prod-web-20260509-031405
 [2026-05-09 12:14:08] [INFO ] (backup_ami.sh:18342) Waiting for AMI to become available: ami-0xyz
 [2026-05-09 12:18:12] [INFO ] (backup_ami.sh:18342) AMI is available: ami-0xyz
 [2026-05-09 12:18:13] [INFO ] (backup_ami.sh:18342) Pruning AMIs older than 2026-05-02T03:14:05 for prefix 'prod-web'
 [2026-05-09 12:18:14] [INFO ] (backup_ami.sh:18342) Deregistered AMI: ami-0old
 [2026-05-09 12:18:15] [INFO ] (backup_ami.sh:18342) Deleted snapshot: snap-0old
-[2026-05-09 12:18:15] [INFO ] (backup_ami.sh:18342) AMI backup complete: ami-0xyz
+[2026-05-09 12:18:15] [INFO ] (backup_ami.sh:18342) Main complete
+[2026-05-09 12:18:15] [INFO ] (backup_ami.sh:18342) Script end: status=success exitCode=0 amiId=ami-0xyz
+```
+
+### 冪等スキップ
+```
+[2026-05-09 12:16:00] [INFO ] (backup_ami.sh:24891) Args validated: instance=i-0abc prefix=prod-web region=ap-northeast-1 retention=7 minIntervalMin=5
+[2026-05-09 12:16:00] [INFO ] (backup_ami.sh:24891) Pre-check start
+[2026-05-09 12:16:00] [INFO ] (backup_ami.sh:24891) Skipped (idempotent): reason=recent_ami_exists amiId=ami-0xyz createdAt=2026-05-09T03:14:08.000Z minIntervalMin=5
+[2026-05-09 12:16:00] [INFO ] (backup_ami.sh:24891) Script end: status=skipped exitCode=0 amiId=
 ```
 
 ## 9. 関連
@@ -103,4 +118,5 @@ scripts/aws/linux/backup_ami.sh
 
 | 版 | 日付 | 内容 |
 |---|---|---|
+| v1.2 | 2026-05-09 | 5 段階フロー化、`-m` 追加（既定 5 分）、配置を `scripts/aws/linux/` に移動 |
 | v1.0 | 2026-05-09 | 初版 |

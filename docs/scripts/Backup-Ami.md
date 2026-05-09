@@ -43,6 +43,7 @@ scripts/aws/windows/Backup-Ami.ps1
 | `-Region` | string | — | プロファイル既定 | AWS リージョン |
 | `-NoReboot` | bool | — | `$true` | `$false` でリブート許可（クラッシュ整合性が許容できない場合） |
 | `-RetentionDays` | int | — | `0` | 古い AMI を deregister する閾値日数。0 で pruning 無効。範囲 0〜3650 |
+| `-MinIntervalMinutes` | int | — | `5` | 直近 N 分以内に同 NamePrefix の AMI が存在すれば**冪等スキップ**（`status=skipped`、exit 0）。0 で無効。範囲 0〜1440 |
 | `-Wait` | switch | — | off | AMI が `available` になるまで待機 |
 | `-WhatIf` / `-Confirm` | switch | — | — | 標準の dry-run / 確認プロンプト |
 
@@ -50,10 +51,13 @@ scripts/aws/windows/Backup-Ami.ps1
 
 | Code | 意味 |
 |---|---|
-| 0 | 成功 |
+| 0 | 成功（`status=success`）または冪等スキップ（`status=skipped`） |
+| 1 | 入力バリデーション失敗 |
 | 2 | インスタンスが見つからない |
 | 3 | AMI が `available` に到達しない（Wait 中タイムアウト or `failed` 状態） |
+| 4 | 操作失敗（API エラー等） |
 | 10 | `AWS.Tools.EC2` モジュール未インストール |
+| 20 | 認証・権限エラー |
 
 ## 6. AMI に付与されるタグ
 
@@ -94,14 +98,27 @@ Pruning は **`tag:CreatedBy=ops-scripts` AND `tag:NamePrefix=<指定値>`** の
 
 ## 8. 出力例
 
+### 通常成功
 ```
-[2026-05-09 12:14:05] [INFO ] (Backup-Ami.ps1:1234) AMI backup start: instanceId=i-0abc namePrefix=prod-web region=ap-northeast-1 noReboot=True retentionDays=7
+[2026-05-09 12:14:05] [INFO ] (Backup-Ami.ps1:1234) Args validated: instanceId=i-0abc namePrefix=prod-web region=ap-northeast-1 noReboot=True retentionDays=7 minIntervalMin=5
+[2026-05-09 12:14:05] [INFO ] (Backup-Ami.ps1:1234) Pre-check start
+[2026-05-09 12:14:06] [INFO ] (Backup-Ami.ps1:1234) Pre-check passed
+[2026-05-09 12:14:06] [INFO ] (Backup-Ami.ps1:1234) Main start
 [2026-05-09 12:14:08] [INFO ] (Backup-Ami.ps1:1234) AMI creation initiated: amiId=ami-0xyz amiName=prod-web-20260509-031405
 [2026-05-09 12:18:12] [INFO ] (Backup-Ami.ps1:1234) AMI state polled: amiId=ami-0xyz state=available
 [2026-05-09 12:18:13] [INFO ] (Backup-Ami.ps1:1234) Pruning old AMIs: namePrefix=prod-web retentionDays=7
 [2026-05-09 12:18:14] [INFO ] (Backup-Ami.ps1:1234) Deregistered AMI: amiId=ami-0old createdAt=2026-05-01T03:14:05.000Z
 [2026-05-09 12:18:15] [INFO ] (Backup-Ami.ps1:1234) Deleted snapshot: snapshotId=snap-0old
-[2026-05-09 12:18:15] [INFO ] (Backup-Ami.ps1:1234) AMI backup complete: amiId=ami-0xyz
+[2026-05-09 12:18:15] [INFO ] (Backup-Ami.ps1:1234) Main complete
+[2026-05-09 12:18:15] [INFO ] (Backup-Ami.ps1:1234) Script end: status=success exitCode=0 amiId=ami-0xyz
+```
+
+### 冪等スキップ（直近 5 分以内に AMI 作成済み）
+```
+[2026-05-09 12:16:00] [INFO ] (Backup-Ami.ps1:5678) Args validated: instanceId=i-0abc namePrefix=prod-web region= noReboot=True retentionDays=7 minIntervalMin=5
+[2026-05-09 12:16:00] [INFO ] (Backup-Ami.ps1:5678) Pre-check start
+[2026-05-09 12:16:00] [INFO ] (Backup-Ami.ps1:5678) Skipped (idempotent): reason=recent_ami_exists amiId=ami-0xyz createdAt=2026-05-09T03:14:08.000Z minIntervalMin=5
+[2026-05-09 12:16:00] [INFO ] (Backup-Ami.ps1:5678) Script end: status=skipped exitCode=0 amiId=
 ```
 
 ## 9. 関連
@@ -114,5 +131,6 @@ Pruning は **`tag:CreatedBy=ops-scripts` AND `tag:NamePrefix=<指定値>`** の
 
 | 版 | 日付 | 内容 |
 |---|---|---|
+| v1.2 | 2026-05-09 | 5 段階フロー化、`-MinIntervalMinutes` 追加（既定 5 分）、配置を `scripts/aws/windows/` に移動 |
 | v1.1 | 2026-05-09 | ロガー仕様 v1.0 に合わせて `-Properties` 廃止、Message 内埋め込みに統一 |
 | v1.0 | 2026-05-09 | 初版 |

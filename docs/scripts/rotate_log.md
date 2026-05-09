@@ -169,13 +169,26 @@ WantedBy=timers.target
 
 ## 9. 出力例
 
+### 通常成功
 ```
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Args validated: path='' pathList='/etc/ops-scripts/logs.txt' pattern='*.log' maxSizeMB=0 maxAgeDays=1 compress=1 retention=30 copyTruncate=0 dryRun=0
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Pre-check start
 [2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Loaded paths from list: pathList=/etc/ops-scripts/logs.txt count=5
-[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Rotation start: targets=5 matched=8 maxSizeMB=0 maxAgeDays=1 compress=1 retention=30 copyTruncate=0 dryRun=0
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Pre-check passed: matched=8
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Main start
 [2026-05-09 03:00:02] [INFO ] (rotate_log.sh:18342) Rotated (rename): from=/opt/tomcat/logs/catalina.out to=/opt/tomcat/logs/catalina.out.20260509-030002 reason=mtime_older_than_1d
 [2026-05-09 03:00:03] [INFO ] (rotate_log.sh:18342) Compressed: file=/opt/tomcat/logs/catalina.out.20260509-030002.gz
 [2026-05-09 03:00:05] [INFO ] (rotate_log.sh:18342) Pruned: file=/opt/tomcat/logs/catalina.out.20260408-030002.gz
-[2026-05-09 03:00:05] [INFO ] (rotate_log.sh:18342) Rotation complete: rotated=6 skipped=2
+[2026-05-09 03:00:05] [INFO ] (rotate_log.sh:18342) Main complete
+[2026-05-09 03:00:05] [INFO ] (rotate_log.sh:18342) Script end: status=success exitCode=0 rotated=6 skipped=2
+```
+
+### 冪等スキップ（対象ファイルなし）
+```
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Args validated: path='/var/log/myapp' pathList='' pattern='*.log' maxSizeMB=100 maxAgeDays=0 compress=0 retention=0 copyTruncate=0 dryRun=0
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Pre-check start
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Skipped (idempotent): reason=no_matching_files
+[2026-05-09 03:00:01] [INFO ] (rotate_log.sh:18342) Script end: status=skipped exitCode=0 rotated=0 skipped=0
 ```
 
 ## 10. 注意事項
@@ -195,5 +208,6 @@ WantedBy=timers.target
 
 | 版 | 日付 | 内容 |
 |---|---|---|
+| v1.2 | 2026-05-09 | 5 段階フロー化（trap EXIT + status 追跡 + final ログ）、配置を `scripts/linux/` に移動 |
 | v1.1 | 2026-05-09 | `-L` 追加（リストファイルによる複数対象一括処理） |
 | v1.0 | 2026-05-09 | 初版 |

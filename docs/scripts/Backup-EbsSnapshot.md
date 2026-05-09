@@ -43,6 +43,7 @@ scripts/aws/windows/Backup-EbsSnapshot.ps1
 | `-NamePrefix` | string | ✅ | — | スナップショット Name タグと pruning フィルタ |
 | `-Region` | string | — | プロファイル既定 | AWS リージョン |
 | `-RetentionDays` | int | — | `0` | 古いスナップショットを削除する閾値日数。0〜3650 |
+| `-MinIntervalMinutes` | int | — | `5` | 直近 N 分以内に同 NamePrefix のスナップショットが存在すれば**冪等スキップ**（`status=skipped`、exit 0）。0 で無効。範囲 0〜1440 |
 | `-Wait` | switch | — | off | 全スナップショットが `completed` になるまで待機 |
 | `-WhatIf` / `-Confirm` | switch | — | — | 標準の dry-run / 確認プロンプト |
 
@@ -52,11 +53,13 @@ scripts/aws/windows/Backup-EbsSnapshot.ps1
 
 | Code | 意味 |
 |---|---|
-| 0 | 成功 |
+| 0 | 成功（`status=success`）または冪等スキップ（`status=skipped`） |
+| 1 | 入力バリデーション失敗 |
 | 2 | インスタンス不在、または EBS ボリューム未アタッチ |
 | 3 | スナップショットが `error` 状態に到達 |
 | 4 | `New-EC2Snapshot` API 呼び出し失敗 |
 | 10 | `AWS.Tools.EC2` モジュール未インストール |
+| 20 | 認証・権限エラー |
 
 ## 6. スナップショットに付与されるタグ
 
@@ -91,16 +94,28 @@ Pruning は **`tag:CreatedBy=ops-scripts` AND `tag:NamePrefix=<指定値>`** の
 
 ## 8. 出力例
 
+### 通常成功
 ```
-[2026-05-09 12:14:05] [INFO ] (Backup-EbsSnapshot.ps1:2412) Resolving volumes for instance: instanceId=i-0abc
-[2026-05-09 12:14:06] [INFO ] (Backup-EbsSnapshot.ps1:2412) EBS snapshot start: namePrefix=prod-app region=ap-northeast-1 retentionDays=14 volumeCount=2
+[2026-05-09 12:14:05] [INFO ] (Backup-EbsSnapshot.ps1:2412) Args validated: paramSet=Instance namePrefix=prod-app region=ap-northeast-1 retentionDays=14 minIntervalMin=5
+[2026-05-09 12:14:05] [INFO ] (Backup-EbsSnapshot.ps1:2412) Pre-check start
+[2026-05-09 12:14:06] [INFO ] (Backup-EbsSnapshot.ps1:2412) Pre-check passed: volumeCount=2
+[2026-05-09 12:14:06] [INFO ] (Backup-EbsSnapshot.ps1:2412) Main start
 [2026-05-09 12:14:07] [INFO ] (Backup-EbsSnapshot.ps1:2412) Snapshot initiated: snapshotId=snap-0xyz1 volumeId=vol-0abc1
 [2026-05-09 12:14:08] [INFO ] (Backup-EbsSnapshot.ps1:2412) Snapshot initiated: snapshotId=snap-0xyz2 volumeId=vol-0abc2
 [2026-05-09 12:14:08] [INFO ] (Backup-EbsSnapshot.ps1:2412) Waiting for snapshots to complete: count=2
 [2026-05-09 12:18:23] [INFO ] (Backup-EbsSnapshot.ps1:2412) All snapshots completed
 [2026-05-09 12:18:24] [INFO ] (Backup-EbsSnapshot.ps1:2412) Pruning old snapshots: namePrefix=prod-app retentionDays=14
 [2026-05-09 12:18:25] [INFO ] (Backup-EbsSnapshot.ps1:2412) Deleted snapshot: snapshotId=snap-0old startedAt=2026-04-25T03:14:05.000Z
-[2026-05-09 12:18:25] [INFO ] (Backup-EbsSnapshot.ps1:2412) EBS snapshot backup complete: created=2
+[2026-05-09 12:18:25] [INFO ] (Backup-EbsSnapshot.ps1:2412) Main complete
+[2026-05-09 12:18:25] [INFO ] (Backup-EbsSnapshot.ps1:2412) Script end: status=success exitCode=0 created=2
+```
+
+### 冪等スキップ
+```
+[2026-05-09 12:16:00] [INFO ] (Backup-EbsSnapshot.ps1:5678) Args validated: paramSet=Instance namePrefix=prod-app region=ap-northeast-1 retentionDays=14 minIntervalMin=5
+[2026-05-09 12:16:00] [INFO ] (Backup-EbsSnapshot.ps1:5678) Pre-check start
+[2026-05-09 12:16:00] [INFO ] (Backup-EbsSnapshot.ps1:5678) Skipped (idempotent): reason=recent_snapshot_exists snapshotId=snap-0xyz1 startedAt=2026-05-09T03:14:07.000Z minIntervalMin=5
+[2026-05-09 12:16:00] [INFO ] (Backup-EbsSnapshot.ps1:5678) Script end: status=skipped exitCode=0 created=0
 ```
 
 ## 9. 関連
@@ -113,5 +128,6 @@ Pruning は **`tag:CreatedBy=ops-scripts` AND `tag:NamePrefix=<指定値>`** の
 
 | 版 | 日付 | 内容 |
 |---|---|---|
+| v1.2 | 2026-05-09 | 5 段階フロー化、`-MinIntervalMinutes` 追加（既定 5 分）、配置を `scripts/aws/windows/` に移動 |
 | v1.1 | 2026-05-09 | ロガー仕様 v1.0 に合わせて Message 埋め込みに統一 |
 | v1.0 | 2026-05-09 | 初版 |

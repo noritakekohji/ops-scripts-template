@@ -10,20 +10,18 @@
 #
 # Options:
 #   -p  Single log file path OR directory containing log files
-#   -L  Path-list file: one target per line, "#" comments and blank lines OK.
-#       Each line may be a single file or a directory.
-#   -P  Glob pattern when a target resolves to a directory (default: *.log)
+#   -L  Path-list file: one target per line, "#" comments and blank lines OK
+#   -P  Glob pattern when a target is a directory (default: *.log)
 #   -s  Rotate when size >= this many MB (0 disables)
 #   -a  Rotate when mtime older than this many days (0 disables)
 #   -c  Gzip the rotated file
 #   -k  Keep at most this many rotated files per source (0 disables)
 #   -T  Use copy+truncate instead of rename
-#   -n  Dry run (only log what would happen)
+#   -n  Dry run
 #
-# At least one of -p or -L must be given. At least one of -s or -a must be > 0.
-#
-# Naming: app.log -> app.log.YYYYMMDD-HHMMSS [.gz]   (UTC timestamp)
-# Exit codes: 0 ok, 1 usage/validation, 2 list file not found, 4 rotation failed
+# At least one of -p or -L. At least one of -s or -a must be > 0.
+# Naming: app.log -> app.log.YYYYMMDD-HHMMSS [.gz] (UTC).
+# Exit codes: 0 success / skipped, 1 usage, 2 list file not found, 4 rotate failed
 # ============================================================================
 set -euo pipefail
 
@@ -33,6 +31,19 @@ source "${SCRIPT_DIR}/../../lib/bash/logging.sh"
 
 usage() { sed -n '2,25p' "$0" >&2; exit 1; }
 
+# Phase 5 state
+status="unknown"
+rotated=0
+skipped=0
+
+cleanup() {
+    local rc=$?
+    if [[ "$status" == "unknown" && "$rc" -eq 0 ]]; then status="success"; fi
+    log_info "Script end: status=$status exitCode=$rc rotated=$rotated skipped=$skipped"
+}
+trap cleanup EXIT
+
+# --- Phase 1: argument parsing & validation ---------------------------------
 path=""
 path_list=""
 pattern="*.log"
@@ -62,25 +73,28 @@ if ! [[ "$max_size_mb" =~ ^[0-9]+$ ]] \
     || ! [[ "$max_age_days" =~ ^[0-9]+$ ]] \
     || ! [[ "$retention" =~ ^[0-9]+$ ]]; then
     log_error "Numeric arguments must be non-negative integers"
-    exit 1
+    status="failed"; exit 1
 fi
 if [[ "$max_size_mb" -le 0 && "$max_age_days" -le 0 ]]; then
     log_error "At least one of -s or -a must be > 0"
-    exit 1
+    status="failed"; exit 1
 fi
 
-# --- collect target paths ---------------------------------------------------
+log_info "Args validated: path='$path' pathList='$path_list' pattern='$pattern' maxSizeMB=$max_size_mb maxAgeDays=$max_age_days compress=$compress retention=$retention copyTruncate=$copy_truncate dryRun=$dry_run"
+
+# --- Phase 3: pre-check (collect targets) -----------------------------------
+log_info "Pre-check start"
+
 declare -a target_paths=()
 [[ -n "$path" ]] && target_paths+=( "$path" )
 
 if [[ -n "$path_list" ]]; then
     if [[ ! -f "$path_list" ]]; then
         log_error "Path list file not found: pathList=$path_list"
-        exit 2
+        status="failed"; exit 2
     fi
     list_count=0
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # trim leading/trailing whitespace
         line="${line#"${line%%[![:space:]]*}"}"
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" ]] && continue
@@ -93,10 +107,9 @@ fi
 
 if [[ "${#target_paths[@]}" -eq 0 ]]; then
     log_error "Specify -p or -L (or both)"
-    exit 1
+    status="failed"; exit 1
 fi
 
-# --- resolve target files ---------------------------------------------------
 declare -a files=()
 for p in "${target_paths[@]}"; do
     if [[ ! -e "$p" ]]; then
@@ -115,7 +128,7 @@ for p in "${target_paths[@]}"; do
     fi
 done
 
-# Deduplicate (preserve order: keep first occurrence)
+# Deduplicate
 if [[ "${#files[@]}" -gt 0 ]]; then
     declare -A seen=()
     declare -a unique=()
@@ -128,21 +141,22 @@ if [[ "${#files[@]}" -gt 0 ]]; then
     files=( "${unique[@]}" )
 fi
 
+# 3-d: idempotency — no targets means nothing to do
 if [[ "${#files[@]}" -eq 0 ]]; then
-    log_info "No matching files"
-    exit 0
+    log_info "Skipped (idempotent): reason=no_matching_files"
+    status="skipped"; exit 0
 fi
 
-log_info "Rotation start: targets=${#target_paths[@]} matched=${#files[@]} maxSizeMB=$max_size_mb maxAgeDays=$max_age_days compress=$compress retention=$retention copyTruncate=$copy_truncate dryRun=$dry_run"
+log_info "Pre-check passed: matched=${#files[@]}"
+
+# --- Phase 4: main processing -----------------------------------------------
+log_info "Main start"
 
 now_epoch=$(date +%s)
 cutoff_epoch=0
 if [[ "$max_age_days" -gt 0 ]]; then
     cutoff_epoch=$(( now_epoch - max_age_days * 86400 ))
 fi
-
-rotated=0
-skipped=0
 
 for f in "${files[@]}"; do
     if [[ ! -s "$f" ]]; then
@@ -211,7 +225,7 @@ for f in "${files[@]}"; do
     fi
 done
 
-# --- retention pruning ------------------------------------------------------
+# Retention pruning
 if [[ "$retention" -gt 0 && "$dry_run" -eq 0 ]]; then
     for f in "${files[@]}"; do
         shopt -s nullglob
@@ -232,5 +246,6 @@ if [[ "$retention" -gt 0 && "$dry_run" -eq 0 ]]; then
     done
 fi
 
-log_info "Rotation complete: rotated=$rotated skipped=$skipped"
+log_info "Main complete"
+status="success"
 exit 0

@@ -6,19 +6,24 @@
 .DESCRIPTION
     Uses AWS Tools for PowerShell (AWS.Tools.EC2) to create an AMI of a
     running EC2 instance. The AMI is tagged with CreatedBy / NamePrefix /
-    RetentionDays so that older AMIs created by this script with the same
+    RetentionDays so older AMIs created by this script with the same
     NamePrefix can be safely pruned.
 
-    Authentication: relies on the default AWS credential chain
-    (environment, profile, instance role).
+    Authentication: relies on the default AWS credential chain.
+
+    Flow (per shell-specification.md):
+      1. Argument validation
+      2. Environment setup       (logger / strict mode)
+      3. Pre-check               (module / instance / idempotency)
+      4. Main processing         (create AMI / wait / prune)
+      5. Post-processing         (final status log)
 
 .PARAMETER InstanceId
     EC2 instance to back up (e.g. i-0123456789abcdef0).
 
 .PARAMETER NamePrefix
     Prefix used both as the AMI name (suffixed with timestamp) and as the
-    tag key for pruning peer AMIs. Use a stable value per system, e.g.
-    "prod-web".
+    tag key for pruning peer AMIs.
 
 .PARAMETER Region
     AWS region. Falls back to default region from env / profile.
@@ -27,15 +32,23 @@
     When $true (default), the instance is not rebooted during AMI creation.
 
 .PARAMETER RetentionDays
-    Days to keep AMIs created by this script for the same NamePrefix.
-    Older ones (and their backing snapshots) are deregistered / deleted.
-    0 disables pruning.
+    Days to keep AMIs. Older ones (and their backing snapshots) are
+    deregistered / deleted. 0 disables pruning.
+
+.PARAMETER MinIntervalMinutes
+    Idempotency window. If an AMI with the same NamePrefix was created
+    within this many minutes, the run is skipped (status=skipped, exit 0).
+    0 disables the check. Default: 5.
 
 .PARAMETER Wait
     Wait until the new AMI reaches 'available' state before returning.
 
 .EXAMPLE
     .\Backup-Ami.ps1 -InstanceId i-0abc -NamePrefix prod-web -RetentionDays 7 -Wait
+
+.EXAMPLE
+    # Disable idempotency for ad-hoc runs:
+    .\Backup-Ami.ps1 -InstanceId i-0abc -NamePrefix prod-web -MinIntervalMinutes 0
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -46,11 +59,13 @@ param(
     [string]$NamePrefix,
 
     [string]$Region,
-
     [bool]$NoReboot = $true,
 
     [ValidateRange(0, 3650)]
     [int]$RetentionDays = 0,
+
+    [ValidateRange(0, 1440)]
+    [int]$MinIntervalMinutes = 5,
 
     [switch]$Wait
 )
@@ -58,120 +73,171 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- import shared logging --------------------------------------------------
+# --- Phase 2: shared logger -------------------------------------------------
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-# --- ensure AWS module ------------------------------------------------------
-if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
-    Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module is not installed; install with: Install-Module AWS.Tools.EC2 -Scope CurrentUser'
-    exit 10
-}
-Import-Module AWS.Tools.EC2
+$exitCode = 0
+$status = 'unknown'
+$imageId = $null
 
-$aws = @{}
-if ($Region) { $aws.Region = $Region }
-
-Write-OpsLog -Level INFO -Message "AMI backup start: instanceId=$InstanceId namePrefix=$NamePrefix region=$Region noReboot=$NoReboot retentionDays=$RetentionDays"
-
-# --- validate instance ------------------------------------------------------
 try {
-    $instance = (Get-EC2Instance -InstanceId $InstanceId @aws).Instances[0]
+    do {
+        Write-OpsLog -Level INFO -Message "Args validated: instanceId=$InstanceId namePrefix=$NamePrefix region=$Region noReboot=$NoReboot retentionDays=$RetentionDays minIntervalMin=$MinIntervalMinutes"
+
+        # --- Phase 3: pre-check ---------------------------------------------
+        Write-OpsLog -Level INFO -Message 'Pre-check start'
+
+        # 3-a: required AWS module
+        if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
+            Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module is not installed; install with: Install-Module AWS.Tools.EC2 -Scope CurrentUser'
+            $exitCode = 10; $status = 'failed'; break
+        }
+        Import-Module AWS.Tools.EC2
+
+        $aws = @{}
+        if ($Region) { $aws.Region = $Region }
+
+        # 3-b/c: combined auth + instance lookup
+        try {
+            $instance = (Get-EC2Instance -InstanceId $InstanceId @aws).Instances[0]
+        }
+        catch {
+            $errMsg = $_.Exception.Message
+            if ($errMsg -match 'NotFound|does not exist|InvalidInstanceID') {
+                Write-OpsLog -Level ERROR -Message "Instance not found: instanceId=$InstanceId error=$errMsg"
+                $exitCode = 2
+            }
+            else {
+                Write-OpsLog -Level ERROR -Message "AWS API call failed (auth?): instanceId=$InstanceId error=$errMsg"
+                $exitCode = 20
+            }
+            $status = 'failed'; break
+        }
+        if (-not $instance) {
+            Write-OpsLog -Level ERROR -Message "Instance not found: instanceId=$InstanceId"
+            $exitCode = 2; $status = 'failed'; break
+        }
+
+        # 3-d: idempotency — skip if a recent AMI exists for the same NamePrefix
+        if ($MinIntervalMinutes -gt 0) {
+            $idempCutoff = (Get-Date).ToUniversalTime().AddMinutes(-$MinIntervalMinutes)
+            $idempFilter = @(
+                @{ Name = 'tag:CreatedBy';  Values = 'ops-scripts' },
+                @{ Name = 'tag:NamePrefix'; Values = $NamePrefix }
+            )
+            $recent = Get-EC2Image -Owner self -Filter $idempFilter @aws |
+                Where-Object { ([datetime]$_.CreationDate).ToUniversalTime() -ge $idempCutoff } |
+                Sort-Object CreationDate -Descending |
+                Select-Object -First 1
+            if ($recent) {
+                Write-OpsLog -Level INFO -Message "Skipped (idempotent): reason=recent_ami_exists amiId=$($recent.ImageId) createdAt=$($recent.CreationDate) minIntervalMin=$MinIntervalMinutes"
+                $exitCode = 0; $status = 'skipped'; break
+            }
+        }
+
+        Write-OpsLog -Level INFO -Message 'Pre-check passed'
+
+        # --- Phase 4: main processing ---------------------------------------
+        Write-OpsLog -Level INFO -Message 'Main start'
+
+        $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+        $amiName = "${NamePrefix}-${ts}"
+        $description = "Automated backup of $InstanceId at $ts UTC"
+
+        $tagSpec = [Amazon.EC2.Model.TagSpecification]::new()
+        $tagSpec.ResourceType = 'image'
+        $tagSpec.Tags = @(
+            @{ Key = 'Name';             Value = $amiName },
+            @{ Key = 'CreatedBy';        Value = 'ops-scripts' },
+            @{ Key = 'CreatedAt';        Value = $ts },
+            @{ Key = 'SourceInstanceId'; Value = $InstanceId },
+            @{ Key = 'NamePrefix';       Value = $NamePrefix },
+            @{ Key = 'RetentionDays';    Value = [string]$RetentionDays }
+        )
+
+        if ($PSCmdlet.ShouldProcess($InstanceId, "Create AMI '$amiName'")) {
+            $imageId = New-EC2Image `
+                -InstanceId $InstanceId `
+                -Name $amiName `
+                -Description $description `
+                -NoReboot $NoReboot `
+                -TagSpecification $tagSpec `
+                @aws
+            Write-OpsLog -Level INFO -Message "AMI creation initiated: amiId=$imageId amiName=$amiName"
+        }
+
+        if ($Wait -and $imageId) {
+            Write-OpsLog -Level INFO -Message "Waiting for AMI to become available: amiId=$imageId"
+            $waitOk = $false
+            while ($true) {
+                Start-Sleep -Seconds 30
+                $img = Get-EC2Image -ImageId $imageId @aws
+                Write-OpsLog -Level INFO -Message "AMI state polled: amiId=$imageId state=$($img.State)"
+                if ($img.State -eq 'available') { $waitOk = $true; break }
+                if ($img.State -ne 'pending') {
+                    Write-OpsLog -Level ERROR -Message "AMI did not reach available state: amiId=$imageId state=$($img.State)"
+                    $exitCode = 3; $status = 'failed'
+                    break
+                }
+            }
+            if (-not $waitOk -and $exitCode -ne 0) { break }
+        }
+
+        # Pruning (only run if main create succeeded)
+        if ($RetentionDays -gt 0) {
+            Write-OpsLog -Level INFO -Message "Pruning old AMIs: namePrefix=$NamePrefix retentionDays=$RetentionDays"
+            $cutoff = (Get-Date).ToUniversalTime().AddDays(-$RetentionDays)
+            $pruneFilter = @(
+                @{ Name = 'tag:CreatedBy';  Values = 'ops-scripts' },
+                @{ Name = 'tag:NamePrefix'; Values = $NamePrefix }
+            )
+            $oldImages = Get-EC2Image -Owner self -Filter $pruneFilter @aws |
+                Where-Object { ([datetime]$_.CreationDate).ToUniversalTime() -lt $cutoff } |
+                Where-Object { $_.ImageId -ne $imageId }
+
+            foreach ($old in $oldImages) {
+                $snapIds = $old.BlockDeviceMappings |
+                    Where-Object { $_.Ebs } |
+                    ForEach-Object { $_.Ebs.SnapshotId }
+
+                if ($PSCmdlet.ShouldProcess($old.ImageId, "Deregister AMI (created $($old.CreationDate))")) {
+                    try {
+                        Unregister-EC2Image -ImageId $old.ImageId @aws | Out-Null
+                        Write-OpsLog -Level INFO -Message "Deregistered AMI: amiId=$($old.ImageId) createdAt=$($old.CreationDate)"
+                    }
+                    catch {
+                        Write-OpsLog -Level WARN -Message "Deregister failed: amiId=$($old.ImageId) error=$($_.Exception.Message)"
+                        continue
+                    }
+                    foreach ($snap in $snapIds) {
+                        try {
+                            Remove-EC2Snapshot -SnapshotId $snap -Force @aws | Out-Null
+                            Write-OpsLog -Level INFO -Message "Deleted snapshot: snapshotId=$snap"
+                        }
+                        catch {
+                            Write-OpsLog -Level WARN -Message "Snapshot delete failed: snapshotId=$snap error=$($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+        }
+
+        Write-OpsLog -Level INFO -Message 'Main complete'
+        $status = 'success'
+    } while ($false)
 }
 catch {
-    Write-OpsLog -Level ERROR -Message "Instance lookup failed: instanceId=$InstanceId error=$($_.Exception.Message)"
-    exit 2
+    Write-OpsLog -Level ERROR -Message "Operation failed: error=$($_.Exception.Message)"
+    if ($exitCode -eq 0) { $exitCode = 4 }
+    $status = 'failed'
 }
-if (-not $instance) {
-    Write-OpsLog -Level ERROR -Message "Instance not found: instanceId=$InstanceId"
-    exit 2
-}
-
-# --- create AMI -------------------------------------------------------------
-$ts = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
-$amiName = "${NamePrefix}-${ts}"
-$description = "Automated backup of $InstanceId at $ts UTC"
-
-$tagSpec = [Amazon.EC2.Model.TagSpecification]::new()
-$tagSpec.ResourceType = 'image'
-$tagSpec.Tags = @(
-    @{ Key = 'Name';             Value = $amiName },
-    @{ Key = 'CreatedBy';        Value = 'ops-scripts' },
-    @{ Key = 'CreatedAt';        Value = $ts },
-    @{ Key = 'SourceInstanceId'; Value = $InstanceId },
-    @{ Key = 'NamePrefix';       Value = $NamePrefix },
-    @{ Key = 'RetentionDays';    Value = [string]$RetentionDays }
-)
-
-$imageId = $null
-if ($PSCmdlet.ShouldProcess($InstanceId, "Create AMI '$amiName'")) {
-    $imageId = New-EC2Image `
-        -InstanceId $InstanceId `
-        -Name $amiName `
-        -Description $description `
-        -NoReboot $NoReboot `
-        -TagSpecification $tagSpec `
-        @aws
-    Write-OpsLog -Level INFO -Message "AMI creation initiated: amiId=$imageId amiName=$amiName"
+finally {
+    # --- Phase 5: post-processing -------------------------------------------
+    Write-OpsLog -Level INFO -Message "Script end: status=$status exitCode=$exitCode amiId=$imageId"
 }
 
-# --- optional wait ----------------------------------------------------------
-if ($Wait -and $imageId) {
-    Write-OpsLog -Level INFO -Message "Waiting for AMI to become available: amiId=$imageId"
-    while ($true) {
-        Start-Sleep -Seconds 30
-        $img = Get-EC2Image -ImageId $imageId @aws
-        Write-OpsLog -Level INFO -Message "AMI state polled: amiId=$imageId state=$($img.State)"
-        if ($img.State -eq 'available') { break }
-        if ($img.State -ne 'pending') {
-            Write-OpsLog -Level ERROR -Message "AMI did not reach available state: amiId=$imageId state=$($img.State)"
-            exit 3
-        }
-    }
-}
-
-# --- prune old AMIs ---------------------------------------------------------
-if ($RetentionDays -gt 0) {
-    Write-OpsLog -Level INFO -Message "Pruning old AMIs: namePrefix=$NamePrefix retentionDays=$RetentionDays"
-
-    $cutoff = (Get-Date).ToUniversalTime().AddDays(-$RetentionDays)
-    $filter = @(
-        @{ Name = 'tag:CreatedBy';  Values = 'ops-scripts' },
-        @{ Name = 'tag:NamePrefix'; Values = $NamePrefix }
-    )
-    $oldImages = Get-EC2Image -Owner self -Filter $filter @aws |
-        Where-Object { ([datetime]$_.CreationDate).ToUniversalTime() -lt $cutoff } |
-        Where-Object { $_.ImageId -ne $imageId }
-
-    foreach ($old in $oldImages) {
-        $snapIds = $old.BlockDeviceMappings |
-            Where-Object { $_.Ebs } |
-            ForEach-Object { $_.Ebs.SnapshotId }
-
-        if ($PSCmdlet.ShouldProcess($old.ImageId, "Deregister AMI (created $($old.CreationDate))")) {
-            try {
-                Unregister-EC2Image -ImageId $old.ImageId @aws | Out-Null
-                Write-OpsLog -Level INFO -Message "Deregistered AMI: amiId=$($old.ImageId) createdAt=$($old.CreationDate)"
-            }
-            catch {
-                Write-OpsLog -Level WARN -Message "Deregister failed: amiId=$($old.ImageId) error=$($_.Exception.Message)"
-                continue
-            }
-            foreach ($snap in $snapIds) {
-                try {
-                    Remove-EC2Snapshot -SnapshotId $snap -Force @aws | Out-Null
-                    Write-OpsLog -Level INFO -Message "Deleted snapshot: snapshotId=$snap"
-                }
-                catch {
-                    Write-OpsLog -Level WARN -Message "Snapshot delete failed: snapshotId=$snap error=$($_.Exception.Message)"
-                }
-            }
-        }
-    }
-}
-
-Write-OpsLog -Level INFO -Message "AMI backup complete: amiId=$imageId"
-exit 0
+exit $exitCode
