@@ -4,51 +4,22 @@
     Creates an AMI backup of an EC2 instance and optionally prunes old AMIs.
 
 .DESCRIPTION
-    Uses AWS Tools for PowerShell (AWS.Tools.EC2) to create an AMI of a
-    running EC2 instance. The AMI is tagged with CreatedBy / NamePrefix /
-    RetentionDays so older AMIs created by this script with the same
-    NamePrefix can be safely pruned.
+    Behavior parameters can be set in CLI args, in config files, or fall
+    back to script defaults. Resolution order (high -> low):
+        CLI -> config/<env>/Backup-Ami.conf -> config/<env>/ops.conf
+            -> config/common/Backup-Ami.conf -> config/common/ops.conf
+            -> script default
+
+    Per-run targets (-InstanceId / -NamePrefix) are CLI-only.
 
     Authentication: relies on the default AWS credential chain.
 
     Flow (per shell-specification.md):
       1. Argument validation
-      2. Environment setup       (logger / strict mode)
+      2. Environment setup (logger, config, strict mode)
       3. Pre-check               (module / instance / idempotency)
       4. Main processing         (create AMI / wait / prune)
       5. Post-processing         (final status log)
-
-.PARAMETER InstanceId
-    EC2 instance to back up (e.g. i-0123456789abcdef0).
-
-.PARAMETER NamePrefix
-    Prefix used both as the AMI name (suffixed with timestamp) and as the
-    tag key for pruning peer AMIs.
-
-.PARAMETER Region
-    AWS region. Falls back to default region from env / profile.
-
-.PARAMETER NoReboot
-    When $true (default), the instance is not rebooted during AMI creation.
-
-.PARAMETER RetentionDays
-    Days to keep AMIs. Older ones (and their backing snapshots) are
-    deregistered / deleted. 0 disables pruning.
-
-.PARAMETER MinIntervalMinutes
-    Idempotency window. If an AMI with the same NamePrefix was created
-    within this many minutes, the run is skipped (status=skipped, exit 0).
-    0 disables the check. Default: 5.
-
-.PARAMETER Wait
-    Wait until the new AMI reaches 'available' state before returning.
-
-.EXAMPLE
-    .\Backup-Ami.ps1 -InstanceId i-0abc -NamePrefix prod-web -RetentionDays 7 -Wait
-
-.EXAMPLE
-    # Disable idempotency for ad-hoc runs:
-    .\Backup-Ami.ps1 -InstanceId i-0abc -NamePrefix prod-web -MinIntervalMinutes 0
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -80,18 +51,31 @@ if (-not (Test-Path $libPath)) {
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
+# --- Phase 2: load config and apply to unspecified parameters ---------------
+$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+Import-Module (Resolve-Path $configModulePath).Path -Force
+$cfg = Get-OpsConfig -Name 'Backup-Ami'
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+if (-not $PSBoundParameters.ContainsKey('Region')             -and $cfg.ContainsKey('Region'))             { $Region             = [string]$cfg['Region'] }
+if (-not $PSBoundParameters.ContainsKey('NoReboot')           -and $cfg.ContainsKey('NoReboot'))           { $NoReboot           = [System.Convert]::ToBoolean($cfg['NoReboot']) }
+if (-not $PSBoundParameters.ContainsKey('RetentionDays')      -and $cfg.ContainsKey('RetentionDays'))      { $RetentionDays      = [int]$cfg['RetentionDays'] }
+if (-not $PSBoundParameters.ContainsKey('MinIntervalMinutes') -and $cfg.ContainsKey('MinIntervalMinutes')) { $MinIntervalMinutes = [int]$cfg['MinIntervalMinutes'] }
+if (-not $PSBoundParameters.ContainsKey('Wait')               -and $cfg.ContainsKey('Wait')) {
+    if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = [switch]::Present }
+}
+
 $exitCode = 0
 $status = 'unknown'
 $imageId = $null
 
 try {
     do {
+        Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: instanceId=$InstanceId namePrefix=$NamePrefix region=$Region noReboot=$NoReboot retentionDays=$RetentionDays minIntervalMin=$MinIntervalMinutes"
 
         # --- Phase 3: pre-check ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
-        # 3-a: required AWS module
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
             Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module is not installed; install with: Install-Module AWS.Tools.EC2 -Scope CurrentUser'
             $exitCode = 10; $status = 'failed'; break
@@ -101,7 +85,6 @@ try {
         $aws = @{}
         if ($Region) { $aws.Region = $Region }
 
-        # 3-b/c: combined auth + instance lookup
         try {
             $instance = (Get-EC2Instance -InstanceId $InstanceId @aws).Instances[0]
         }
@@ -122,7 +105,6 @@ try {
             $exitCode = 2; $status = 'failed'; break
         }
 
-        # 3-d: idempotency — skip if a recent AMI exists for the same NamePrefix
         if ($MinIntervalMinutes -gt 0) {
             $idempCutoff = (Get-Date).ToUniversalTime().AddMinutes(-$MinIntervalMinutes)
             $idempFilter = @(
@@ -187,7 +169,6 @@ try {
             if (-not $waitOk -and $exitCode -ne 0) { break }
         }
 
-        # Pruning (only run if main create succeeded)
         if ($RetentionDays -gt 0) {
             Write-OpsLog -Level INFO -Message "Pruning old AMIs: namePrefix=$NamePrefix retentionDays=$RetentionDays"
             $cutoff = (Get-Date).ToUniversalTime().AddDays(-$RetentionDays)
@@ -236,7 +217,6 @@ catch {
     $status = 'failed'
 }
 finally {
-    # --- Phase 5: post-processing -------------------------------------------
     Write-OpsLog -Level INFO -Message "Script end: status=$status exitCode=$exitCode amiId=$imageId"
 }
 

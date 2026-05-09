@@ -7,16 +7,9 @@
 #   backup_ami.sh -i <instance-id> -p <name-prefix> [-r <region>]
 #                 [-d <retention-days>] [-m <min-interval-min>] [-R] [-w]
 #
-# Options:
-#   -i  EC2 instance id (required)
-#   -p  Name prefix used for AMI naming and pruning filter (required)
-#   -r  AWS region (default: from environment / profile)
-#   -d  Retention days. AMIs older than this with same NamePrefix and
-#       CreatedBy=ops-scripts tag are deregistered. 0 disables. (default 0)
-#   -m  Idempotency window (minutes). Skip if a recent AMI exists for the
-#       same NamePrefix. 0 disables. (default 5)
-#   -R  Allow reboot during AMI creation (default: --no-reboot)
-#   -w  Wait until the AMI becomes 'available'
+# Behavior parameters can be set via CLI, via config files (config/<env>/
+# backup_ami.conf), or fall back to script defaults. CLI > config > default.
+# Per-run targets (-i / -p) are CLI-only.
 #
 # Authentication: relies on the default AWS credential chain.
 # Exit codes: 0 success / skipped, 1 usage, 2 instance not found,
@@ -27,10 +20,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/../../../lib/bash/config.sh"
 
-usage() { sed -n '2,23p' "$0" >&2; exit 1; }
+usage() { sed -n '2,18p' "$0" >&2; exit 1; }
 
-# Phase 5 state (declared early so trap can see them)
 ami_id=""
 status="unknown"
 
@@ -41,7 +35,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: argument parsing & validation ---------------------------------
+# --- Phase 1: argument parsing ----------------------------------------------
 instance_id=""
 name_prefix=""
 region=""
@@ -50,19 +44,46 @@ min_interval_minutes=5
 no_reboot="--no-reboot"
 wait_for_completion=0
 
+region_set=0
+retention_days_set=0
+min_interval_set=0
+no_reboot_set=0
+wait_set=0
+
 while getopts "i:p:r:d:m:Rwh" opt; do
     case "$opt" in
         i) instance_id="$OPTARG" ;;
         p) name_prefix="$OPTARG" ;;
-        r) region="$OPTARG" ;;
-        d) retention_days="$OPTARG" ;;
-        m) min_interval_minutes="$OPTARG" ;;
-        R) no_reboot="--reboot" ;;
-        w) wait_for_completion=1 ;;
+        r) region="$OPTARG"; region_set=1 ;;
+        d) retention_days="$OPTARG"; retention_days_set=1 ;;
+        m) min_interval_minutes="$OPTARG"; min_interval_set=1 ;;
+        R) no_reboot="--reboot"; no_reboot_set=1 ;;
+        w) wait_for_completion=1; wait_set=1 ;;
         h|*) usage ;;
     esac
 done
 
+# --- Phase 2: load config and apply to unspecified ---------------------------
+load_ops_config "backup_ami"
+[[ "$region_set" -eq 0         && -n "${OPS_CONFIG[Region]:-}"             ]] && region="${OPS_CONFIG[Region]}"
+[[ "$retention_days_set" -eq 0 && -n "${OPS_CONFIG[RetentionDays]:-}"      ]] && retention_days="${OPS_CONFIG[RetentionDays]}"
+[[ "$min_interval_set" -eq 0   && -n "${OPS_CONFIG[MinIntervalMinutes]:-}" ]] && min_interval_minutes="${OPS_CONFIG[MinIntervalMinutes]}"
+if [[ "$no_reboot_set" -eq 0 && -n "${OPS_CONFIG[NoReboot]:-}" ]]; then
+    case "${OPS_CONFIG[NoReboot]}" in
+        true|TRUE|True|1) no_reboot="--no-reboot" ;;
+        *)                no_reboot="--reboot" ;;
+    esac
+fi
+if [[ "$wait_set" -eq 0 && -n "${OPS_CONFIG[Wait]:-}" ]]; then
+    case "${OPS_CONFIG[Wait]}" in
+        true|TRUE|True|1) wait_for_completion=1 ;;
+        *)                wait_for_completion=0 ;;
+    esac
+fi
+
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+
+# --- Phase 1 (cont): validation ---------------------------------------------
 if [[ -z "$instance_id" || -z "$name_prefix" ]]; then
     log_error "Missing required arg: -i and -p are required"
     status="failed"; exit 1
@@ -92,13 +113,11 @@ region_arg=()
 # --- Phase 3: pre-check -----------------------------------------------------
 log_info "Pre-check start"
 
-# 3-a: required CLI
 if ! command -v aws >/dev/null 2>&1; then
     log_error "aws CLI not installed"
     status="failed"; exit 10
 fi
 
-# 3-b/c: combined auth + instance lookup
 if ! aws_err=$(aws ec2 describe-instances --instance-ids "$instance_id" "${region_arg[@]}" 2>&1 >/dev/null); then
     if echo "$aws_err" | grep -qE "InvalidInstanceID|NotFound|does not exist"; then
         log_error "Instance not found: instanceId=$instance_id"
@@ -109,7 +128,6 @@ if ! aws_err=$(aws ec2 describe-instances --instance-ids "$instance_id" "${regio
     fi
 fi
 
-# 3-d: idempotency
 if [[ "$min_interval_minutes" -gt 0 ]]; then
     cutoff_iso=$(date -u -d "-${min_interval_minutes} minutes" +"%Y-%m-%dT%H:%M:%S" 2>/dev/null \
                  || date -u -v"-${min_interval_minutes}M" +"%Y-%m-%dT%H:%M:%S")
@@ -120,10 +138,10 @@ if [[ "$min_interval_minutes" -gt 0 ]]; then
         "${region_arg[@]}" \
         --query "Images[?CreationDate>='${cutoff_iso}'] | sort_by(@, &CreationDate) | [-1].[ImageId, CreationDate]" \
         --output text 2>/dev/null || true)
-    if [[ -n "$recent" && "$recent" != "None"$'\t'"None" && "$recent" != "None None" ]]; then
+    if [[ -n "$recent" ]]; then
         recent_id=$(echo "$recent" | awk '{print $1}')
         recent_at=$(echo "$recent" | awk '{print $2}')
-        if [[ "$recent_id" != "None" && -n "$recent_id" ]]; then
+        if [[ -n "$recent_id" && "$recent_id" != "None" ]]; then
             log_info "Skipped (idempotent): reason=recent_ami_exists amiId=$recent_id createdAt=$recent_at minIntervalMin=$min_interval_minutes"
             status="skipped"; exit 0
         fi
@@ -169,7 +187,6 @@ if [[ "$wait_for_completion" -eq 1 ]]; then
     log_info "AMI is available: $ami_id"
 fi
 
-# Pruning
 if [[ "$retention_days" -gt 0 ]]; then
     cutoff=$(date -u -d "-${retention_days} days" +"%Y-%m-%dT%H:%M:%S" 2>/dev/null \
              || date -u -v"-${retention_days}d" +"%Y-%m-%dT%H:%M:%S")
@@ -185,18 +202,15 @@ if [[ "$retention_days" -gt 0 ]]; then
 
     for old_ami in $old_amis; do
         [[ -z "$old_ami" ]] && continue
-
         snaps=$(aws ec2 describe-images --image-ids "$old_ami" "${region_arg[@]}" \
             --query 'Images[0].BlockDeviceMappings[?Ebs!=null].Ebs.SnapshotId' \
             --output text)
-
         if aws ec2 deregister-image --image-id "$old_ami" "${region_arg[@]}"; then
             log_info "Deregistered AMI: $old_ami"
         else
             log_warn "Deregister failed: $old_ami"
             continue
         fi
-
         for snap in $snaps; do
             [[ -z "$snap" ]] && continue
             if aws ec2 delete-snapshot --snapshot-id "$snap" "${region_arg[@]}" 2>/dev/null; then

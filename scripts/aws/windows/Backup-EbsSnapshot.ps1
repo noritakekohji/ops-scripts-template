@@ -4,48 +4,18 @@
     Creates EBS snapshot(s) and optionally prunes old ones.
 
 .DESCRIPTION
-    Snapshots either a single volume (-VolumeId) or all volumes attached to
-    an instance (-InstanceId). Snapshots are tagged with CreatedBy /
-    NamePrefix / RetentionDays for safe lifecycle management.
+    Behavior parameters can be set in CLI args, in config files, or fall
+    back to script defaults. See config/README.md for resolution order.
+    Per-run targets (-VolumeId / -InstanceId / -NamePrefix) are CLI-only.
 
     Authentication: relies on the default AWS credential chain.
 
     Flow (per shell-specification.md):
       1. Argument validation
-      2. Environment setup
+      2. Environment setup (logger, config)
       3. Pre-check               (module / source / idempotency)
       4. Main processing         (create snapshots / wait / prune)
       5. Post-processing         (final status log)
-
-.PARAMETER VolumeId
-    Single EBS volume id. Mutually exclusive with -InstanceId.
-
-.PARAMETER InstanceId
-    Snapshot every EBS volume currently attached to this instance.
-
-.PARAMETER NamePrefix
-    Prefix for snapshot Name tag and pruning filter.
-
-.PARAMETER Region
-    AWS region. Falls back to default region from env / profile.
-
-.PARAMETER RetentionDays
-    Snapshots older than this with the same NamePrefix are deleted.
-    0 disables pruning.
-
-.PARAMETER MinIntervalMinutes
-    Idempotency window. If a snapshot with the same NamePrefix was created
-    within this many minutes, the run is skipped (status=skipped, exit 0).
-    0 disables. Default: 5.
-
-.PARAMETER Wait
-    Wait until all created snapshots reach 'completed' state.
-
-.EXAMPLE
-    .\Backup-EbsSnapshot.ps1 -VolumeId vol-0abc -NamePrefix prod-db -RetentionDays 14
-
-.EXAMPLE
-    .\Backup-EbsSnapshot.ps1 -InstanceId i-0abc -NamePrefix prod-app -Wait
 #>
 [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Volume')]
 param(
@@ -81,18 +51,30 @@ if (-not (Test-Path $libPath)) {
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
+# --- Phase 2: load config and apply to unspecified parameters ---------------
+$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+Import-Module (Resolve-Path $configModulePath).Path -Force
+$cfg = Get-OpsConfig -Name 'Backup-EbsSnapshot'
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+if (-not $PSBoundParameters.ContainsKey('Region')             -and $cfg.ContainsKey('Region'))             { $Region             = [string]$cfg['Region'] }
+if (-not $PSBoundParameters.ContainsKey('RetentionDays')      -and $cfg.ContainsKey('RetentionDays'))      { $RetentionDays      = [int]$cfg['RetentionDays'] }
+if (-not $PSBoundParameters.ContainsKey('MinIntervalMinutes') -and $cfg.ContainsKey('MinIntervalMinutes')) { $MinIntervalMinutes = [int]$cfg['MinIntervalMinutes'] }
+if (-not $PSBoundParameters.ContainsKey('Wait')               -and $cfg.ContainsKey('Wait')) {
+    if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = [switch]::Present }
+}
+
 $exitCode = 0
 $status = 'unknown'
 $created = @()
 
 try {
     do {
+        Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: paramSet=$($PSCmdlet.ParameterSetName) namePrefix=$NamePrefix region=$Region retentionDays=$RetentionDays minIntervalMin=$MinIntervalMinutes"
 
         # --- Phase 3: pre-check ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
-        # 3-a: required AWS module
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
             Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module is not installed; install with: Install-Module AWS.Tools.EC2 -Scope CurrentUser'
             $exitCode = 10; $status = 'failed'; break
@@ -102,7 +84,6 @@ try {
         $aws = @{}
         if ($Region) { $aws.Region = $Region }
 
-        # 3-b/c: resolve volumes (combined auth + existence)
         $volumes = @()
         if ($PSCmdlet.ParameterSetName -eq 'Instance') {
             try {
@@ -149,7 +130,6 @@ try {
             $volumes = @($VolumeId)
         }
 
-        # 3-d: idempotency
         if ($MinIntervalMinutes -gt 0) {
             $idempCutoff = (Get-Date).ToUniversalTime().AddMinutes(-$MinIntervalMinutes)
             $idempFilter = @(
@@ -226,7 +206,6 @@ try {
             Write-OpsLog -Level INFO -Message 'All snapshots completed'
         }
 
-        # Pruning
         if ($RetentionDays -gt 0) {
             Write-OpsLog -Level INFO -Message "Pruning old snapshots: namePrefix=$NamePrefix retentionDays=$RetentionDays"
             $cutoff = (Get-Date).ToUniversalTime().AddDays(-$RetentionDays)
@@ -261,7 +240,6 @@ catch {
     $status = 'failed'
 }
 finally {
-    # --- Phase 5: post-processing -------------------------------------------
     Write-OpsLog -Level INFO -Message "Script end: status=$status exitCode=$exitCode created=$($created.Count)"
 }
 

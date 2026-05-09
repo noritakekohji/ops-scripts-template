@@ -5,55 +5,17 @@
 
 .DESCRIPTION
     Targets are resolved from -Path (single file or directory) and / or
-    -PathList (text file listing multiple paths, one per line).
+    -PathList (text file). At least one trigger (-MaxSizeMB / -MaxAgeDays)
+    must be set, either via CLI or via config (config/<env>/Rotate-Log.conf).
 
-    For each resolved file, rotates when:
-      - size >= MaxSizeMB    (if specified), OR
-      - mtime older than MaxAgeDays (if specified).
-    At least one trigger must be specified.
-
-    Rotated files are renamed with a UTC timestamp suffix:
-        app.log -> app.log.20260509-031405
-    Optionally gzipped to .gz. Old rotated files exceeding -RetentionCount
-    are deleted (oldest first).
+    Rotated files: <name>.YYYYMMDD-HHMMSS [.gz] (UTC).
 
     Flow (per shell-specification.md):
       1. Argument validation
-      2. Environment setup
+      2. Environment setup (logger, config)
       3. Pre-check               (resolve paths; idempotency = no targets)
       4. Main processing         (rotate / compress / prune)
       5. Post-processing         (final status log)
-
-.PARAMETER Path
-    Single log file path OR a directory containing log files.
-
-.PARAMETER PathList
-    Text file with one target path per line. Lines starting with "#" and
-    blank lines are ignored. Whitespace is trimmed.
-
-.PARAMETER Pattern
-    Glob pattern when a target is a directory. Default: *.log
-
-.PARAMETER MaxSizeMB
-    Rotate when size >= this many MB. 0 disables.
-
-.PARAMETER MaxAgeDays
-    Rotate when mtime older than this many days. 0 disables.
-
-.PARAMETER Compress
-    Gzip the rotated file.
-
-.PARAMETER RetentionCount
-    Keep at most this many rotated files per source. 0 disables.
-
-.PARAMETER CopyTruncate
-    Use copy+truncate instead of rename. Safer for files held open.
-
-.EXAMPLE
-    .\Rotate-Log.ps1 -Path C:\logs\app.log -MaxSizeMB 100 -Compress -RetentionCount 7
-
-.EXAMPLE
-    .\Rotate-Log.ps1 -PathList C:\ops\logs.txt -MaxAgeDays 1 -Compress -RetentionCount 30
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -77,6 +39,22 @@ if (-not (Test-Path $libPath)) {
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
+# --- Phase 2: load config and apply to unspecified parameters ---------------
+$configModulePath = Join-Path $PSScriptRoot '..' '..' 'lib' 'powershell' 'Config.psm1'
+Import-Module (Resolve-Path $configModulePath).Path -Force
+$cfg = Get-OpsConfig -Name 'Rotate-Log'
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+if (-not $PSBoundParameters.ContainsKey('Pattern')        -and $cfg.ContainsKey('Pattern'))        { $Pattern        = [string]$cfg['Pattern'] }
+if (-not $PSBoundParameters.ContainsKey('MaxSizeMB')      -and $cfg.ContainsKey('MaxSizeMB'))      { $MaxSizeMB      = [int]$cfg['MaxSizeMB'] }
+if (-not $PSBoundParameters.ContainsKey('MaxAgeDays')     -and $cfg.ContainsKey('MaxAgeDays'))     { $MaxAgeDays     = [int]$cfg['MaxAgeDays'] }
+if (-not $PSBoundParameters.ContainsKey('RetentionCount') -and $cfg.ContainsKey('RetentionCount')) { $RetentionCount = [int]$cfg['RetentionCount'] }
+if (-not $PSBoundParameters.ContainsKey('Compress')       -and $cfg.ContainsKey('Compress')) {
+    if ([System.Convert]::ToBoolean($cfg['Compress'])) { $Compress = [switch]::Present }
+}
+if (-not $PSBoundParameters.ContainsKey('CopyTruncate')   -and $cfg.ContainsKey('CopyTruncate')) {
+    if ([System.Convert]::ToBoolean($cfg['CopyTruncate'])) { $CopyTruncate = [switch]::Present }
+}
+
 $exitCode = 0
 $status = 'unknown'
 $rotated = 0
@@ -84,7 +62,8 @@ $skipped = 0
 
 try {
     do {
-        # --- Phase 1b: cross-validation ---
+        Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
+
         if ($MaxSizeMB -le 0 -and $MaxAgeDays -le 0) {
             Write-OpsLog -Level ERROR -Message 'At least one of -MaxSizeMB or -MaxAgeDays must be > 0'
             $exitCode = 1; $status = 'failed'; break
@@ -132,7 +111,6 @@ try {
         }
         $files = @($files | Sort-Object FullName -Unique)
 
-        # 3-d: idempotency — no targets means nothing to do
         if ($files.Count -eq 0) {
             Write-OpsLog -Level INFO -Message 'Skipped (idempotent): reason=no_matching_files'
             $exitCode = 0; $status = 'skipped'; break
@@ -216,7 +194,6 @@ try {
             }
         }
 
-        # Retention pruning
         if ($RetentionCount -gt 0) {
             foreach ($f in $files) {
                 $dir = Split-Path -Parent $f.FullName
@@ -254,7 +231,6 @@ catch {
     $status = 'failed'
 }
 finally {
-    # --- Phase 5: post-processing -------------------------------------------
     Write-OpsLog -Level INFO -Message "Script end: status=$status exitCode=$exitCode rotated=$rotated skipped=$skipped"
 }
 

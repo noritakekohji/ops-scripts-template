@@ -8,18 +8,10 @@
 #                 [-s <max-size-mb>] [-a <max-age-days>]
 #                 [-c] [-k <retention>] [-T] [-n]
 #
-# Options:
-#   -p  Single log file path OR directory containing log files
-#   -L  Path-list file: one target per line, "#" comments and blank lines OK
-#   -P  Glob pattern when a target is a directory (default: *.log)
-#   -s  Rotate when size >= this many MB (0 disables)
-#   -a  Rotate when mtime older than this many days (0 disables)
-#   -c  Gzip the rotated file
-#   -k  Keep at most this many rotated files per source (0 disables)
-#   -T  Use copy+truncate instead of rename
-#   -n  Dry run
+# Behavior parameters can be set via CLI, via config files (config/<env>/
+# rotate_log.conf), or fall back to script defaults. CLI > config > default.
+# Per-run targets (-p / -L) are CLI-only.
 #
-# At least one of -p or -L. At least one of -s or -a must be > 0.
 # Naming: app.log -> app.log.YYYYMMDD-HHMMSS [.gz] (UTC).
 # Exit codes: 0 success / skipped, 1 usage, 2 list file not found, 4 rotate failed
 # ============================================================================
@@ -28,10 +20,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../lib/bash/logging.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/../../lib/bash/config.sh"
 
-usage() { sed -n '2,25p' "$0" >&2; exit 1; }
+usage() { sed -n '2,18p' "$0" >&2; exit 1; }
 
-# Phase 5 state
 status="unknown"
 rotated=0
 skipped=0
@@ -43,7 +36,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: argument parsing & validation ---------------------------------
+# --- Phase 1: argument parsing ----------------------------------------------
 path=""
 path_list=""
 pattern="*.log"
@@ -54,21 +47,50 @@ retention=0
 copy_truncate=0
 dry_run=0
 
+pattern_set=0
+max_size_set=0
+max_age_set=0
+compress_set=0
+retention_set=0
+copy_truncate_set=0
+
 while getopts "p:L:P:s:a:ck:Tnh" opt; do
     case "$opt" in
         p) path="$OPTARG" ;;
         L) path_list="$OPTARG" ;;
-        P) pattern="$OPTARG" ;;
-        s) max_size_mb="$OPTARG" ;;
-        a) max_age_days="$OPTARG" ;;
-        c) compress=1 ;;
-        k) retention="$OPTARG" ;;
-        T) copy_truncate=1 ;;
+        P) pattern="$OPTARG"; pattern_set=1 ;;
+        s) max_size_mb="$OPTARG"; max_size_set=1 ;;
+        a) max_age_days="$OPTARG"; max_age_set=1 ;;
+        c) compress=1; compress_set=1 ;;
+        k) retention="$OPTARG"; retention_set=1 ;;
+        T) copy_truncate=1; copy_truncate_set=1 ;;
         n) dry_run=1 ;;
         h|*) usage ;;
     esac
 done
 
+# --- Phase 2: load config and apply to unspecified ---------------------------
+load_ops_config "rotate_log"
+[[ "$pattern_set" -eq 0    && -n "${OPS_CONFIG[Pattern]:-}"        ]] && pattern="${OPS_CONFIG[Pattern]}"
+[[ "$max_size_set" -eq 0   && -n "${OPS_CONFIG[MaxSizeMB]:-}"      ]] && max_size_mb="${OPS_CONFIG[MaxSizeMB]}"
+[[ "$max_age_set" -eq 0    && -n "${OPS_CONFIG[MaxAgeDays]:-}"     ]] && max_age_days="${OPS_CONFIG[MaxAgeDays]}"
+[[ "$retention_set" -eq 0  && -n "${OPS_CONFIG[RetentionCount]:-}" ]] && retention="${OPS_CONFIG[RetentionCount]}"
+if [[ "$compress_set" -eq 0 && -n "${OPS_CONFIG[Compress]:-}" ]]; then
+    case "${OPS_CONFIG[Compress]}" in
+        true|TRUE|True|1) compress=1 ;;
+        *)                compress=0 ;;
+    esac
+fi
+if [[ "$copy_truncate_set" -eq 0 && -n "${OPS_CONFIG[CopyTruncate]:-}" ]]; then
+    case "${OPS_CONFIG[CopyTruncate]}" in
+        true|TRUE|True|1) copy_truncate=1 ;;
+        *)                copy_truncate=0 ;;
+    esac
+fi
+
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+
+# --- Phase 1 (cont): validation ---------------------------------------------
 if ! [[ "$max_size_mb" =~ ^[0-9]+$ ]] \
     || ! [[ "$max_age_days" =~ ^[0-9]+$ ]] \
     || ! [[ "$retention" =~ ^[0-9]+$ ]]; then
@@ -128,7 +150,6 @@ for p in "${target_paths[@]}"; do
     fi
 done
 
-# Deduplicate
 if [[ "${#files[@]}" -gt 0 ]]; then
     declare -A seen=()
     declare -a unique=()
@@ -141,7 +162,6 @@ if [[ "${#files[@]}" -gt 0 ]]; then
     files=( "${unique[@]}" )
 fi
 
-# 3-d: idempotency — no targets means nothing to do
 if [[ "${#files[@]}" -eq 0 ]]; then
     log_info "Skipped (idempotent): reason=no_matching_files"
     status="skipped"; exit 0
@@ -225,7 +245,6 @@ for f in "${files[@]}"; do
     fi
 done
 
-# Retention pruning
 if [[ "$retention" -gt 0 && "$dry_run" -eq 0 ]]; then
     for f in "${files[@]}"; do
         shopt -s nullglob

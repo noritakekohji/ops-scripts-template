@@ -16,13 +16,14 @@
 6. [入力検証](#6-入力検証)
 7. [認証・シークレット](#7-認証シークレット)
 8. [ロガー仕様 v1.0](#8-ロガー仕様-v10)
-9. [AWS タグ付け規約](#9-aws-タグ付け規約)
-10. [終了コード規約](#10-終了コード規約)
-11. [冪等性・副作用の制御](#11-冪等性副作用の制御)
-12. [テスト](#12-テスト)
-13. [CI 必須チェック](#13-ci-必須チェック)
-14. [コミット規約](#14-コミット規約)
-15. [改訂履歴](#15-改訂履歴)
+9. [設定ファイル](#9-設定ファイル)
+10. [AWS タグ付け規約](#10-aws-タグ付け規約)
+11. [終了コード規約](#11-終了コード規約)
+12. [冪等性・副作用の制御](#12-冪等性副作用の制御)
+13. [テスト](#13-テスト)
+14. [CI 必須チェック](#14-ci-必須チェック)
+15. [コミット規約](#15-コミット規約)
+16. [改訂履歴](#16-改訂履歴)
 
 ---
 
@@ -322,7 +323,98 @@ AMI creation initiated: amiId=ami-0xyz instanceId=i-0abc namePrefix=prod-web
 
 ---
 
-## 9. AWS タグ付け規約
+## 9. 設定ファイル
+
+スクリプトの挙動を決めるパラメータ（リージョン、保持日数、冪等性ウィンドウ 等）は **`config/<env>/<script-name>.conf`** で外出しできる。CLI 引数は config より常に優先される。
+
+### 解決の優先順位（高 → 低）
+
+```
+1. CLI 引数
+2. config/<env>/<script-name>.conf
+3. config/<env>/ops.conf
+4. config/common/<script-name>.conf
+5. config/common/ops.conf
+6. スクリプトのハードコード既定値
+```
+
+`<env>` は環境変数 `OPS_ENV` で切り替え（未設定なら `common` のみ参照）。
+
+### フォーマット
+
+```ini
+# 行頭 '#' はコメント、空行は無視
+
+Region        = ap-northeast-1
+RetentionDays = 7
+NoReboot      = true                  # bool は true / false
+Description   = "weekly backup"       # 値の前後を "..." または '...' で囲める
+```
+
+| ルール | 内容 |
+|---|---|
+| 1 行 1 設定 | `Key = Value` |
+| コメント | 行頭 `#` のみ |
+| 空白 | キー・値ともに自動 trim |
+| クォート | 値の前後 `"..."` / `'...'` は除去 |
+| 文字コード | UTF-8 |
+
+### 命名
+
+| スクリプト | config ファイル名 |
+|---|---|
+| `Backup-Ami.ps1` | `Backup-Ami.conf` |
+| `backup_ami.sh` | `backup_ami.conf` |
+
+PowerShell と Bash の同機能ペアでも config は別ファイル（命名規約が違うため）。
+
+### スコープのルール
+
+- **CLI のみ**：per-run の対象（`-InstanceId`、`-VolumeId`、`-NamePrefix`、`-Path`、`-PathList` 等）
+- **config 可**：挙動ポリシー（`Region`、`RetentionDays`、`MinIntervalMinutes`、`NoReboot`、`Wait`、`Pattern`、`MaxSizeMB` 等）
+
+per-run の対象を config に書くと、運用スクリプトが「環境ごとに違うインスタンスを暗黙に選ぶ」状態になり追跡性が落ちるため**禁止**。
+
+### スクリプト側の使い方
+
+#### PowerShell（`lib/powershell/Config.psm1`）
+```powershell
+Import-Module (Resolve-Path "<repo>/lib/powershell/Config.psm1").Path -Force
+$cfg = Get-OpsConfig -Name 'Backup-Ami'
+if (-not $PSBoundParameters.ContainsKey('Region') -and $cfg.ContainsKey('Region')) {
+    $Region = [string]$cfg['Region']
+}
+```
+
+#### Bash（`lib/bash/config.sh`）
+```bash
+source "<repo>/lib/bash/config.sh"
+load_ops_config "backup_ami"
+[[ "$region_set" -eq 0 && -n "${OPS_CONFIG[Region]:-}" ]] && region="${OPS_CONFIG[Region]}"
+```
+
+Bash 側は `getopts` ループで `_set=1` を立て、未設定の場合のみ config から拾う。
+
+### 必ず出るログ
+
+設定が読み込まれたことは Phase 2 の冒頭で 1 行ログに残す：
+
+```
+[2026-05-09 12:14:05] [INFO ] (Backup-Ami.ps1:1234) Config loaded: env=prd keys=4
+```
+
+### 禁止事項
+
+- **シークレットを `.conf` に書かない**（パスワード、API キー、トークン）。Vault 等の参照キー形式（`ref://...`）は可
+- per-run の対象（InstanceId、VolumeId、Path 等）を config に書かない
+
+### 詳細
+
+[`config/README.md`](config/README.md) にフォーマット仕様、運用例、サンプルがあります。
+
+---
+
+## 10. AWS タグ付け規約
 
 AWS リソース（AMI / Snapshot / Volume / EC2 等）を作成するスクリプトは、**必ず以下のタグを付与** する。
 
@@ -351,7 +443,7 @@ tag:NamePrefix = <指定された prefix>
 
 ---
 
-## 10. 終了コード規約
+## 11. 終了コード規約
 
 | Code | 意味 | 使用例 |
 |---|---|---|
@@ -367,7 +459,7 @@ PowerShell は `exit <code>` で明示的に終了させる。Bash も明示的�
 
 ---
 
-## 11. 冪等性・副作用の制御
+## 12. 冪等性・副作用の制御
 
 ### 必須要件
 - 同じ引数で 2 回実行しても **副作用が増えない** こと
@@ -394,7 +486,7 @@ if ($PSCmdlet.ShouldProcess($Target, "Action description")) {
 
 ---
 
-## 12. テスト
+## 13. テスト
 
 | 種別 | 配置先 | フレームワーク |
 |---|---|---|
@@ -411,7 +503,7 @@ CI（[ci/test/pester.gitlab-ci.yml](ci/test/pester.gitlab-ci.yml) / [ci/test/bat
 
 ---
 
-## 13. CI 必須チェック
+## 14. CI 必須チェック
 
 PR ごとに自動実行される（[`.gitlab-ci.yml`](.gitlab-ci.yml)）：
 
@@ -429,7 +521,7 @@ PR ごとに自動実行される（[`.gitlab-ci.yml`](.gitlab-ci.yml)）：
 
 ---
 
-## 14. コミット規約
+## 15. コミット規約
 
 - 1 コミット = 1 論理変更
 - メッセージは英語推奨。**WHY を書く**（WHAT は diff から自明）
@@ -445,8 +537,9 @@ Plain-text is easier to grep on the box during incidents.
 
 ---
 
-## 15. 改訂履歴
+## 16. 改訂履歴
 
 | 版 | 日付 | 内容 |
 |---|---|---|
+| v1.1 | 2026-05-09 | 設定ファイル仕様（`config/<env>/<script>.conf`、`OPS_ENV`、CLI > config > default の優先順位）を追加。ディレクトリ配置を 1 階層フラット化（`<action>/` 廃止） |
 | v1.0 | 2026-05-09 | 初版。ロガー仕様 v1.0、ディレクトリ配置、命名、入力検証、AWS タグ規約、終了コードを確定 |

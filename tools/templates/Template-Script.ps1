@@ -57,6 +57,19 @@ if (-not (Test-Path $libPath)) {
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
+# Load config and apply to unspecified parameters.
+# Resolution: CLI > config/<env>/<Name>.conf > config/<env>/ops.conf
+#           > config/common/<Name>.conf > config/common/ops.conf > script default.
+# TEMPLATE: change 'Template-Script' to your script's name (no extension).
+$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+Import-Module (Resolve-Path $configModulePath).Path -Force
+$cfg = Get-OpsConfig -Name 'Template-Script'
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+# TEMPLATE: for each behavior parameter, copy this pattern:
+# if (-not $PSBoundParameters.ContainsKey('<ParamName>') -and $cfg.ContainsKey('<ParamName>')) {
+#     $<ParamName> = [<type>]$cfg['<ParamName>']
+# }
+
 # State for Phase 5 cleanup
 $tempFile = $null
 $exitCode = 0
@@ -69,6 +82,8 @@ try {
     # The do/while($false) pattern lets each phase 'break' out cleanly while
     # still letting the finally block (Phase 5) run.
     do {
+        Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
+
         # --------------------------------------------------------------------
         # Phase 1b: Cross-parameter validation
         # --------------------------------------------------------------------

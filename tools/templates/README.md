@@ -139,15 +139,17 @@ bash tools/templates/template_script.sh -p demo
 1. 適切な配置先にコピー（例：`scripts/aws/windows/Backup-Foo.ps1`）
 2. ファイル名と内部のヘッダ（`SYNOPSIS` / `DESCRIPTION` / `Usage` 等）を実際の用途に書き換え
 3. **lib のインポートパスを配置深さに合わせて調整**（テンプレ内に "TEMPLATE: adjust ..." コメントあり）
-4. デモ用の `# DEMO:` コメント部分を **実際のチェック / 処理に置き換え**
+4. **config 名を変更**：`Get-OpsConfig -Name 'Template-Script'` / `load_ops_config "template_script"` の引数を実際のスクリプト名に
+5. **config からの上書き対象を追加**（テンプレ内に `# TEMPLATE: copy this pattern` ガイド）。挙動パラメータ（Region、RetentionDays、MaxSizeMB 等）は config 経由にし、per-run の対象（InstanceId、Path 等）は CLI 専用で
+6. デモ用の `# DEMO:` コメント部分を **実際のチェック / 処理に置き換え**
    - 3-a：必要モジュール・CLI のチェック
    - 3-b：認証確認（`Get-STSCallerIdentity`、`aws sts get-caller-identity` 等）
    - 3-c：対象リソースの存在確認
-   - 3-d：冪等スキップ条件（直近 N 分のリソース有無、状態確認 等）
-   - 3-e：外部依存到達性（必要なら）
+   - 3-d：冪等スキップ条件
    - 4：本来の処理に置き換え
-5. 実行権限を付与（Bash のみ、`git update-index --chmod=+x`）
-6. （推奨）`docs/scripts/<filename>.md` の個別仕様書も追加
+7. 実行権限を付与（Bash のみ、`git update-index --chmod=+x`）
+8. （推奨）`config/common/<name>.conf` に既定値の雛形を追加
+9. （推奨）`docs/scripts/<filename>.md` の個別仕様書も追加
 
 ## CI チェック内容
 

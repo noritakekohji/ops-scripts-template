@@ -47,6 +47,8 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 #   scripts/sqlserver/linux/baz.sh  -> 3 ups
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/../../../lib/bash/config.sh"
 
 # State for Phase 5 cleanup
 tmp_file=""
@@ -80,13 +82,32 @@ usage() { sed -n '2,33p' "$0" >&2; exit 1; }
 param=""
 dry_run=0
 
+# TEMPLATE: track which behavior options the user explicitly set, so config
+# is only consulted for the unset ones. Per-run targets (e.g. -p) typically
+# don't need _set tracking since their default is empty.
+# dry_run_set=0
+
 while getopts "p:nh" opt; do
     case "$opt" in
         p) param="$OPTARG" ;;
-        n) dry_run=1 ;;
+        n) dry_run=1 ;;  # ; dry_run_set=1
         h|*) usage ;;
     esac
 done
+
+# Load config and apply to unspecified behavior parameters.
+# Resolution: CLI > config/<env>/<name>.conf > config/<env>/ops.conf
+#           > config/common/<name>.conf > config/common/ops.conf > script default.
+# TEMPLATE: change 'template_script' to your script's name (no extension).
+load_ops_config "template_script"
+# TEMPLATE: for each behavior option, copy this pattern:
+# [[ "$<option>_set" -eq 0 && -n "${OPS_CONFIG[<Key>]:-}" ]] && <option>="${OPS_CONFIG[<Key>]}"
+# For booleans:
+# if [[ "$<option>_set" -eq 0 && -n "${OPS_CONFIG[<Key>]:-}" ]]; then
+#     case "${OPS_CONFIG[<Key>]}" in true|TRUE|True|1) <option>=1 ;; *) <option>=0 ;; esac
+# fi
+
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 
 if [[ -z "$param" ]]; then
     log_error "Missing required arg: -p"

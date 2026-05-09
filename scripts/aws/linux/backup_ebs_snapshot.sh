@@ -8,15 +8,8 @@
 #                          [-r <region>] [-d <retention-days>]
 #                          [-m <min-interval-min>] [-w]
 #
-# Options:
-#   -v  EBS volume id (mutually exclusive with -i)
-#   -i  Snapshot every EBS volume currently attached to this instance
-#   -p  Name prefix for snapshot Name tag and pruning filter (required)
-#   -r  AWS region (default: from environment / profile)
-#   -d  Retention days (0 disables pruning, default 0)
-#   -m  Idempotency window minutes. Skip if a recent snapshot exists for
-#       the same NamePrefix. 0 disables. (default 5)
-#   -w  Wait until all created snapshots reach 'completed' state
+# Behavior parameters can be set via CLI, via config files, or fall back to
+# script defaults. Per-run targets (-v / -i / -p) are CLI-only.
 #
 # Authentication: relies on the default AWS credential chain.
 # Exit codes: 0 success / skipped, 1 usage, 2 not found, 3 wait timeout,
@@ -27,10 +20,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/../../../lib/bash/config.sh"
 
-usage() { sed -n '2,24p' "$0" >&2; exit 1; }
+usage() { sed -n '2,18p' "$0" >&2; exit 1; }
 
-# Phase 5 state
 declare -a created=()
 status="unknown"
 
@@ -41,7 +35,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: argument parsing & validation ---------------------------------
+# --- Phase 1: argument parsing ----------------------------------------------
 volume_id=""
 instance_id=""
 name_prefix=""
@@ -50,19 +44,39 @@ retention_days=0
 min_interval_minutes=5
 wait_for_completion=0
 
+region_set=0
+retention_days_set=0
+min_interval_set=0
+wait_set=0
+
 while getopts "v:i:p:r:d:m:wh" opt; do
     case "$opt" in
         v) volume_id="$OPTARG" ;;
         i) instance_id="$OPTARG" ;;
         p) name_prefix="$OPTARG" ;;
-        r) region="$OPTARG" ;;
-        d) retention_days="$OPTARG" ;;
-        m) min_interval_minutes="$OPTARG" ;;
-        w) wait_for_completion=1 ;;
+        r) region="$OPTARG"; region_set=1 ;;
+        d) retention_days="$OPTARG"; retention_days_set=1 ;;
+        m) min_interval_minutes="$OPTARG"; min_interval_set=1 ;;
+        w) wait_for_completion=1; wait_set=1 ;;
         h|*) usage ;;
     esac
 done
 
+# --- Phase 2: load config and apply to unspecified ---------------------------
+load_ops_config "backup_ebs_snapshot"
+[[ "$region_set" -eq 0         && -n "${OPS_CONFIG[Region]:-}"             ]] && region="${OPS_CONFIG[Region]}"
+[[ "$retention_days_set" -eq 0 && -n "${OPS_CONFIG[RetentionDays]:-}"      ]] && retention_days="${OPS_CONFIG[RetentionDays]}"
+[[ "$min_interval_set" -eq 0   && -n "${OPS_CONFIG[MinIntervalMinutes]:-}" ]] && min_interval_minutes="${OPS_CONFIG[MinIntervalMinutes]}"
+if [[ "$wait_set" -eq 0 && -n "${OPS_CONFIG[Wait]:-}" ]]; then
+    case "${OPS_CONFIG[Wait]}" in
+        true|TRUE|True|1) wait_for_completion=1 ;;
+        *)                wait_for_completion=0 ;;
+    esac
+fi
+
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+
+# --- Phase 1 (cont): validation ---------------------------------------------
 if [[ -z "$name_prefix" ]]; then
     log_error "Missing required arg: -p"
     status="failed"; exit 1
@@ -104,13 +118,11 @@ region_arg=()
 # --- Phase 3: pre-check -----------------------------------------------------
 log_info "Pre-check start"
 
-# 3-a: required CLI
 if ! command -v aws >/dev/null 2>&1; then
     log_error "aws CLI not installed"
     status="failed"; exit 10
 fi
 
-# 3-b/c: resolve volumes (combined auth + existence)
 declare -a volumes=()
 if [[ -n "$instance_id" ]]; then
     if ! aws_err=$(aws ec2 describe-instances --instance-ids "$instance_id" "${region_arg[@]}" 2>&1 >/dev/null); then
@@ -144,7 +156,6 @@ else
     volumes=( "$volume_id" )
 fi
 
-# 3-d: idempotency
 if [[ "$min_interval_minutes" -gt 0 ]]; then
     cutoff_iso=$(date -u -d "-${min_interval_minutes} minutes" +"%Y-%m-%dT%H:%M:%S" 2>/dev/null \
                  || date -u -v"-${min_interval_minutes}M" +"%Y-%m-%dT%H:%M:%S")
@@ -205,7 +216,6 @@ if [[ "$wait_for_completion" -eq 1 && "${#created[@]}" -gt 0 ]]; then
     log_info "All snapshots completed"
 fi
 
-# Pruning
 if [[ "$retention_days" -gt 0 ]]; then
     cutoff=$(date -u -d "-${retention_days} days" +"%Y-%m-%dT%H:%M:%S" 2>/dev/null \
              || date -u -v"-${retention_days}d" +"%Y-%m-%dT%H:%M:%S")
@@ -226,7 +236,6 @@ if [[ "$retention_days" -gt 0 ]]; then
             [[ "$c" == "$snap" ]] && skip=1 && break
         done
         [[ "$skip" -eq 1 ]] && continue
-
         if aws ec2 delete-snapshot --snapshot-id "$snap" "${region_arg[@]}" 2>/dev/null; then
             log_info "Deleted snapshot: $snap"
         else
