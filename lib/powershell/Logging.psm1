@@ -9,7 +9,7 @@ function Write-OpsLog {
         Output format:
             [YYYY-MM-DD hh:mm:ss] [Level] (shellname:pid) Message
 
-        - Timezone: local OS setting
+        - Timezone: Asia/Tokyo (JST, UTC+9) — fixed regardless of OS setting
         - Level:    5-char left-padded (INFO , WARN , ERROR, DEBUG)
         - Streams:  WARN/ERROR -> stderr, INFO/DEBUG -> stdout
         - Newlines in Message are replaced with single spaces.
@@ -27,7 +27,11 @@ function Write-OpsLog {
         [string]$Message
     )
 
-    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    # Fix timestamps to Japan Standard Time (JST, UTC+9), regardless of OS tz.
+    # PS 7+ accepts IANA names on all platforms; fall back to Windows id.
+    try { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Asia/Tokyo') }
+    catch { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time') }
+    $ts = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $script:_OpsJstTz).ToString('yyyy-MM-dd HH:mm:ss')
 
     # Resolve caller script basename via call stack (skip frame 0 = this function)
     $shell = '<unknown>'

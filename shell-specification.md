@@ -243,7 +243,7 @@ fi
 
 | 要素 | 仕様 |
 |---|---|
-| タイムスタンプ | `YYYY-MM-DD hh:mm:ss`（**ローカル時刻**、24h、ミリ秒なし） |
+| タイムスタンプ | `YYYY-MM-DD hh:mm:ss`（**日本時刻 / JST / UTC+9 固定**、24h、ミリ秒なし。OS の TZ 設定に依存しない） |
 | Level | `INFO ` / `WARN ` / `ERROR` / `DEBUG`（**5 文字左詰め**で揃える） |
 | shellname | 呼び出しスクリプトの **basename**（パスなし） |
 | pid | プロセス ID |
@@ -541,5 +541,6 @@ Plain-text is easier to grep on the box during incidents.
 
 | 版 | 日付 | 内容 |
 |---|---|---|
+| v1.2 | 2026-05-09 | ロガーのタイムスタンプを **JST 固定** に変更（OS の TZ 設定に依存しない、`Asia/Tokyo`） |
 | v1.1 | 2026-05-09 | 設定ファイル仕様（`config/<env>/<script>.conf`、`OPS_ENV`、CLI > config > default の優先順位）を追加。ディレクトリ配置を 1 階層フラット化（`<action>/` 廃止） |
 | v1.0 | 2026-05-09 | 初版。ロガー仕様 v1.0、ディレクトリ配置、命名、入力検証、AWS タグ規約、終了コードを確定 |

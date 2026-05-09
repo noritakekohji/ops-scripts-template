@@ -4,7 +4,7 @@
 #   source "$(dirname "$0")/../../../../lib/bash/logging.sh"
 #
 # Output format: [YYYY-MM-DD hh:mm:ss] [Level] (shellname:pid) Message
-#   - Timezone: local OS setting
+#   - Timezone: Asia/Tokyo (JST, UTC+9) — fixed regardless of OS setting
 #   - Level:    5-char left-padded (INFO , WARN , ERROR, DEBUG)
 #   - Streams:  WARN/ERROR -> stderr, INFO/DEBUG -> stdout
 #
@@ -16,7 +16,7 @@ _ops_log() {
     local msg="$*"
 
     local ts
-    ts=$(date +"%Y-%m-%d %H:%M:%S")
+    ts=$(TZ=Asia/Tokyo date +"%Y-%m-%d %H:%M:%S")
 
     # Caller script basename: BASH_SOURCE[2] is the script that called the
     # public log_xxx wrapper, which itself called _ops_log.
