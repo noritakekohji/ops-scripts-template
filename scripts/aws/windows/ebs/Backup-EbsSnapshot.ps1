@@ -17,15 +17,14 @@
     Snapshot every EBS volume currently attached to this instance.
 
 .PARAMETER NamePrefix
-    Prefix for snapshot Name tag and pruning filter. Use a stable value per
-    system, e.g. "prod-db".
+    Prefix for snapshot Name tag and pruning filter.
 
 .PARAMETER Region
     AWS region. Falls back to default region from env / profile.
 
 .PARAMETER RetentionDays
-    Snapshots created by this script with the same NamePrefix older than
-    this many days are deleted. 0 disables pruning.
+    Snapshots older than this with the same NamePrefix are deleted.
+    0 disables pruning.
 
 .PARAMETER Wait
     Wait until all created snapshots reach 'completed' state.
@@ -69,8 +68,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 
 # --- ensure AWS module ------------------------------------------------------
 if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
-    Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module is not installed' `
-        -Properties @{ remediation = 'Install-Module AWS.Tools.EC2 -Scope CurrentUser' }
+    Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module is not installed; install with: Install-Module AWS.Tools.EC2 -Scope CurrentUser'
     exit 10
 }
 Import-Module AWS.Tools.EC2
@@ -81,14 +79,12 @@ if ($Region) { $aws.Region = $Region }
 # --- resolve volumes --------------------------------------------------------
 $volumes = @()
 if ($PSCmdlet.ParameterSetName -eq 'Instance') {
-    Write-OpsLog -Level INFO -Message 'Resolving volumes for instance' `
-        -Properties @{ instanceId = $InstanceId }
+    Write-OpsLog -Level INFO -Message "Resolving volumes for instance: instanceId=$InstanceId"
     try {
         $instance = (Get-EC2Instance -InstanceId $InstanceId @aws).Instances[0]
     }
     catch {
-        Write-OpsLog -Level ERROR -Message 'Instance lookup failed' `
-            -Properties @{ instanceId = $InstanceId; error = $_.Exception.Message }
+        Write-OpsLog -Level ERROR -Message "Instance lookup failed: instanceId=$InstanceId error=$($_.Exception.Message)"
         exit 2
     }
     $volumes = @(
@@ -97,8 +93,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Instance') {
             ForEach-Object { $_.Ebs.VolumeId }
     )
     if ($volumes.Count -eq 0) {
-        Write-OpsLog -Level ERROR -Message 'No EBS volumes attached' `
-            -Properties @{ instanceId = $InstanceId }
+        Write-OpsLog -Level ERROR -Message "No EBS volumes attached: instanceId=$InstanceId"
         exit 2
     }
 }
@@ -106,12 +101,7 @@ else {
     $volumes = @($VolumeId)
 }
 
-Write-OpsLog -Level INFO -Message 'EBS snapshot start' -Properties @{
-    namePrefix    = $NamePrefix
-    region        = $Region
-    retentionDays = $RetentionDays
-    volumeCount   = $volumes.Count
-}
+Write-OpsLog -Level INFO -Message "EBS snapshot start: namePrefix=$NamePrefix region=$Region retentionDays=$RetentionDays volumeCount=$($volumes.Count)"
 
 # --- create snapshots -------------------------------------------------------
 $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
@@ -139,13 +129,11 @@ foreach ($vol in $volumes) {
                 -Description $description `
                 -TagSpecification $tagSpec `
                 @aws
-            Write-OpsLog -Level INFO -Message 'Snapshot initiated' `
-                -Properties @{ snapshotId = $snap.SnapshotId; volumeId = $vol }
+            Write-OpsLog -Level INFO -Message "Snapshot initiated: snapshotId=$($snap.SnapshotId) volumeId=$vol"
             $created += $snap.SnapshotId
         }
         catch {
-            Write-OpsLog -Level ERROR -Message 'Snapshot creation failed' `
-                -Properties @{ volumeId = $vol; error = $_.Exception.Message }
+            Write-OpsLog -Level ERROR -Message "Snapshot creation failed: volumeId=$vol error=$($_.Exception.Message)"
             exit 4
         }
     }
@@ -153,29 +141,25 @@ foreach ($vol in $volumes) {
 
 # --- optional wait ----------------------------------------------------------
 if ($Wait -and $created.Count -gt 0) {
-    Write-OpsLog -Level INFO -Message 'Waiting for snapshots to complete' `
-        -Properties @{ count = $created.Count }
+    Write-OpsLog -Level INFO -Message "Waiting for snapshots to complete: count=$($created.Count)"
     while ($true) {
         Start-Sleep -Seconds 15
         $statuses = Get-EC2Snapshot -SnapshotId $created @aws
         $errored = @($statuses | Where-Object { $_.State -eq 'error' })
         if ($errored.Count -gt 0) {
-            Write-OpsLog -Level ERROR -Message 'Snapshot(s) failed' `
-                -Properties @{ snapshotIds = ($errored.SnapshotId -join ',') }
+            Write-OpsLog -Level ERROR -Message "Snapshot(s) failed: snapshotIds=$($errored.SnapshotId -join ',')"
             exit 3
         }
         $pending = @($statuses | Where-Object { $_.State -eq 'pending' })
         if ($pending.Count -eq 0) { break }
-        Write-OpsLog -Level INFO -Message 'Snapshots pending' `
-            -Properties @{ pending = $pending.Count }
+        Write-OpsLog -Level INFO -Message "Snapshots pending: count=$($pending.Count)"
     }
     Write-OpsLog -Level INFO -Message 'All snapshots completed'
 }
 
 # --- prune old snapshots ----------------------------------------------------
 if ($RetentionDays -gt 0) {
-    Write-OpsLog -Level INFO -Message 'Pruning old snapshots' `
-        -Properties @{ namePrefix = $NamePrefix; retentionDays = $RetentionDays }
+    Write-OpsLog -Level INFO -Message "Pruning old snapshots: namePrefix=$NamePrefix retentionDays=$RetentionDays"
 
     $cutoff = (Get-Date).ToUniversalTime().AddDays(-$RetentionDays)
     $filter = @(
@@ -190,17 +174,14 @@ if ($RetentionDays -gt 0) {
         if ($PSCmdlet.ShouldProcess($s.SnapshotId, "Delete snapshot (started $($s.StartTime))")) {
             try {
                 Remove-EC2Snapshot -SnapshotId $s.SnapshotId -Force @aws | Out-Null
-                Write-OpsLog -Level INFO -Message 'Deleted snapshot' `
-                    -Properties @{ snapshotId = $s.SnapshotId; startedAt = $s.StartTime }
+                Write-OpsLog -Level INFO -Message "Deleted snapshot: snapshotId=$($s.SnapshotId) startedAt=$($s.StartTime)"
             }
             catch {
-                Write-OpsLog -Level WARN -Message 'Snapshot delete failed' `
-                    -Properties @{ snapshotId = $s.SnapshotId; error = $_.Exception.Message }
+                Write-OpsLog -Level WARN -Message "Snapshot delete failed: snapshotId=$($s.SnapshotId) error=$($_.Exception.Message)"
             }
         }
     }
 }
 
-Write-OpsLog -Level INFO -Message 'EBS snapshot backup complete' `
-    -Properties @{ created = $created.Count }
+Write-OpsLog -Level INFO -Message "EBS snapshot backup complete: created=$($created.Count)"
 exit 0
