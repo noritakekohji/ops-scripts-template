@@ -33,3 +33,9 @@
 | 機能 | スクリプト | 仕様書 |
 |---|---|---|
 | S3 アップロード（リストファイル + per-entry options） | `S3Upload.ps1` / `s3upload.sh` | [S3Upload.md](S3Upload.md) |
+
+## デプロイ
+
+| 機能 | スクリプト | 仕様書 |
+|---|---|---|
+| ローカル配備（`<opt_root>` 配下に script / conf / lib / tests を再配置） | `Deploy-Scripts.ps1` / `deploy_scripts.sh` | [Deploy-Scripts.md](Deploy-Scripts.md) |
