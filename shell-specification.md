@@ -403,7 +403,7 @@ Bash 側は `getopts` ループで `_set=1` を立て、未設定の場合のみ
 設定が読み込まれたことは Phase 2 の冒頭で 1 行ログに残す：
 
 ```
-[2026-05-09 12:14:05] [INFO ] (Backup-Ami.ps1:1234) Config loaded: env=prd keys=4
+[2026-05-09 12:14:05] [INFO ] (Backup-Ami.ps1:1234) Config loaded: env=production keys=4
 ```
 
 ### 禁止事項

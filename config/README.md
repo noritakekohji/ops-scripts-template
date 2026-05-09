@@ -6,17 +6,23 @@
 
 ```
 config/
-├── common/                          # 全環境共通の既定値
-│   ├── ops.conf                     # 全スクリプト共通（Region 等）
-│   ├── Backup-Ami.conf              # スクリプト別の既定値
-│   ├── Backup-EbsSnapshot.conf
-│   └── Rotate-Log.conf
-├── dev/                             # 環境固有の上書き
-├── stg/
-└── prd/
-    ├── ops.conf
-    └── Backup-Ami.conf
+├── common/                       # 全環境共通の既定値（基本コメントアウト）
+│   ├── ops.conf                  # 全スクリプト共通の既定（Region 等）
+│   ├── backup_ami.conf           # スクリプト別の既定値（PS / Bash 共有）
+│   ├── backup_ebs_snapshot.conf
+│   ├── ec2ctl.conf
+│   ├── rotate_log.conf
+│   ├── s3upload.conf
+│   ├── sqlserverctl.conf
+│   └── tomcatctl.conf
+├── dev/                          # 開発：短い retention、待機なし、暗号化なし
+├── staging/                      # ステージング：本番に近いが短期保持
+└── production/                   # 本番：長期 retention、KMS 暗号化、長い待機
 ```
+
+各環境ディレクトリには **差分のみ** 配置すれば良い（CLI / 行内 / `<env>/<script>.conf` / `<env>/ops.conf` / `common/<script>.conf` / `common/ops.conf` / 既定値、の順で解決）。
+
+`OPS_ENV` で切替：`OPS_ENV=dev` / `staging` / `production`。未設定なら `common/` のみ参照。
 
 ## 解決の優先順位（高優先 → 低優先）
 
@@ -34,7 +40,7 @@ CLI で明示されたものは常に勝つ（運用中の緊急上書きが効�
 `OPS_ENV` 環境変数で切り替え。未設定なら `common` のみ参照されます。
 
 ```bash
-OPS_ENV=prd ./scripts/aws/bash/backup_ami.sh -i i-0abc -p prod-web
+OPS_ENV=production ./scripts/aws/bash/backup_ami.sh -i i-0abc -p prod-web
 ```
 
 ## ファイルフォーマット
@@ -83,13 +89,13 @@ config 内のキーは **PascalCase**（PowerShell の CLI オプション名と
 ## セキュリティ
 
 - **シークレットを書かない**（パスワード、トークン、API キー）。Vault 参照のみ可
-- 機密になりうる値があれば、参照キー形式（例：`Password = ref://vault/prd/db/password`）で書き、スクリプト側が `lib/secrets.{psm1,sh}` 経由で実値を取得する設計を v1.1+ で導入予定
+- 機密になりうる値があれば、参照キー形式（例：`Password = ref://vault/production/db/password`）で書き、スクリプト側が `lib/secrets.{psm1,sh}` 経由で実値を取得する設計を v1.1+ で導入予定
 - gitleaks の allowlist は `config/<env>/secrets.ref.yml` を既に除外。`.conf` も今後参照キーが増えてきたら追加検討
 
 ## 例
 
 ```ini
-# config/prd/Backup-Ami.conf
+# config/production/Backup-Ami.conf
 # 本番環境の AMI バックアップ既定値（運用ルール）
 
 Region             = ap-northeast-1
@@ -113,7 +119,7 @@ Region = ap-northeast-1
 ./backup_ami.sh -i i-0abc -p prod-web -r ap-northeast-1 -d 7 -m 5 -w
 
 # After
-OPS_ENV=prd ./backup_ami.sh -i i-0abc -p prod-web
+OPS_ENV=production ./backup_ami.sh -i i-0abc -p prod-web
 ```
 
 ## 取得 API

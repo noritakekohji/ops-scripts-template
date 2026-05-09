@@ -43,8 +43,8 @@ ops-scripts/
 ├── config/                        # 環境別設定（コードと完全分離）
 │   ├── common/                    # 全環境共通のパラメータ
 │   ├── dev/
-│   ├── stg/
-│   └── prd/
+│   ├── staging/
+│   └── production/
 │       └── secrets.ref.yml        # Vault 等への「参照」のみ。実値は置かない
 │
 ├── inventory/                     # サーバ一覧
@@ -126,11 +126,11 @@ ops-scripts/
 config/
 ├── common/              # 全環境共通（タイムアウト値、ログレベル既定 等）
 ├── dev/
-├── stg/
-└── prd/
+├── staging/
+└── production/
     ├── tomcat.yml       # 本番 Tomcat の接続先・JVM パラメータ等
     ├── sqlserver.yml
-    └── secrets.ref.yml  # 例：sqlserver_password: ref://vault/prd/sqlserver
+    └── secrets.ref.yml  # 例：sqlserver_password: ref://vault/production/sqlserver
 ```
 
 **ルール**

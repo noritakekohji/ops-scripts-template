@@ -96,8 +96,8 @@
 
 ### cron（業務時間に合わせて起動・停止）
 ```cron
-0  9 * * 1-5  OPS_ENV=prd /opt/ops-scripts/scripts/aws/bash/ec2ctl.sh start i-0abc,i-0def -w
-0 21 * * 1-5  OPS_ENV=prd /opt/ops-scripts/scripts/aws/bash/ec2ctl.sh stop  i-0abc,i-0def -w
+0  9 * * 1-5  OPS_ENV=production /opt/ops-scripts/scripts/aws/bash/ec2ctl.sh start i-0abc,i-0def -w
+0 21 * * 1-5  OPS_ENV=production /opt/ops-scripts/scripts/aws/bash/ec2ctl.sh stop  i-0abc,i-0def -w
 ```
 
 ## 8. 出力例

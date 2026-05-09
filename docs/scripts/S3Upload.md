@@ -127,7 +127,7 @@
 
 ### Bash：リスト一括（cron）
 ```cron
-0 4 * * *  OPS_ENV=prd /opt/ops-scripts/scripts/aws/bash/s3upload.sh -L /etc/ops-scripts/s3-list.txt >> /var/log/ops/s3upload.log 2>&1
+0 4 * * *  OPS_ENV=production /opt/ops-scripts/scripts/aws/bash/s3upload.sh -L /etc/ops-scripts/s3-list.txt >> /var/log/ops/s3upload.log 2>&1
 ```
 
 ### rotate_log との組み合わせ
@@ -139,7 +139,7 @@
 
 ### 通常成功（複数アップロード）
 ```
-[... ] Config loaded: env=prd keys=4
+[... ] Config loaded: env=production keys=4
 [... ] Args validated: path='' pathList='/etc/ops-scripts/s3-list.txt' bucket='my-backups' ...
 [... ] Pre-check passed: entryCount=3
 [... ] Main start
