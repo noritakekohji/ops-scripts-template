@@ -1,20 +1,20 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    SQL Server lifecycle control: start / stop / restart / status (idempotent).
+    SQL Server ライフサイクル制御：start / stop / restart / status（冪等）。
 
 .DESCRIPTION
-    Controls SQL Server as a Windows service via Get-Service / Start-Service /
-    Stop-Service / Restart-Service.
+    Windows サービスとして稼働する SQL Server を Get-Service /
+    Start-Service / Stop-Service / Restart-Service で制御する。
 
-    Service name conventions:
+    サービス名の例:
       - default instance: MSSQLSERVER
       - named instance:   MSSQL$<INSTANCE>
       - SQL Agent:        SQLSERVERAGENT (default) or SQLAgent$<INSTANCE>
 
     Usage: SqlServerCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
 
-    Idempotency:
+    冪等性:
       start    skip if Running
       stop     skip if Stopped
       restart  always perform

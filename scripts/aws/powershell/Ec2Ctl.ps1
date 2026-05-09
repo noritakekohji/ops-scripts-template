@@ -1,7 +1,7 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    EC2 lifecycle control: start / stop / restart / status (idempotent).
+    EC2 ライフサイクル制御：start / stop / restart / status（冪等）。
 
 .DESCRIPTION
     Usage: Ec2Ctl.ps1 <action> <instanceId[,instanceId,...]> [options]

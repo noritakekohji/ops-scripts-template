@@ -1,15 +1,15 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    Tomcat lifecycle control: start / stop / restart / status (idempotent).
+    Tomcat ライフサイクル制御：start / stop / restart / status（冪等）。
 
 .DESCRIPTION
-    Controls Tomcat as a Windows service via Get-Service / Start-Service /
-    Stop-Service / Restart-Service.
+    Windows サービスとして稼働する Tomcat を Get-Service /
+    Start-Service / Stop-Service / Restart-Service で制御する。
 
     Usage: TomcatCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
 
-    Idempotency:
+    冪等性:
       start    skip if Running
       stop     skip if Stopped
       restart  always perform (no idempotent skip)

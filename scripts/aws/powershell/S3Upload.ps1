@@ -1,11 +1,11 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    Upload one or more local files to Amazon S3, with per-entry overrides.
+    1 つ以上のローカルファイルを Amazon S3 にアップロードする（行単位上書き対応）。
 
 .DESCRIPTION
-    Targets are resolved from -Path (single file) and / or -PathList (text
-    file). Each list line is:
+    対象は -Path（単一ファイル）と -PathList（テキストファイル）から
+    解決する。リストの各行は次の形式:
 
         <local_path> [Key=Value ...]
 
@@ -15,12 +15,12 @@
 
     Resolution: per-line > CLI > config/<env>/s3upload.conf > script default.
 
-    Modes:
+    モード:
       archive  S3 key = <prefix>/<filename>.<UTC yyyyMMdd-HHmmss>   (default)
       mirror   S3 key = <prefix>/<filename>                          (overwrite)
 
-    Authentication: relies on the default AWS credential chain.
-    Empty local files are skipped (idempotent).
+    認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）。
+    空のローカルファイルはスキップ（冪等）。
 
 .EXAMPLE
     .\S3Upload.ps1 -Path C:\backup\db.bak -Bucket my-backups -Prefix db/prod

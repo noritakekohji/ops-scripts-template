@@ -1,21 +1,21 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    Creates EBS snapshot(s) and optionally prunes old ones.
+    EBS スナップショットを作成し、必要に応じて古いものを世代削除する。
 
 .DESCRIPTION
-    Behavior parameters can be set in CLI args, in config files, or fall
-    back to script defaults. See config/README.md for resolution order.
-    Per-run targets (-VolumeId / -InstanceId / -NamePrefix) are CLI-only.
+    挙動パラメータは CLI、config ファイル、もしくはスクリプト既定値で
+    指定可能。優先順位は config/README.md を参照。
+    実行ごとの対象 (-VolumeId / -InstanceId / -NamePrefix) は CLI 専用。
 
-    Authentication: relies on the default AWS credential chain.
+    認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）。
 
-    Flow (per shell-specification.md):
-      1. Argument validation
-      2. Environment setup (logger, config)
-      3. Pre-check               (module / source / idempotency)
-      4. Main processing         (create snapshots / wait / prune)
-      5. Post-processing         (final status log)
+    フロー（shell-specification.md 準拠）:
+      1. 引数バリデーション
+      2. 環境セットアップ (ロガー / config)
+      3. プレチェック            (モジュール / 対象 / 冪等性)
+      4. メイン処理              (スナップショット作成 / 待機 / pruning)
+      5. 後処理                  (最終 status ログ)
 #>
 [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Volume')]
 param(

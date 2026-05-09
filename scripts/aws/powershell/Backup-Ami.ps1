@@ -1,25 +1,25 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    Creates an AMI backup of an EC2 instance and optionally prunes old AMIs.
+    EC2 インスタンスから AMI を作成し、必要に応じて古い AMI を世代削除する。
 
 .DESCRIPTION
-    Behavior parameters can be set in CLI args, in config files, or fall
-    back to script defaults. Resolution order (high -> low):
+    挙動パラメータは CLI、config ファイル、もしくはスクリプト既定値で
+    指定可能。優先順位（高 → 低）:
         CLI -> config/<env>/Backup-Ami.conf -> config/<env>/ops.conf
             -> config/common/Backup-Ami.conf -> config/common/ops.conf
             -> script default
 
-    Per-run targets (-InstanceId / -NamePrefix) are CLI-only.
+    実行ごとの対象 (-InstanceId / -NamePrefix) は CLI 専用。
 
-    Authentication: relies on the default AWS credential chain.
+    認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）。
 
-    Flow (per shell-specification.md):
-      1. Argument validation
-      2. Environment setup (logger, config, strict mode)
-      3. Pre-check               (module / instance / idempotency)
-      4. Main processing         (create AMI / wait / prune)
-      5. Post-processing         (final status log)
+    フロー（shell-specification.md 準拠）:
+      1. 引数バリデーション
+      2. 環境セットアップ (ロガー / config / strict mode)
+      3. プレチェック            (モジュール / インスタンス / 冪等性)
+      4. メイン処理              (AMI 作成 / 待機 / pruning)
+      5. 後処理                  (最終 status ログ)
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(

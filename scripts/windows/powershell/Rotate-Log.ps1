@@ -1,31 +1,31 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    Rotate log files based on size or age, with optional gzip compression.
+    ログファイルをサイズまたは経過時間でローテートする（任意で gzip 圧縮）。
 
 .DESCRIPTION
-    Targets are resolved from -Path (single file or directory) and / or
-    -PathList (text file). Each line in the list file may set per-target
-    overrides via 'Key=Value' tokens after the path:
+    対象は -Path（単一ファイル or ディレクトリ）および/または
+    -PathList（リストファイル）から解決。リスト各行で対象ごとの
+    上書きを `Key=Value` 形式で指定可能:
 
         /var/log/myapp/app.log
         /var/log/critical/audit.log MaxSizeMB=200 RetentionCount=90
         /opt/tomcat/logs/catalina.out MaxSizeMB=500 CopyTruncate=true RetentionCount=14
         /var/log/nginx Pattern=access*.log MaxAgeDays=1 RetentionCount=30
 
-    Recognised keys: Pattern, MaxSizeMB, MaxAgeDays, Compress,
-    RetentionCount, CopyTruncate. Resolution: per-line > CLI > config >
-    script default. Unknown keys / invalid values are warned and skipped
-    (the entry is still processed using inherited values).
+    受け付けるキー: Pattern, MaxSizeMB, MaxAgeDays, Compress,
+    RetentionCount, CopyTruncate。解決順位: 行内 > CLI > config >
+    既定値。不明なキー・不正な値は WARN を出してそのキーだけスキップ
+    （エントリ自体は継承値で実行される）。
 
-    Rotated filename: <name>.YYYYMMDD-HHMMSS [.gz] (UTC).
+    ローテート後のファイル名: <name>.YYYYMMDD-HHMMSS [.gz]（JST）。
 
-    Flow (per shell-specification.md):
-      1. Argument validation
-      2. Environment setup (logger, config)
-      3. Pre-check               (resolve targets; idempotency = no targets)
-      4. Main processing         (rotate / compress / prune per target)
-      5. Post-processing         (final status log)
+    フロー（shell-specification.md 準拠）:
+      1. 引数バリデーション
+      2. 環境セットアップ (ロガー / config)
+      3. プレチェック            (対象解決、冪等 = 対象なし)
+      4. メイン処理              (対象ごとに rotate / compress / prune)
+      5. 後処理                  (最終 status ログ)
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
