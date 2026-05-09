@@ -42,6 +42,7 @@ include:
   - local: ci/lint/shell.gitlab-ci.yml
   - local: ci/lint/sql.gitlab-ci.yml
   - local: ci/lint/yaml.gitlab-ci.yml
+  - local: ci/lint/template.gitlab-ci.yml
   # security
   - local: ci/security/secrets.gitlab-ci.yml
   - local: ci/security/deps.gitlab-ci.yml
