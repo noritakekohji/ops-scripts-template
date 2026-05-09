@@ -360,12 +360,16 @@ Description   = "weekly backup"       # 値の前後を "..." または '...' �
 
 ### 命名
 
-| スクリプト | config ファイル名 |
-|---|---|
-| `Backup-Ami.ps1` | `Backup-Ami.conf` |
-| `backup_ami.sh` | `backup_ami.conf` |
+config ファイルは **Windows / Linux ペアで共有**（snake_case 小文字に統一）。
 
-PowerShell と Bash の同機能ペアでも config は別ファイル（命名規約が違うため）。
+| 機能 | スクリプト | 共有 config |
+|---|---|---|
+| AMI バックアップ | `Backup-Ami.ps1` / `backup_ami.sh` | `backup_ami.conf` |
+| EBS スナップショット | `Backup-EbsSnapshot.ps1` / `backup_ebs_snapshot.sh` | `backup_ebs_snapshot.conf` |
+| ログローテーション | `Rotate-Log.ps1` / `rotate_log.sh` | `rotate_log.conf` |
+| EC2 ライフサイクル | `Ec2Ctl.ps1` / `ec2ctl.sh` | `ec2ctl.conf` |
+
+キー名は **PascalCase**（`Region`、`RetentionDays`、`MaxSizeMB` …）で PS と Bash 共通。
 
 ### スコープのルール
 

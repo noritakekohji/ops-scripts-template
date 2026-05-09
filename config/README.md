@@ -67,18 +67,18 @@ NoReboot = true
 | ファイル | 役割 |
 |---|---|
 | `ops.conf` | 全スクリプト共通の既定値（Region 等） |
-| `<ScriptName>.conf` | そのスクリプト固有の既定値（PowerShell：PascalCase、Bash：snake_case をそのまま） |
+| `<feature>.conf` | その機能固有の既定値（**Windows / Linux 共有、snake_case 小文字**） |
 
-PowerShell スクリプト名と Bash スクリプト名はファイル拡張子なしの名前で識別されます：
+**PowerShell と Bash のペアは同じ config ファイルを共有**します（snake_case の小文字に統一）。
 
-| スクリプト | config ファイル名 |
-|---|---|
-| `Backup-Ami.ps1` | `Backup-Ami.conf` |
-| `backup_ami.sh` | `backup_ami.conf` |
-| `Rotate-Log.ps1` | `Rotate-Log.conf` |
-| `rotate_log.sh` | `rotate_log.conf` |
+| 機能 | スクリプト | 共有 config |
+|---|---|---|
+| AMI バックアップ | `Backup-Ami.ps1` / `backup_ami.sh` | `backup_ami.conf` |
+| EBS スナップショット | `Backup-EbsSnapshot.ps1` / `backup_ebs_snapshot.sh` | `backup_ebs_snapshot.conf` |
+| ログローテーション | `Rotate-Log.ps1` / `rotate_log.sh` | `rotate_log.conf` |
+| EC2 ライフサイクル | `Ec2Ctl.ps1` / `ec2ctl.sh` | `ec2ctl.conf` |
 
-PowerShell / Bash で同じ機能を持つペアでも、**設定ファイルは別々**になります。これは命名規約が違うためで、両方を維持するのが負担なら片方だけ書いてください（ペアの片方だけ運用するケースが多い前提）。
+config 内のキーは **PascalCase**（PowerShell の CLI オプション名と一致：`Region`、`RetentionDays`、`MaxSizeMB` 等）。Bash 側もこの PascalCase キーを参照する。
 
 ## セキュリティ
 

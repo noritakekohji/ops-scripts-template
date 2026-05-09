@@ -54,7 +54,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 # --- Phase 2: load config and apply to unspecified parameters ---------------
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
-$cfg = Get-OpsConfig -Name 'Backup-EbsSnapshot'
+$cfg = Get-OpsConfig -Name 'backup_ebs_snapshot'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
 if (-not $PSBoundParameters.ContainsKey('Region')             -and $cfg.ContainsKey('Region'))             { $Region             = [string]$cfg['Region'] }
 if (-not $PSBoundParameters.ContainsKey('RetentionDays')      -and $cfg.ContainsKey('RetentionDays'))      { $RetentionDays      = [int]$cfg['RetentionDays'] }

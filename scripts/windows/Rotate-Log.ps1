@@ -50,7 +50,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 # --- Phase 2: load config and apply to unspecified parameters ---------------
 $configModulePath = Join-Path $PSScriptRoot '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
-$cfg = Get-OpsConfig -Name 'Rotate-Log'
+$cfg = Get-OpsConfig -Name 'rotate_log'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
 if (-not $PSBoundParameters.ContainsKey('Pattern')        -and $cfg.ContainsKey('Pattern'))        { $Pattern        = [string]$cfg['Pattern'] }
 if (-not $PSBoundParameters.ContainsKey('MaxSizeMB')      -and $cfg.ContainsKey('MaxSizeMB'))      { $MaxSizeMB      = [int]$cfg['MaxSizeMB'] }

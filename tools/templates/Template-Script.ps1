@@ -60,10 +60,11 @@ Import-Module (Resolve-Path $libPath).Path -Force
 # Load config and apply to unspecified parameters.
 # Resolution: CLI > config/<env>/<Name>.conf > config/<env>/ops.conf
 #           > config/common/<Name>.conf > config/common/ops.conf > script default.
-# TEMPLATE: change 'Template-Script' to your script's name (no extension).
+# TEMPLATE: change 'template_script' to your feature's snake_case name.
+# The same name is shared between the PS and Bash pair (config/<env>/<name>.conf).
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
-$cfg = Get-OpsConfig -Name 'Template-Script'
+$cfg = Get-OpsConfig -Name 'template_script'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
 # TEMPLATE: for each behavior parameter, copy this pattern:
 # if (-not $PSBoundParameters.ContainsKey('<ParamName>') -and $cfg.ContainsKey('<ParamName>')) {
