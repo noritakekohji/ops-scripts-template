@@ -87,4 +87,19 @@ function _Find-OpsRepoRoot {
     throw 'Cannot determine ops-scripts repo root from Config.psm1 location'
 }
 
-Export-ModuleMember -Function Get-OpsConfig
+function Get-OpsRepoRoot {
+    <#
+    .SYNOPSIS
+        ops-scripts のリポジトリ root を解決して返す。
+
+    .DESCRIPTION
+        config の `PathList` のような相対パスを絶対化したいときに使う。
+        本モジュールの位置を起点に親方向に `.git` または
+        `shell-specification.md` を探す。
+    #>
+    [CmdletBinding()]
+    param()
+    return _Find-OpsRepoRoot
+}
+
+Export-ModuleMember -Function Get-OpsConfig, Get-OpsRepoRoot

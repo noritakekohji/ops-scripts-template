@@ -22,7 +22,6 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)]
     [string]$PathList,
 
     [string]$OptRoot = 'C:\ProgramData\ops-scripts',
@@ -53,6 +52,13 @@ if (-not $PSBoundParameters.ContainsKey('IncludeEnvs') -and $cfg.ContainsKey('In
 if (-not $PSBoundParameters.ContainsKey('Mode')        -and $cfg.ContainsKey('Mode'))        { $Mode        = [string]$cfg['Mode'] }
 if (-not $PSBoundParameters.ContainsKey('Backup')      -and $cfg.ContainsKey('Backup')) {
     if ([System.Convert]::ToBoolean($cfg['Backup'])) { $Backup = [switch]::Present }
+}
+# CLI で -PathList 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
+if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
+    $PathList = [string]$cfg['PathList']
+    if ($PathList -and -not [System.IO.Path]::IsPathRooted($PathList)) {
+        $PathList = Join-Path (Get-OpsRepoRoot) $PathList
+    }
 }
 
 $exitCode = 0
@@ -256,6 +262,10 @@ try {
         # --- フェーズ 3: プレチェック ---
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
+        if (-not $PathList) {
+            Write-OpsLog -Level ERROR -Message 'Specify -PathList or set PathList in config'
+            $exitCode = 1; $status = 'failed'; break
+        }
         if (-not (Test-Path -LiteralPath $PathList -PathType Leaf)) {
             Write-OpsLog -Level ERROR -Message "List file not found: $PathList"
             $exitCode = 2; $status = 'failed'; break

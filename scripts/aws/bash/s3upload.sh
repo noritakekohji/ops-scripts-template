@@ -87,6 +87,13 @@ load_ops_config "s3upload"
 [[ "$sse_set" -eq 0    && -n "${OPS_CONFIG[ServerSideEncryption]:-}" ]] && sse="${OPS_CONFIG[ServerSideEncryption]}"
 [[ "$kms_set" -eq 0    && -n "${OPS_CONFIG[KmsKeyId]:-}"             ]] && kms_key_id="${OPS_CONFIG[KmsKeyId]}"
 [[ "$mode_set" -eq 0   && -n "${OPS_CONFIG[Mode]:-}"                 ]] && mode="${OPS_CONFIG[Mode]}"
+# -L 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
+if [[ -z "$path_list" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
+    path_list="${OPS_CONFIG[PathList]}"
+    if [[ "$path_list" != /* ]]; then
+        path_list="$(ops_repo_root)/$path_list"
+    fi
+fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 

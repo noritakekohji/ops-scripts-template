@@ -227,11 +227,18 @@ load_ops_config "deploy_scripts"
 [[ "$opt_root_set" -eq 0     && -n "${OPS_CONFIG[OptRoot]:-}"     ]] && opt_root="${OPS_CONFIG[OptRoot]}"
 [[ "$include_envs_set" -eq 0 && -n "${OPS_CONFIG[IncludeEnvs]:-}" ]] && include_envs="${OPS_CONFIG[IncludeEnvs]}"
 [[ "$mode_set" -eq 0         && -n "${OPS_CONFIG[Mode]:-}"        ]] && mode="${OPS_CONFIG[Mode]}"
+# -L 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
+if [[ -z "$list_file" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
+    list_file="${OPS_CONFIG[PathList]}"
+    if [[ "$list_file" != /* ]]; then
+        list_file="$(ops_repo_root)/$list_file"
+    fi
+fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 
 # 入力検証
-[[ -z "$list_file" ]] && { log_error "Missing -L"; status="failed"; exit 1; }
+[[ -z "$list_file" ]] && { log_error "Specify -L or set PathList in config"; status="failed"; exit 1; }
 case "$mode" in script-only|with-config|with-tests|all) ;;
     *) log_error "Invalid mode: $mode"; status="failed"; exit 1 ;;
 esac

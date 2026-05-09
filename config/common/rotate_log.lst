@@ -1,0 +1,25 @@
+# rotate_log.sh / Rotate-Log.ps1 のサンプルリストファイル
+#
+# 形式: <log_path> [Key=Value ...]
+# 受け付けるキー（CLI と同じ名前、case-sensitive）:
+#   Pattern, MaxSizeMB, MaxAgeDays, Compress, RetentionCount, CopyTruncate
+#
+# 解決順位（高 → 低）:
+#   行内 Key=Value > CLI 引数 > config の同名キー > 既定値
+#
+# このサンプルでは全エントリをコメントアウトしている（無設定で起動しても
+# no-op で安全に終了する）。実運用時は本ファイルを編集するか、
+# 環境別に config/<env>/rotate_log.lst を作って rotate_log.conf の
+# PathList を上書きすること。
+
+# --- 単一ファイルを毎日ローテート + 7 世代保持 ---
+# /var/log/myapp/app.log
+
+# --- size と retention だけ上書き ---
+# /var/log/critical/audit.log MaxSizeMB=200 RetentionCount=90
+
+# --- Tomcat の catalina.out のように開かれっぱなしのファイル ---
+# /opt/tomcat/logs/catalina.out MaxSizeMB=500 CopyTruncate=true Compress=true RetentionCount=14
+
+# --- ディレクトリで pattern 上書き ---
+# /var/log/nginx Pattern=access*.log MaxAgeDays=1 Compress=true RetentionCount=30

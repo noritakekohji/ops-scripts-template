@@ -60,6 +60,13 @@ foreach ($k in 'Bucket','Prefix','Region','StorageClass','ServerSideEncryption',
         Set-Variable -Name $k -Value ([string]$cfg[$k])
     }
 }
+# CLI で -PathList 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
+if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
+    $PathList = [string]$cfg['PathList']
+    if ($PathList -and -not [System.IO.Path]::IsPathRooted($PathList)) {
+        $PathList = Join-Path (Get-OpsRepoRoot) $PathList
+    }
+}
 
 $defaults = @{
     Bucket               = $Bucket

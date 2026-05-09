@@ -86,6 +86,13 @@ fi
 if [[ "$copy_truncate_set" -eq 0 && -n "${OPS_CONFIG[CopyTruncate]:-}" ]]; then
     case "${OPS_CONFIG[CopyTruncate]}" in true|TRUE|True|1) copy_truncate=1 ;; *) copy_truncate=0 ;; esac
 fi
+# -L 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
+if [[ -z "$path_list" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
+    path_list="${OPS_CONFIG[PathList]}"
+    if [[ "$path_list" != /* ]]; then
+        path_list="$(ops_repo_root)/$path_list"
+    fi
+fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 

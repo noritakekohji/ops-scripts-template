@@ -1,0 +1,21 @@
+# s3upload.sh / S3Upload.ps1 のサンプルリストファイル
+#
+# 形式: <local_path> [Key=Value ...]
+# 受け付けるキー（CLI / config と同じ名前、case-sensitive）:
+#   Bucket, Prefix, Region, StorageClass, ServerSideEncryption, KmsKeyId, Mode
+#
+# 解決順位（高 → 低）:
+#   行内 Key=Value > CLI 引数 > config の同名キー > 既定値
+#
+# このサンプルでは全エントリをコメントアウトしている。実運用時は本ファイルを
+# 編集するか、環境別に config/<env>/s3upload.lst を作って s3upload.conf の
+# PathList を上書きすること。
+
+# --- DB バックアップ → 専用バケットに IA で archive ---
+# /var/backups/db/full.bak Bucket=my-backups Prefix=db/prod StorageClass=STANDARD_IA Mode=archive
+
+# --- ログを KMS 暗号化で archive ---
+# /var/log/myapp/app.log.gz Bucket=my-backups Prefix=logs/myapp ServerSideEncryption=aws:kms KmsKeyId=alias/ops Mode=archive
+
+# --- 設定ファイルを mirror（上書き sync） ---
+# /etc/myapp/config.yml Bucket=my-config Prefix=prod/myapp Mode=mirror

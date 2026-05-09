@@ -19,6 +19,15 @@
 #
 # 必要環境: Bash 4+（連想配列）
 
+# config 内の相対パスを絶対化する用のヘルパ：
+# 本ファイルの位置から親を辿って `.git` または `shell-specification.md`
+# を持つディレクトリを repo root として返す。
+ops_repo_root() {
+    local lib_dir
+    lib_dir=$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+    _ops_find_repo_root "$lib_dir"
+}
+
 # 内部: 与えられた起点から親ディレクトリを辿り、リポジトリ root を検出
 _ops_find_repo_root() {
     local current="$1"
