@@ -127,10 +127,3 @@ Pruning は **`tag:CreatedBy=ops-scripts` AND `tag:NamePrefix=<指定値>`** の
 - 共通仕様: [shell-specification.md](../../shell-specification.md)
 - ロガー: [`lib/powershell/Logging.psm1`](../../lib/powershell/Logging.psm1)
 
-## 10. 改訂履歴
-
-| 版 | 日付 | 内容 |
-|---|---|---|
-| v1.2 | 2026-05-09 | 5 段階フロー化、`-MinIntervalMinutes` 追加（既定 5 分）、配置を `scripts/aws/windows/` に移動 |
-| v1.1 | 2026-05-09 | ロガー仕様 v1.0 に合わせて `-Properties` 廃止、Message 内埋め込みに統一 |
-| v1.0 | 2026-05-09 | 初版 |

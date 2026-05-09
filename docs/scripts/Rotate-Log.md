@@ -194,10 +194,3 @@ schtasks /Create /TN "RotateLogs" /TR "pwsh -NoProfile -ExecutionPolicy Bypass -
 - ペア（Linux 版）: [`rotate_log.md`](rotate_log.md)
 - 共通仕様: [shell-specification.md](../../shell-specification.md)
 
-## 12. 改訂履歴
-
-| 版 | 日付 | 内容 |
-|---|---|---|
-| v1.2 | 2026-05-09 | 5 段階フロー化（try/finally + status 追跡 + final ログ）、配置を `scripts/windows/` に移動 |
-| v1.1 | 2026-05-09 | `-PathList` 追加（リストファイルによる複数対象一括処理） |
-| v1.0 | 2026-05-09 | 初版 |

@@ -136,8 +136,3 @@
 - 共通仕様: [shell-specification.md](../../shell-specification.md)
 - 設定ファイル: [config/README.md](../../config/README.md)
 
-## 11. 改訂履歴
-
-| 版 | 日付 | 内容 |
-|---|---|---|
-| v1.0 | 2026-05-09 | 初版（旧 Start-Ec2Instance / Stop-Ec2Instance を統合、restart / status を追加） |

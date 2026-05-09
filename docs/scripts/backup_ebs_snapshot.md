@@ -116,9 +116,3 @@ scripts/aws/linux/backup_ebs_snapshot.sh
 - 共通仕様: [shell-specification.md](../../shell-specification.md)
 - AMI 側: [`backup_ami.md`](backup_ami.md)
 
-## 10. 改訂履歴
-
-| 版 | 日付 | 内容 |
-|---|---|---|
-| v1.2 | 2026-05-09 | 5 段階フロー化、`-m` 追加（既定 5 分）、配置を `scripts/aws/linux/` に移動 |
-| v1.0 | 2026-05-09 | 初版 |
