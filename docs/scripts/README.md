@@ -15,6 +15,13 @@
 |---|---|---|
 | EC2 統合制御（start / stop / restart / status） | `Ec2Ctl.ps1` / `ec2ctl.sh` | [Ec2Ctl.md](Ec2Ctl.md) |
 
+## ミドルウェア制御
+
+| 機能 | スクリプト | 仕様書 |
+|---|---|---|
+| Tomcat 統合制御（start / stop / restart / status） | `TomcatCtl.ps1` / `tomcatctl.sh` | [TomcatCtl.md](TomcatCtl.md) |
+| SQL Server 統合制御（start / stop / restart / status） | `SqlServerCtl.ps1` / `sqlserverctl.sh` | [SqlServerCtl.md](SqlServerCtl.md) |
+
 ## ログ運用
 
 | 機能 | Windows | Linux |
