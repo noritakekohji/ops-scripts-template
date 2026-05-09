@@ -27,3 +27,9 @@
 | 機能 | Windows | Linux |
 |---|---|---|
 | ログローテーション | [Rotate-Log.md](Rotate-Log.md) | [rotate_log.md](rotate_log.md) |
+
+## ストレージ
+
+| 機能 | スクリプト | 仕様書 |
+|---|---|---|
+| S3 アップロード（リストファイル + per-entry options） | `S3Upload.ps1` / `s3upload.sh` | [S3Upload.md](S3Upload.md) |
