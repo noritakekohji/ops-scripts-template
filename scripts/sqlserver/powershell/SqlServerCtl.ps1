@@ -69,7 +69,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: action=$Action service=$ServiceName wait=$Wait timeoutSec=$WaitTimeoutSec"
 
-        # --- Phase 3: pre-check ---------------------------------------------
+        # --- フェーズ 3: プレチェック ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -96,7 +96,7 @@ try {
 
         Write-OpsLog -Level INFO -Message 'Pre-check passed'
 
-        # --- Phase 4: main processing ---------------------------------------
+        # --- フェーズ 4: メイン処理 ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         if (-not $PSCmdlet.ShouldProcess($ServiceName, "SQL Server $Action")) { break }

@@ -78,7 +78,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: action=$Action instanceCount=$($InstanceId.Count) region=$Region wait=$Wait timeoutSec=$WaitTimeoutSec forceStop=$ForceStop"
 
-        # --- Phase 3: pre-check ---------------------------------------------
+        # --- フェーズ 3: プレチェック ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
@@ -162,7 +162,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: action=$Action toAct=$($toAct.Count) skipped=$($skipped.Count)"
 
-        # --- Phase 4: main processing ---------------------------------------
+        # --- フェーズ 4: メイン処理 ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         if ($PSCmdlet.ShouldProcess(($toAct -join ','), "EC2 $Action")) {
@@ -187,7 +187,7 @@ try {
             }
         }
 
-        # Wait (start/stop only; restart doesn't change observable state)
+        # 完了待ち（start/stop のみ。restart は外部状態が変わらない）
         if ($Wait -and $acted.Count -gt 0 -and $Action -ne 'restart') {
             $targetState = if ($Action -eq 'start') { 'running' } else { 'stopped' }
             Write-OpsLog -Level INFO -Message "Waiting for '$targetState': count=$($acted.Count) timeoutSec=$WaitTimeoutSec"

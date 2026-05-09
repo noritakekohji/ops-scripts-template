@@ -3,7 +3,7 @@
 # backup_ami.sh
 #   Create an AMI backup of an EC2 instance and optionally prune old AMIs.
 #
-# Usage:
+# 使い方:
 #   backup_ami.sh -i <instance-id> -p <name-prefix> [-r <region>]
 #                 [-d <retention-days>] [-m <min-interval-min>] [-R] [-w]
 #
@@ -11,7 +11,7 @@
 # backup_ami.conf), or fall back to script defaults. CLI > config > default.
 # Per-run targets (-i / -p) are CLI-only.
 #
-# Authentication: relies on the default AWS credential chain.
+# 認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）
 # Exit codes: 0 success / skipped, 1 usage, 2 instance not found,
 #             3 wait timeout, 4 create failed, 10 aws missing, 20 auth
 # ============================================================================
@@ -35,7 +35,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: argument parsing ----------------------------------------------
+# --- フェーズ 1: 引数パース ----------------------------------------------
 instance_id=""
 name_prefix=""
 region=""
@@ -63,7 +63,7 @@ while getopts "i:p:r:d:m:Rwh" opt; do
     esac
 done
 
-# --- Phase 2: load config and apply to unspecified ---------------------------
+# --- フェーズ 2: 設定ファイル読込み、未指定値へ反映 ---------------------------
 load_ops_config "backup_ami"
 [[ "$region_set" -eq 0         && -n "${OPS_CONFIG[Region]:-}"             ]] && region="${OPS_CONFIG[Region]}"
 [[ "$retention_days_set" -eq 0 && -n "${OPS_CONFIG[RetentionDays]:-}"      ]] && retention_days="${OPS_CONFIG[RetentionDays]}"
@@ -83,7 +83,7 @@ fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 
-# --- Phase 1 (cont): validation ---------------------------------------------
+# --- フェーズ 1（続き）: バリデーション ---------------------------------------------
 if [[ -z "$instance_id" || -z "$name_prefix" ]]; then
     log_error "Missing required arg: -i and -p are required"
     status="failed"; exit 1
@@ -110,7 +110,7 @@ log_info "Args validated: instance=$instance_id prefix=$name_prefix region=${reg
 region_arg=()
 [[ -n "$region" ]] && region_arg=(--region "$region")
 
-# --- Phase 3: pre-check -----------------------------------------------------
+# --- フェーズ 3: プレチェック -----------------------------------------------------
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -150,7 +150,7 @@ fi
 
 log_info "Pre-check passed"
 
-# --- Phase 4: main processing -----------------------------------------------
+# --- フェーズ 4: メイン処理 -----------------------------------------------
 log_info "Main start"
 
 ts=$(ops_jst_stamp)

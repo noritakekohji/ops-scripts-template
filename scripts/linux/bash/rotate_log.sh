@@ -3,19 +3,19 @@
 # rotate_log.sh
 #   Rotate log files based on size or age, with optional gzip compression.
 #
-# Usage:
+# 使い方:
 #   rotate_log.sh [-p <path>] [-L <list-file>] [-P <pattern>]
 #                 [-s <max-size-mb>] [-a <max-age-days>]
 #                 [-c] [-k <retention>] [-T] [-n]
 #
-# Each line in the list file (-L) may set per-target overrides:
+# -L のリスト各行で対象ごとの上書きが可能:
 #     <path> [Key=Value ...]
-# Recognised keys (case-sensitive):
+# 受け付けるキー（case-sensitive）:
 #   Pattern, MaxSizeMB, MaxAgeDays, Compress, RetentionCount, CopyTruncate
-# Resolution: per-line > CLI > config > script default.
-# Unknown keys / invalid values are warned and skipped (entry still runs
-# with inherited values). An entry with both MaxSizeMB and MaxAgeDays
-# effectively 0 is warned and skipped. Other entries are unaffected.
+# 解決順位: 行内 > CLI > config > 既定値
+# 不明キー / 不正値は WARN を出してそのキーだけ無視（エントリは継承値で実行）
+# MaxSizeMB と MaxAgeDays の両方が effective=0 のエントリは
+# WARN を出してそのエントリのみスキップ。他には波及しない
 #
 # Naming: <name>.YYYYMMDD-HHMMSS [.gz] (UTC).
 # Exit codes: 0 success / skipped, 1 usage, 2 list file not found, 4 rotate failed
@@ -41,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: argument parsing ----------------------------------------------
+# --- フェーズ 1: 引数パース ----------------------------------------------
 path=""
 path_list=""
 pattern="*.log"
@@ -74,7 +74,7 @@ while getopts "p:L:P:s:a:ck:Tnh" opt; do
     esac
 done
 
-# --- Phase 2: load config and apply to unspecified ---------------------------
+# --- フェーズ 2: 設定ファイル読込み、未指定値へ反映 ---------------------------
 load_ops_config "rotate_log"
 [[ "$pattern_set" -eq 0    && -n "${OPS_CONFIG[Pattern]:-}"        ]] && pattern="${OPS_CONFIG[Pattern]}"
 [[ "$max_size_set" -eq 0   && -n "${OPS_CONFIG[MaxSizeMB]:-}"      ]] && max_size_mb="${OPS_CONFIG[MaxSizeMB]}"
@@ -89,7 +89,7 @@ fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 
-# --- Phase 1 (cont): basic numeric validation -------------------------------
+# --- フェーズ 1（続き）: 数値バリデーション -------------------------------
 if ! [[ "$max_size_mb" =~ ^[0-9]+$ ]] \
     || ! [[ "$max_age_days" =~ ^[0-9]+$ ]] \
     || ! [[ "$retention" =~ ^[0-9]+$ ]]; then
@@ -99,20 +99,20 @@ fi
 
 log_info "Args validated: path='$path' pathList='$path_list' pattern='$pattern' maxSizeMB=$max_size_mb maxAgeDays=$max_age_days compress=$compress retention=$retention copyTruncate=$copy_truncate dryRun=$dry_run"
 
-# --- Phase 3: pre-check (collect targets) -----------------------------------
+# --- フェーズ 3: プレチェック（対象収集） -----------------------------------
 log_info "Pre-check start"
 
-# Each target is encoded as a tab-separated record:
+# 各ターゲットはタブ区切りレコードとしてエンコード:
 # <path>\t<pattern>\t<maxSizeMB>\t<maxAgeDays>\t<compress>\t<retention>\t<copyTruncate>
-# Stored line by line in $targets_text (newline-separated).
+# $targets_text に 1 行ずつ蓄積（改行区切り）
 targets_text=""
 
 parse_list_line() {
-    # In : $1 = raw line (already trimmed; non-empty; non-comment)
-    # Out: appends one tab-record to $targets_text
+    # 入力: $1 = 行（trim 済み、空・コメントは除外済み）
+    # 出力: $targets_text にタブレコードを追記
     local line="$1"
     # shellcheck disable=SC2206
-    local -a tok=( $line )    # split on whitespace
+    local -a tok=( $line )    # 空白で split
     local p_path="${tok[0]}"
     local p_pattern="$pattern"
     local p_size="$max_size_mb"
@@ -186,7 +186,7 @@ fi
 target_count=$(printf '%s' "$targets_text" | grep -c '^')
 log_info "Pre-check passed: targetCount=$target_count"
 
-# --- Phase 4: main processing (per target) ----------------------------------
+# --- フェーズ 4: メイン処理（対象ごと） ----------------------------------
 log_info "Main start"
 
 while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_copytruncate; do
@@ -287,7 +287,7 @@ while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_c
         fi
     done
 
-    # Per-target retention pruning
+    # 対象ごとの世代保持（古いものから削除）
     if [[ "$t_retention" -gt 0 && "$dry_run" -eq 0 ]]; then
         for f in "${files[@]}"; do
             shopt -s nullglob

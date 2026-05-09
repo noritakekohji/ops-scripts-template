@@ -46,7 +46,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- Phase 2: shared lib ----------------------------------------------------
+# --- フェーズ 2: 共通ライブラリ ----------------------------------------------------
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
@@ -111,7 +111,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: path='$Path' pathList='$PathList' bucket='$Bucket' prefix='$Prefix' region='$Region' storageClass=$StorageClass sse=$ServerSideEncryption mode=$Mode"
 
-        # --- Phase 3: pre-check ---------------------------------------------
+        # --- フェーズ 3: プレチェック ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.S3)) {
@@ -140,7 +140,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: entryCount=$($entries.Count)"
 
-        # --- Phase 4: main processing ---------------------------------------
+        # --- フェーズ 4: メイン処理 ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
         $stamp = Get-OpsJstStamp
 

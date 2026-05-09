@@ -3,20 +3,20 @@
 # sqlserverctl.sh
 #   SQL Server lifecycle control: start / stop / restart / status (idempotent).
 #
-# Usage:
+# 使い方:
 #   sqlserverctl.sh <action> <service_name> [-w] [-t <sec>]
 #
-# Service name on Linux is typically 'mssql-server'. SQL Server Agent runs
-# under its own unit (e.g. 'mssql-server@<instance>') but is out of scope —
-# control it as a separate invocation if required.
+# Linux のサービス名は通常 'mssql-server'。SQL Server Agent は
+# 別 unit（例: 'mssql-server@<instance>')。本スクリプトの対象外 —
+# 必要なら別呼び出しで制御すること
 #
-# Actions:
-#   start    skip if active; otherwise systemctl start
-#   stop     skip if inactive; otherwise systemctl stop
-#   restart  systemctl restart (always)
-#   status   read-only state report
+# アクション:
+#   start    既に active ならスキップ。それ以外は systemctl start
+#   stop     既に inactive ならスキップ。それ以外は systemctl stop
+#   restart  systemctl restart（常に実行）
+#   status   状態のみ表示（read-only）
 #
-# Options:
+# オプション:
 #   -w  Wait until target state
 #   -t  Wait timeout seconds (default 120, range 5..600)
 #   -h  Show usage

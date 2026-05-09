@@ -3,17 +3,17 @@
 # ec2ctl.sh
 #   EC2 lifecycle control: start / stop / restart / status (idempotent).
 #
-# Usage:
+# 使い方:
 #   ec2ctl.sh <action> <instance_id[,instance_id,...]> [-r <region>]
 #             [-w] [-t <sec>] [-F]
 #
-# Actions:
+# アクション:
 #   start    start instance(s); already-running ones are skipped
 #   stop     stop instance(s);  already-stopped ones are skipped
 #   restart  reboot running instance(s) via AWS reboot API
 #   status   show current state (read-only)
 #
-# Options:
+# オプション:
 #   -r  AWS region (default: from environment / profile / config)
 #   -w  Wait until target state (start->running, stop->stopped). Ignored for restart/status.
 #   -t  Wait timeout seconds (default 600, range 30..3600)
@@ -21,7 +21,7 @@
 #   -h  Show usage
 #
 # Behavior options can be set in config/<env>/ec2ctl.conf.
-# Authentication: default AWS credential chain.
+# 認証: デフォルト AWS credential chain
 # Exit codes: 0 ok / skipped, 1 usage, 2 not found, 3 wait/state invalid,
 #             4 API failed, 10 aws missing, 20 auth
 # ============================================================================
@@ -47,7 +47,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: positional + options ------------------------------------------
+# --- フェーズ 1: 位置引数 + オプション ------------------------------------------
 action="${1:-}"
 case "$action" in
     start|stop|restart|status) shift ;;
@@ -82,7 +82,7 @@ while getopts "r:wt:Fh" opt; do
     esac
 done
 
-# --- Phase 2: load config ---------------------------------------------------
+# --- フェーズ 2: 設定ファイル読込み ---------------------------------------------------
 load_ops_config "ec2ctl"
 [[ "$region_set" -eq 0       && -n "${OPS_CONFIG[Region]:-}"         ]] && region="${OPS_CONFIG[Region]}"
 [[ "$wait_timeout_set" -eq 0 && -n "${OPS_CONFIG[WaitTimeoutSec]:-}" ]] && wait_timeout="${OPS_CONFIG[WaitTimeoutSec]}"
@@ -101,7 +101,7 @@ fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 
-# --- Phase 1 (cont): validation ---------------------------------------------
+# --- フェーズ 1（続き）: バリデーション ---------------------------------------------
 if ! [[ "$wait_timeout" =~ ^[0-9]+$ ]] || [[ "$wait_timeout" -lt 30 ]] || [[ "$wait_timeout" -gt 3600 ]]; then
     log_error "Invalid wait timeout: $wait_timeout (range 30..3600)"
     status="failed"; exit 1
@@ -121,7 +121,7 @@ log_info "Args validated: action=$action instanceCount=${#instance_ids[@]} regio
 region_arg=()
 [[ -n "$region" ]] && region_arg=(--region "$region")
 
-# --- Phase 3: pre-check -----------------------------------------------------
+# --- フェーズ 3: プレチェック -----------------------------------------------------
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -142,7 +142,7 @@ fi
 states_raw=$(aws ec2 describe-instances --instance-ids "${instance_ids[@]}" "${region_arg[@]}" \
     --query 'Reservations[].Instances[].[InstanceId, State.Name, Placement.AvailabilityZone, LaunchTime]' --output text)
 
-# status action: just print and exit
+# status: 状態を出力して終了
 if [[ "$action" == "status" ]]; then
     while IFS=$'\t' read -r iid st az lt; do
         [[ -z "$iid" ]] && continue
@@ -193,7 +193,7 @@ fi
 
 log_info "Pre-check passed: action=$action toAct=${#to_act[@]} skipped=${#skipped[@]}"
 
-# --- Phase 4: main processing -----------------------------------------------
+# --- フェーズ 4: メイン処理 -----------------------------------------------
 log_info "Main start"
 
 case "$action" in

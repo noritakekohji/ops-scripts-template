@@ -42,12 +42,12 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- Phase 2: shared logger -------------------------------------------------
+# --- フェーズ 2: 共通ロガー -------------------------------------------------
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-# --- Phase 2: load config and apply to unspecified parameters ---------------
+# --- フェーズ 2: 設定ファイル読込み、未指定パラメータへ反映 ---------------
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'rotate_log'
@@ -137,7 +137,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: path='$Path' pathList='$PathList' pattern=$Pattern maxSizeMB=$MaxSizeMB maxAgeDays=$MaxAgeDays compress=$Compress retention=$RetentionCount copyTruncate=$CopyTruncate"
 
-        # --- Phase 3: pre-check (collect targets) ---------------------------
+        # --- フェーズ 3: プレチェック（対象収集） ---------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         $targets = [System.Collections.Generic.List[hashtable]]::new()
@@ -165,7 +165,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: targetCount=$($targets.Count)"
 
-        # --- Phase 4: main processing (per target) --------------------------
+        # --- フェーズ 4: メイン処理（対象ごと） --------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         foreach ($t in $targets) {
@@ -257,7 +257,7 @@ try {
                 }
             }
 
-            # Per-target retention pruning
+            # 対象ごとの世代保持（古いものから削除）
             if ($t.RetentionCount -gt 0) {
                 foreach ($f in $files) {
                     $dir = Split-Path -Parent $f.FullName

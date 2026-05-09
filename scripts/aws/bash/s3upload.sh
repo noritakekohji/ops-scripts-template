@@ -3,22 +3,22 @@
 # s3upload.sh
 #   Upload local files to Amazon S3 with per-entry overrides.
 #
-# Usage:
+# 使い方:
 #   s3upload.sh [-p <local>] [-L <list-file>] [-b <bucket>] [-x <prefix>]
 #               [-r <region>] [-c <storage-class>] [-e <sse>] [-k <kms-key>]
 #               [-m archive|mirror]
 #
-# Each line in -L (or -p as a one-shot) follows:
+# -L のリスト各行（-p 単発も同形式）:
 #     <local_path> [Bucket=... Prefix=... Region=... StorageClass=...
 #                   ServerSideEncryption=... KmsKeyId=... Mode=...]
 #
-# Resolution: per-line > CLI > config/<env>/s3upload.conf > script default.
-# Modes:
+# 解決順位: 行内 > CLI > config/<env>/s3upload.conf > 既定値
+# モード:
 #   archive  s3://<bucket>/<prefix>/<filename>.<UTC yyyyMMdd-HHmmss>  (default)
 #   mirror   s3://<bucket>/<prefix>/<filename>                        (overwrite)
 #
-# Authentication: default AWS credential chain.
-# Empty local files are skipped (idempotent).
+# 認証: デフォルト AWS credential chain
+# 空のローカルファイルはスキップ（冪等）
 # Exit codes: 0 ok / skipped, 1 usage, 2 list file not found,
 #             4 all uploads failed, 10 aws missing
 # ============================================================================
@@ -44,7 +44,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Phase 1: argument parsing ----------------------------------------------
+# --- フェーズ 1: 引数パース ----------------------------------------------
 path=""
 path_list=""
 bucket=""
@@ -78,7 +78,7 @@ while getopts "p:L:b:x:r:c:e:k:m:h" opt; do
     esac
 done
 
-# --- Phase 2: load config ---------------------------------------------------
+# --- フェーズ 2: 設定ファイル読込み ---------------------------------------------------
 load_ops_config "s3upload"
 [[ "$bucket_set" -eq 0 && -n "${OPS_CONFIG[Bucket]:-}"               ]] && bucket="${OPS_CONFIG[Bucket]}"
 [[ "$prefix_set" -eq 0 && -n "${OPS_CONFIG[Prefix]:-}"               ]] && prefix="${OPS_CONFIG[Prefix]}"
@@ -90,7 +90,7 @@ load_ops_config "s3upload"
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
 
-# Validate enum values for the global defaults
+# グローバル既定値の enum 検証
 case "$storage_class" in STANDARD|STANDARD_IA|ONEZONE_IA|INTELLIGENT_TIERING|GLACIER|GLACIER_IR|DEEP_ARCHIVE) ;;
     *) log_error "Invalid StorageClass: $storage_class"; status="failed"; exit 1 ;;
 esac
@@ -103,7 +103,7 @@ esac
 
 log_info "Args validated: path='$path' pathList='$path_list' bucket='$bucket' prefix='$prefix' region='$region' storageClass=$storage_class sse=$sse mode=$mode"
 
-# --- Phase 3: pre-check (collect entries) -----------------------------------
+# --- フェーズ 3: プレチェック（エントリ収集） -----------------------------------
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -111,7 +111,7 @@ if ! command -v aws >/dev/null 2>&1; then
     status="failed"; exit 10
 fi
 
-# Each entry encoded as tab-record:
+# 各エントリをタブ区切りレコードとしてエンコード:
 # <path>\t<bucket>\t<prefix>\t<region>\t<storage_class>\t<sse>\t<kms>\t<mode>
 entries_text=""
 
@@ -186,7 +186,7 @@ fi
 entry_count=$(printf '%s' "$entries_text" | grep -c '^')
 log_info "Pre-check passed: entryCount=$entry_count"
 
-# --- Phase 4: main processing -----------------------------------------------
+# --- フェーズ 4: メイン処理 -----------------------------------------------
 log_info "Main start"
 stamp=$(ops_jst_stamp)
 

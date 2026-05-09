@@ -44,14 +44,14 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- Phase 2: shared logger -------------------------------------------------
+# --- フェーズ 2: 共通ロガー -------------------------------------------------
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-# --- Phase 2: load config and apply to unspecified parameters ---------------
+# --- フェーズ 2: 設定ファイル読込み、未指定パラメータへ反映 ---------------
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'backup_ebs_snapshot'
@@ -72,7 +72,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: paramSet=$($PSCmdlet.ParameterSetName) namePrefix=$NamePrefix region=$Region retentionDays=$RetentionDays minIntervalMin=$MinIntervalMinutes"
 
-        # --- Phase 3: pre-check ---------------------------------------------
+        # --- フェーズ 3: プレチェック ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
@@ -148,7 +148,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: volumeCount=$($volumes.Count)"
 
-        # --- Phase 4: main processing ---------------------------------------
+        # --- フェーズ 4: メイン処理 ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         $ts = Get-OpsJstStamp
