@@ -153,7 +153,7 @@ log_info "Pre-check passed"
 # --- Phase 4: main processing -----------------------------------------------
 log_info "Main start"
 
-ts=$(date -u +"%Y%m%d-%H%M%S")
+ts=$(ops_jst_stamp)
 ami_name="${name_prefix}-${ts}"
 description="Automated backup of ${instance_id} at ${ts} UTC"
 

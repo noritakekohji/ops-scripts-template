@@ -126,7 +126,7 @@ try {
         # --- Phase 4: main processing ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
-        $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+        $ts = Get-OpsJstStamp
         $amiName = "${NamePrefix}-${ts}"
         $description = "Automated backup of $InstanceId at $ts UTC"
 

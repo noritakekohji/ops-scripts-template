@@ -142,7 +142,7 @@ try {
 
         # --- Phase 4: main processing ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
-        $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+        $stamp = Get-OpsJstStamp
 
         foreach ($e in $entries) {
             if (-not $e.Bucket) {

@@ -2,31 +2,30 @@ Set-StrictMode -Version Latest
 
 <#
 .SYNOPSIS
-    Load behavior-defining variables from key=value config files.
+    key=value 形式の設定ファイルから挙動パラメータを読み込む。
 
 .DESCRIPTION
-    Returns a hashtable populated by merging:
+    次の優先順位（低 → 高）でファイルをマージしてハッシュテーブルを返す：
 
         config/common/ops.conf
         config/common/<Name>.conf
         config/<Env>/ops.conf
         config/<Env>/<Name>.conf
 
-    Later sources override earlier ones. Missing files are skipped silently.
+    後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
 
-    Format: key=value, one per line. Lines starting with '#' and blank lines
-    are ignored. Surrounding whitespace and matching single/double quotes
-    around the value are trimmed.
+    フォーマット: 1 行 1 設定 (`key=value`)。行頭 `#` の行と空行は無視。
+    前後の空白は trim、値を囲む `"..."` / `'...'` は除去される。
 
 .PARAMETER Name
-    Script name (without extension) — e.g. "Backup-Ami".
+    スクリプト名（拡張子なし）。例：`backup_ami`、`ec2ctl`。
 
 .PARAMETER Env
-    Environment name. Defaults to $env:OPS_ENV, or 'common' if unset.
+    環境名。指定なしなら `$env:OPS_ENV`、それも未設定なら `common` を使う。
 
 .PARAMETER RepoRoot
-    Repository root path. Auto-detected by walking up from this module's
-    location looking for .git or shell-specification.md.
+    リポジトリのルートパス。指定なしなら、本モジュールの位置から
+    `.git` または `shell-specification.md` を探して自動検出する。
 #>
 function Get-OpsConfig {
     [CmdletBinding()]
@@ -42,6 +41,7 @@ function Get-OpsConfig {
         $RepoRoot = _Find-OpsRepoRoot
     }
 
+    # 読み込み対象ファイルを優先度の低い順に列挙
     $config = @{}
     $sources = @(
         Join-Path $RepoRoot 'config' 'common' 'ops.conf'
@@ -57,11 +57,13 @@ function Get-OpsConfig {
         Write-Verbose "Loading config: $file"
         Get-Content -LiteralPath $file | ForEach-Object {
             $line = $_.Trim()
+            # 空行とコメント行はスキップ
             if (-not $line -or $line.StartsWith('#')) { return }
             $eq = $line.IndexOf('=')
             if ($eq -lt 1) { return }
             $key = $line.Substring(0, $eq).Trim()
             $val = $line.Substring($eq + 1).Trim()
+            # 値の前後を囲む引用符は除去
             if ($val -match '^"(.*)"$' -or $val -match "^'(.*)'$") { $val = $Matches[1] }
             $config[$key] = $val
         }
@@ -70,6 +72,7 @@ function Get-OpsConfig {
     return $config
 }
 
+# 内部: モジュールの位置から親ディレクトリを辿ってリポジトリ root を検出
 function _Find-OpsRepoRoot {
     $current = $PSScriptRoot
     while ($current) {

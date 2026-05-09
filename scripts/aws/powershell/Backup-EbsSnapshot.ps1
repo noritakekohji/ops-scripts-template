@@ -151,7 +151,7 @@ try {
         # --- Phase 4: main processing ---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
-        $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+        $ts = Get-OpsJstStamp
 
         foreach ($vol in $volumes) {
             $snapName = "${NamePrefix}-${vol}-${ts}"

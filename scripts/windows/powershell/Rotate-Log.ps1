@@ -213,7 +213,7 @@ try {
                     continue
                 }
 
-                $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+                $stamp = Get-OpsJstStamp
                 $rotatedPath = "$($f.FullName).$stamp"
                 if (-not $PSCmdlet.ShouldProcess($f.FullName, "Rotate to $rotatedPath ($reason)")) { continue }
 

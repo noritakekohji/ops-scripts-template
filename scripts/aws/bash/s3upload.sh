@@ -188,7 +188,7 @@ log_info "Pre-check passed: entryCount=$entry_count"
 
 # --- Phase 4: main processing -----------------------------------------------
 log_info "Main start"
-stamp=$(TZ=UTC date +"%Y%m%d-%H%M%S")
+stamp=$(ops_jst_stamp)
 
 while IFS=$'\t' read -r e_path e_bucket e_prefix e_region e_sc e_sse e_kms e_mode; do
     [[ -z "$e_path" ]] && continue

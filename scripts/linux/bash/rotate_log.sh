@@ -250,7 +250,7 @@ while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_c
             continue
         fi
 
-        stamp=$(date -u +"%Y%m%d-%H%M%S")
+        stamp=$(ops_jst_stamp)
         rotated_path="${f}.${stamp}"
 
         if [[ "$dry_run" -eq 1 ]]; then

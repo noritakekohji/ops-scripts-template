@@ -1,21 +1,58 @@
 Set-StrictMode -Version Latest
 
+# JST タイムゾーン情報のキャッシュ（モジュール初回利用時に解決）
+$script:_OpsJstTz = $null
+
+function _Get-OpsJstTz {
+    # JST (Asia/Tokyo) のタイムゾーン情報を取得して返す。
+    # PowerShell 7+ は全プラットフォームで IANA 名を受け付けるが、
+    # 古い Windows-only PS では `Tokyo Standard Time` にフォールバック。
+    if ($null -eq $script:_OpsJstTz) {
+        try { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Asia/Tokyo') }
+        catch { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time') }
+    }
+    return $script:_OpsJstTz
+}
+
+function Get-OpsJstStamp {
+    <#
+    .SYNOPSIS
+        現在時刻を JST（日本時刻）で文字列に整形して返す。
+
+    .DESCRIPTION
+        リソース名やタグ値、S3 キー suffix など「OS のタイムゾーン設定に
+        左右されたくないタイムスタンプ」を生成するためのヘルパー。
+        既定は `yyyyMMdd-HHmmss`（例：`20260510-153045`）。
+
+    .PARAMETER Format
+        .NET の DateTime.ToString フォーマット文字列。
+
+    .EXAMPLE
+        $stamp = Get-OpsJstStamp                 # 20260510-153045
+        $iso   = Get-OpsJstStamp 'yyyy-MM-ddTHH:mm:ss'
+    #>
+    [CmdletBinding()]
+    param([string]$Format = 'yyyyMMdd-HHmmss')
+    $tz = _Get-OpsJstTz
+    return [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz).ToString($Format)
+}
+
 function Write-OpsLog {
     <#
     .SYNOPSIS
-        Emit a single-line plain-text log entry.
+        1 行のプレーンテキストログを出力する。
 
     .DESCRIPTION
-        Output format:
+        出力フォーマット:
             [YYYY-MM-DD hh:mm:ss] [Level] (shellname:pid) Message
 
-        - Timezone: Asia/Tokyo (JST, UTC+9) — fixed regardless of OS setting
-        - Level:    5-char left-padded (INFO , WARN , ERROR, DEBUG)
-        - Streams:  WARN/ERROR -> stderr, INFO/DEBUG -> stdout
-        - Newlines in Message are replaced with single spaces.
+        - タイムゾーン: Asia/Tokyo（JST、UTC+9）固定。OS の TZ には依存しない
+        - レベル: 5 文字左詰め（INFO , WARN , ERROR, DEBUG）
+        - ストリーム: WARN/ERROR は stderr、INFO/DEBUG は stdout
+        - Message 中の改行は単一スペースに置換される
 
-        Structured properties are intentionally NOT supported — the caller
-        is responsible for embedding any "key=value" pairs into Message.
+        構造化プロパティ引数は意図的にサポートしていない。`key=value` の
+        組み立ては呼び出し側で行い、Message 文字列に埋め込むこと。
     #>
     [CmdletBinding()]
     param(
@@ -27,13 +64,10 @@ function Write-OpsLog {
         [string]$Message
     )
 
-    # Fix timestamps to Japan Standard Time (JST, UTC+9), regardless of OS tz.
-    # PS 7+ accepts IANA names on all platforms; fall back to Windows id.
-    try { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Asia/Tokyo') }
-    catch { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time') }
-    $ts = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $script:_OpsJstTz).ToString('yyyy-MM-dd HH:mm:ss')
+    # JST 固定のタイムスタンプを生成
+    $ts = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, (_Get-OpsJstTz)).ToString('yyyy-MM-dd HH:mm:ss')
 
-    # Resolve caller script basename via call stack (skip frame 0 = this function)
+    # 呼び出し元スクリプトの basename をコールスタックから解決（フレーム 0 は本関数なのでスキップ）
     $shell = '<unknown>'
     foreach ($frame in (Get-PSCallStack | Select-Object -Skip 1)) {
         if ($frame.ScriptName) {
@@ -42,10 +76,10 @@ function Write-OpsLog {
         }
     }
 
-    # Strip newlines so each log entry stays on one line
+    # 1 行 1 イベントを保証するため、メッセージ中の改行を空白に置換
     $msg = $Message -replace "`r?`n", ' '
 
-    # Pad level to 5 chars (INFO , WARN , ERROR, DEBUG)
+    # レベルを 5 文字に左詰め（INFO , WARN , ERROR, DEBUG）
     $lvl = $Level.PadRight(5)
 
     $line = "[$ts] [$lvl] (${shell}:$PID) $msg"
@@ -58,4 +92,4 @@ function Write-OpsLog {
     }
 }
 
-Export-ModuleMember -Function Write-OpsLog
+Export-ModuleMember -Function Write-OpsLog, Get-OpsJstStamp

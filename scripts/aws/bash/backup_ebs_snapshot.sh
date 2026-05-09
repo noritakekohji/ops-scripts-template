@@ -181,7 +181,7 @@ log_info "Pre-check passed: volumeCount=${#volumes[@]}"
 # --- Phase 4: main processing -----------------------------------------------
 log_info "Main start"
 
-ts=$(date -u +"%Y%m%d-%H%M%S")
+ts=$(ops_jst_stamp)
 
 for vol in "${volumes[@]}"; do
     snap_name="${name_prefix}-${vol}-${ts}"
