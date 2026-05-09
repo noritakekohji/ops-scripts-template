@@ -4,10 +4,13 @@
     Rotate log files based on size or age, with optional gzip compression.
 
 .DESCRIPTION
-    Targets either a single file (-Path to a file) or a directory of logs
-    (-Path to a directory + -Pattern). For each matching file, rotates when:
-      - size >= MaxSizeMB   (if specified)
-      - OR mtime older than MaxAgeDays (if specified)
+    Targets are resolved from -Path (single file or directory) and / or
+    -PathList (text file listing multiple paths, one per line).
+    Both can be combined; results are merged.
+
+    For each resolved file, rotates when:
+      - size >= MaxSizeMB    (if specified), OR
+      - mtime older than MaxAgeDays (if specified).
     At least one trigger must be specified.
 
     Rotated files are renamed with a UTC timestamp suffix:
@@ -16,16 +19,21 @@
 
     Default rotation method: rename + create empty file. With -CopyTruncate,
     the file is copied to the rotated name and the original is truncated to
-    0 bytes. Use -CopyTruncate when the writer keeps the file open without
-    handling rename gracefully (no SIGHUP / no log4j RollingFileAppender).
+    0 bytes.
 
     Old rotated files exceeding -RetentionCount are deleted (oldest first).
 
 .PARAMETER Path
-    Log file path, OR a directory containing log files.
+    Single log file path OR a directory containing log files.
+    Optional when -PathList is used.
+
+.PARAMETER PathList
+    Text file containing target paths, one per line. Lines starting with
+    "#" and blank lines are ignored. Whitespace is trimmed. Each line may
+    point to either a single file or a directory.
 
 .PARAMETER Pattern
-    Glob pattern when -Path is a directory. Default: *.log
+    Glob pattern used when a target resolves to a directory. Default: *.log
 
 .PARAMETER MaxSizeMB
     Rotate when size >= this many MB. 0 disables size trigger.
@@ -48,14 +56,15 @@
     .\Rotate-Log.ps1 -Path C:\logs\app.log -MaxSizeMB 100 -Compress -RetentionCount 7
 
 .EXAMPLE
-    .\Rotate-Log.ps1 -Path C:\logs -Pattern *.log -MaxAgeDays 1 -Compress -RetentionCount 30
+    .\Rotate-Log.ps1 -PathList C:\ops\logs.txt -MaxAgeDays 1 -Compress -RetentionCount 30
 
 .EXAMPLE
-    .\Rotate-Log.ps1 -Path D:\app\app.log -MaxSizeMB 500 -CopyTruncate -WhatIf
+    .\Rotate-Log.ps1 -Path C:\logs -Pattern *.log -PathList C:\ops\extra-logs.txt -MaxSizeMB 200 -Compress
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][string]$Path,
+    [string]$Path,
+    [string]$PathList,
     [string]$Pattern = '*.log',
     [ValidateRange(0, 1048576)][int]$MaxSizeMB = 0,
     [ValidateRange(0, 3650)][int]$MaxAgeDays = 0,
@@ -80,26 +89,53 @@ if ($MaxSizeMB -le 0 -and $MaxAgeDays -le 0) {
     exit 1
 }
 
-if (-not (Test-Path -LiteralPath $Path)) {
-    Write-OpsLog -Level ERROR -Message "Path not found: path=$Path"
-    exit 2
+# --- collect target paths ---------------------------------------------------
+$targetPaths = [System.Collections.Generic.List[string]]::new()
+if ($Path) { $targetPaths.Add($Path) }
+
+if ($PathList) {
+    if (-not (Test-Path -LiteralPath $PathList -PathType Leaf)) {
+        Write-OpsLog -Level ERROR -Message "Path list file not found: pathList=$PathList"
+        exit 2
+    }
+    $listLines = Get-Content -LiteralPath $PathList |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and -not $_.StartsWith('#') }
+    foreach ($l in $listLines) { $targetPaths.Add($l) }
+    Write-OpsLog -Level INFO -Message "Loaded paths from list: pathList=$PathList count=$($listLines.Count)"
+}
+
+if ($targetPaths.Count -eq 0) {
+    Write-OpsLog -Level ERROR -Message 'Specify -Path or -PathList (or both)'
+    exit 1
 }
 
 # --- resolve target files ---------------------------------------------------
 $files = @()
-if (Test-Path -LiteralPath $Path -PathType Container) {
-    $files = @(Get-ChildItem -LiteralPath $Path -Filter $Pattern -File)
-}
-else {
-    $files = @(Get-Item -LiteralPath $Path)
+foreach ($p in $targetPaths) {
+    if (-not (Test-Path -LiteralPath $p)) {
+        Write-OpsLog -Level WARN -Message "Path not found, skipping: path=$p"
+        continue
+    }
+    if (Test-Path -LiteralPath $p -PathType Container) {
+        $matched = @(Get-ChildItem -LiteralPath $p -Filter $Pattern -File)
+        $files += $matched
+        Write-OpsLog -Level DEBUG -Message "Resolved directory: path=$p matched=$($matched.Count)"
+    }
+    else {
+        $files += @(Get-Item -LiteralPath $p)
+    }
 }
 
+# Deduplicate by full path
+$files = @($files | Sort-Object FullName -Unique)
+
 if ($files.Count -eq 0) {
-    Write-OpsLog -Level INFO -Message "No matching files: path=$Path pattern=$Pattern"
+    Write-OpsLog -Level INFO -Message 'No matching files'
     exit 0
 }
 
-Write-OpsLog -Level INFO -Message "Rotation start: path=$Path matched=$($files.Count) maxSizeMB=$MaxSizeMB maxAgeDays=$MaxAgeDays compress=$Compress retention=$RetentionCount copyTruncate=$CopyTruncate"
+Write-OpsLog -Level INFO -Message "Rotation start: targets=$($targetPaths.Count) matched=$($files.Count) maxSizeMB=$MaxSizeMB maxAgeDays=$MaxAgeDays compress=$Compress retention=$RetentionCount copyTruncate=$CopyTruncate"
 
 $cutoff = if ($MaxAgeDays -gt 0) { (Get-Date).AddDays(-$MaxAgeDays) } else { $null }
 $rotated = 0
@@ -120,7 +156,7 @@ foreach ($f in $files) {
     }
     if (-not $needRotate -and $cutoff -and $f.LastWriteTime -lt $cutoff) {
         $needRotate = $true
-        $reason = "mtime=$($f.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))_older_than_${MaxAgeDays}d"
+        $reason = "mtime=$($f.LastWriteTime.ToString('yyyy-MM-dd_HH:mm:ss'))_older_than_${MaxAgeDays}d"
     }
 
     if (-not $needRotate) {
@@ -139,7 +175,6 @@ foreach ($f in $files) {
     try {
         if ($CopyTruncate) {
             Copy-Item -LiteralPath $f.FullName -Destination $rotatedPath -Force
-            # Truncate by creating/overwriting the file with zero bytes
             [System.IO.File]::Create($f.FullName).Close()
             Write-OpsLog -Level INFO -Message "Rotated (copytruncate): from=$($f.FullName) to=$rotatedPath reason=$reason"
         }
