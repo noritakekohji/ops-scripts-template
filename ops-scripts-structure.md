@@ -174,29 +174,23 @@ tomcat03: { os: linux,   dc: osaka }
 
 #### 構造のパターン
 
-##### パターン A：クロスプラットフォームなミドル（Tomcat、SQL Server、Nginx 等）
+##### パターン A：クロスプラットフォームなミドル（Tomcat、SQL Server、Nginx、AWS 等）
 
 ```
 scripts/tomcat/
 ├── common/                        # OS 非依存の資産
 │   ├── server.xml.template        # 設定テンプレート
 │   └── healthcheck-logic.md       # 検証手順の真の定義
-├── windows/                       # PowerShell 実装
-│   ├── deploy/
-│   │   └── Deploy-War.ps1
-│   ├── lifecycle/
-│   │   ├── Start-Tomcat.ps1
-│   │   └── Stop-Tomcat.ps1
-│   └── threaddump/
-│       └── Get-ThreadDump.ps1
-└── linux/                         # Bash 実装
-    ├── deploy/
-    │   └── deploy_war.sh
-    ├── lifecycle/
-    │   ├── start_tomcat.sh
-    │   └── stop_tomcat.sh
-    └── threaddump/
-        └── get_thread_dump.sh
+├── windows/                       # PowerShell 実装（直下にファイル）
+│   ├── Deploy-War.ps1
+│   ├── Start-Tomcat.ps1
+│   ├── Stop-Tomcat.ps1
+│   └── Get-ThreadDump.ps1
+└── linux/                         # Bash 実装（直下にファイル）
+    ├── deploy_war.sh
+    ├── start_tomcat.sh
+    ├── stop_tomcat.sh
+    └── get_thread_dump.sh
 ```
 
 `common/` に **OS 非依存の真の手順** を置くのがコツです。
@@ -204,21 +198,24 @@ scripts/tomcat/
 - SQL Server の `.sql` ファイル（T-SQL）は OS に依存しないので `sqlserver/common/` に集約し、Windows / Linux のラッパは中身を呼び出すだけにする。
 - Tomcat の `server.xml` テンプレや JVM 引数表も `tomcat/common/` に置けば、PowerShell と Bash の二重管理を避けられる。
 
+**アクションはディレクトリではなくファイル名で表現する**（`Deploy-War.ps1`、`Start-Tomcat.ps1` のように `Verb-Noun`）。ファイル数が増えて視認性が落ちた段階で、対象別サブディレクトリ（`tomcat/windows/lifecycle/` など）を再導入する余地は残しておきます。
+
 ##### パターン B：OS 固有の運用（AD、systemd 等）
 
 ミドル名で括れないもの（その OS にしか存在しない概念）は `scripts/windows/` または `scripts/linux/` 直下に置きます。
 
 ```
 scripts/windows/
-├── ad/                            # Active Directory
-├── iis/                           # IIS
-├── eventlog/                      # Windows イベントログ
-└── patch/                         # WSUS / Windows Update
+├── Disable-AdUser.ps1             # Active Directory
+├── Restart-IisAppPool.ps1         # IIS
+├── Export-EventLog.ps1            # Windows イベントログ
+├── Invoke-WindowsPatch.ps1        # WSUS / Windows Update
+└── Rotate-Log.ps1                 # ログローテーション
 
 scripts/linux/
-├── systemd/                       # サービス管理
-├── cron/
-└── patch/                         # yum / apt
+├── restart_systemd_service.sh     # systemd
+├── invoke_yum_patch.sh            # yum / apt
+└── rotate_log.sh                  # ログローテーション
 ```
 
 ##### パターン C：ミドル横断の汎用処理
@@ -227,19 +224,20 @@ scripts/linux/
 
 ```
 scripts/common/
-├── notify/                        # Slack / Teams / メール通知
-├── audit/                         # 操作ログを SIEM へ送信
-└── healthcheck/                   # 横串ヘルスチェック
+├── Send-Slack.ps1                 # Slack 通知
+├── Send-Email.ps1                 # メール通知
+├── Send-AuditLog.ps1              # SIEM への監査ログ送信
+└── Test-Healthcheck.ps1           # 横串ヘルスチェック
 ```
 
 #### ファイル命名規約
 
-各 OS の慣習に揃えます。OS はディレクトリ構造ですでに分かっているので、ファイル名に `_win` のような接尾辞は不要です。
+各 OS の慣習に揃えます。OS はディレクトリ構造ですでに分かっているので、ファイル名に `_win` のような接尾辞は不要です。アクション（Backup / Rotate / Invoke 等）は **動詞** で表現します。
 
 | OS | 形式 | 例 |
 |---|---|---|
-| PowerShell | `Verb-Noun.ps1`（PascalCase + ハイフン） | `Deploy-War.ps1`、`Invoke-FullBackup.ps1` |
-| Bash | `verb_noun.sh`（snake_case） | `deploy_war.sh`、`invoke_full_backup.sh` |
+| PowerShell | `Verb-Noun.ps1`（PascalCase + ハイフン、動詞は[承認済み](https://learn.microsoft.com/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)） | `Deploy-War.ps1`、`Invoke-FullBackup.ps1`、`Backup-Ami.ps1` |
+| Bash | `verb_noun.sh`（snake_case） | `deploy_war.sh`、`invoke_full_backup.sh`、`backup_ami.sh` |
 | T-SQL | `snake_case.sql` | `full_backup.sql`、`reindex.sql` |
 
 ---
@@ -380,22 +378,30 @@ tools/
 ```
 そのスクリプトは何を操作する？
 │
-├─ 特定のミドルウェア（Tomcat / SQL Server / Nginx / Redis 等）
-│   └─ scripts/<middleware>/<os>/<action>/
-│       例: scripts/tomcat/linux/deploy/deploy_war.sh
+├─ 特定のミドルウェア（Tomcat / SQL Server / Nginx / Redis / AWS 等）
+│   └─ scripts/<middleware>/<os>/<file>
+│       例: scripts/tomcat/linux/deploy_war.sh
+│           scripts/aws/windows/Backup-Ami.ps1
 │
-├─ OS にしか存在しない概念（AD / systemd / イベントログ 等）
-│   └─ scripts/<os>/<action>/
-│       例: scripts/windows/ad/Disable-User.ps1
+├─ ミドル中の OS 非依存資産（T-SQL、設定テンプレ等）
+│   └─ scripts/<middleware>/common/<file>
+│       例: scripts/sqlserver/common/full_backup.sql
+│
+├─ OS にしか存在しない概念（AD / systemd / イベントログ / ログローテ 等）
+│   └─ scripts/<os>/<file>
+│       例: scripts/windows/Disable-AdUser.ps1
+│           scripts/linux/rotate_log.sh
 │
 ├─ ミドル横断の汎用処理（通知 / 監査送信 等）
-│   └─ scripts/common/<action>/
-│       例: scripts/common/notify/Send-Slack.ps1
+│   └─ scripts/common/<file>
+│       例: scripts/common/Send-Slack.ps1
 │
 └─ 業務手順（複数スクリプトの組み合わせ）
     └─ playbooks/<業務名>/
         例: playbooks/monthly-patching/
 ```
+
+**アクションはディレクトリではなくファイル名で表現する**（`Backup-Ami.ps1` の `Backup-`、`rotate_log.sh` の `rotate_` 等）。
 
 ---
 

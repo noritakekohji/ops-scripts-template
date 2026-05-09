@@ -42,10 +42,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # TEMPLATE: adjust the number of '..' segments to your script depth.
-#   scripts/aws/linux/ami/foo.sh    -> 4 ups
-#   scripts/linux/log/bar.sh        -> 3 ups
+#   scripts/aws/linux/foo.sh        -> 3 ups (../../../lib/...)
+#   scripts/linux/bar.sh            -> 2 ups (../../lib/...)
+#   scripts/sqlserver/linux/baz.sh  -> 3 ups
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../../../../lib/bash/logging.sh"
+source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
 
 # State for Phase 5 cleanup
 tmp_file=""

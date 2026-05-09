@@ -25,7 +25,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../../../../lib/bash/logging.sh"
+source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
 
 usage() {
     sed -n '2,21p' "$0" >&2

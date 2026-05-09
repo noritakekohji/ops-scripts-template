@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/aws/linux/ebs/backup_ebs_snapshot.sh
+scripts/aws/linux/backup_ebs_snapshot.sh
 ```
 
 | 項目 | 値 |
@@ -64,7 +64,7 @@ scripts/aws/linux/ebs/backup_ebs_snapshot.sh
 
 ### 単一ボリューム
 ```bash
-./scripts/aws/linux/ebs/backup_ebs_snapshot.sh -v vol-0abc -p prod-db -d 14
+./scripts/aws/linux/backup_ebs_snapshot.sh -v vol-0abc -p prod-db -d 14
 ```
 
 ### インスタンス配下の全 EBS
@@ -79,7 +79,7 @@ scripts/aws/linux/ebs/backup_ebs_snapshot.sh
 
 ### cron 例（毎日 02:00）
 ```cron
-0 2 * * *  /opt/ops-scripts/scripts/aws/linux/ebs/backup_ebs_snapshot.sh -i i-0abc -p prod-db-daily -d 7 -w >> /var/log/ops/backup-ebs.log 2>&1
+0 2 * * *  /opt/ops-scripts/scripts/aws/linux/backup_ebs_snapshot.sh -i i-0abc -p prod-db-daily -d 7 -w >> /var/log/ops/backup-ebs.log 2>&1
 ```
 
 ## 8. 出力例

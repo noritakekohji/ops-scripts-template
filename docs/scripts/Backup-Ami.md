@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/aws/windows/ami/Backup-Ami.ps1
+scripts/aws/windows/Backup-Ami.ps1
 ```
 
 | 項目 | 値 |
@@ -72,7 +72,7 @@ Pruning は **`tag:CreatedBy=ops-scripts` AND `tag:NamePrefix=<指定値>`** の
 
 ### 基本：単発バックアップ
 ```powershell
-.\scripts\aws\windows\ami\Backup-Ami.ps1 `
+.\scripts\aws\windows\Backup-Ami.ps1 `
     -InstanceId i-0abcdef0123456789 `
     -NamePrefix prod-web
 ```

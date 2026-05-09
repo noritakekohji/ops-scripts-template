@@ -48,9 +48,10 @@ Set-StrictMode -Version Latest
 
 # Import shared logger.
 # TEMPLATE: adjust the number of '..' segments to your script depth.
-#   scripts/aws/windows/ami/Foo.ps1   -> 4 ups
-#   scripts/windows/log/Bar.ps1       -> 3 ups
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+#   scripts/aws/windows/Foo.ps1       -> 3 ups (../../../lib/...)
+#   scripts/windows/Bar.ps1           -> 2 ups (../../lib/...)
+#   scripts/sqlserver/windows/Baz.ps1 -> 3 ups
+$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }

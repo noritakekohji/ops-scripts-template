@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/windows/log/Rotate-Log.ps1
+scripts/windows/Rotate-Log.ps1
 ```
 
 | 項目 | 値 |
@@ -155,7 +155,7 @@ D:\nginx\logs\error.log
 
 ### タスクスケジューラ（毎日 03:00）
 ```
-schtasks /Create /TN "RotateLogs" /TR "pwsh -NoProfile -ExecutionPolicy Bypass -File C:\ops-scripts\scripts\windows\log\Rotate-Log.ps1 -PathList C:\ops\logs.txt -MaxAgeDays 1 -Compress -RetentionCount 30" /SC DAILY /ST 03:00 /RU SYSTEM
+schtasks /Create /TN "RotateLogs" /TR "pwsh -NoProfile -ExecutionPolicy Bypass -File C:\ops-scripts\scripts\windows\Rotate-Log.ps1 -PathList C:\ops\logs.txt -MaxAgeDays 1 -Compress -RetentionCount 30" /SC DAILY /ST 03:00 /RU SYSTEM
 ```
 
 ## 9. 出力例

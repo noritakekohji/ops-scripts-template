@@ -60,7 +60,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- import shared logging --------------------------------------------------
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
