@@ -136,7 +136,7 @@ bash tools/templates/template_script.sh -p demo
 
 ## 新規スクリプトを書く手順
 
-1. 適切な配置先にコピー（例：`scripts/aws/windows/Backup-Foo.ps1`）
+1. 適切な配置先にコピー（例：`scripts/aws/powershell/Backup-Foo.ps1`）
 2. ファイル名と内部のヘッダ（`SYNOPSIS` / `DESCRIPTION` / `Usage` 等）を実際の用途に書き換え
 3. **lib のインポートパスを配置深さに合わせて調整**（テンプレ内に "TEMPLATE: adjust ..." コメントあり）
 4. **config 名を変更**：`Get-OpsConfig -Name 'Template-Script'` / `load_ops_config "template_script"` の引数を実際のスクリプト名に

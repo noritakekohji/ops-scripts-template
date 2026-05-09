@@ -10,8 +10,8 @@
 
 | OS | スクリプト |
 |---|---|
-| Windows | `scripts/sqlserver/windows/SqlServerCtl.ps1` |
-| Linux | `scripts/sqlserver/linux/sqlserverctl.sh` |
+| Windows | `scripts/sqlserver/powershell/SqlServerCtl.ps1` |
+| Linux | `scripts/sqlserver/bash/sqlserverctl.sh` |
 
 設定ファイル `config/<env>/sqlserverctl.conf`（Windows / Linux 共有、小文字）。
 

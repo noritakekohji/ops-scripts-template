@@ -43,12 +43,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- Phase 2: shared logger -------------------------------------------------
-$libPath = Join-Path $PSScriptRoot '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
 
 # --- Phase 2: load config and apply to unspecified parameters ---------------
-$configModulePath = Join-Path $PSScriptRoot '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'rotate_log'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }

@@ -46,25 +46,25 @@
 
 | 操作対象 | 配置先 |
 |---|---|
-| クロスプラットフォームなミドル（Tomcat、SQL Server、Nginx、AWS 等） | `scripts/<middleware>/<os>/<file>` |
+| クロスプラットフォームなミドル（Tomcat、SQL Server、Nginx、AWS 等） | `scripts/<middleware>/<lang>/<file>`（lang = `powershell` / `bash`） |
 | クロスプラットフォームミドルの OS 非依存資産 | `scripts/<middleware>/common/<file>` |
-| OS にしか存在しない概念（AD、systemd、IIS、cron 等） | `scripts/<os>/<file>` |
+| OS にしか存在しない概念（AD、systemd、IIS、cron 等） | `scripts/<os>/<lang>/<file>` |
 | ミドル横断の汎用処理（通知、監査送信） | `scripts/common/<file>` |
 | 業務手順（複数スクリプトの組み合わせ） | `playbooks/<業務名>/` |
 
 ### 配置例
 
 ```
-scripts/aws/windows/Backup-Ami.ps1                # AWS は middleware 扱い、3 階層
-scripts/aws/linux/backup_ebs_snapshot.sh
+scripts/aws/powershell/Backup-Ami.ps1                # AWS は middleware 扱い、3 階層
+scripts/aws/bash/backup_ebs_snapshot.sh
 scripts/sqlserver/common/full_backup.sql          # T-SQL は OS 非依存
-scripts/sqlserver/windows/Invoke-FullBackup.ps1
+scripts/sqlserver/powershell/Invoke-FullBackup.ps1
 scripts/windows/Disable-AdUser.ps1                # AD は Windows 固有、2 階層
 scripts/linux/restart_systemd_service.sh          # systemd は Linux 固有
 scripts/common/Send-Slack.ps1                     # 横串
 ```
 
-ファイル数が増えて視認性が落ちた時点で、対象別のサブディレクトリ（例：`scripts/aws/windows/ami/`）を再導入する余地は残してあります。
+ファイル数が増えて視認性が落ちた時点で、対象別のサブディレクトリ（例：`scripts/aws/powershell/ami/`）を再導入する余地は残してあります。
 
 詳細は [`ops-scripts-structure.md`](ops-scripts-structure.md) を参照。
 

@@ -10,8 +10,8 @@
 
 | OS | スクリプト |
 |---|---|
-| Windows | `scripts/tomcat/windows/TomcatCtl.ps1` |
-| Linux | `scripts/tomcat/linux/tomcatctl.sh` |
+| Windows | `scripts/tomcat/powershell/TomcatCtl.ps1` |
+| Linux | `scripts/tomcat/bash/tomcatctl.sh` |
 
 設定ファイル `config/<env>/tomcatctl.conf`（Windows / Linux 共有、小文字）。
 

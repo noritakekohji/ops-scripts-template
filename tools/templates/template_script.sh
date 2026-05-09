@@ -42,9 +42,9 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # TEMPLATE: adjust the number of '..' segments to your script depth.
-#   scripts/aws/linux/foo.sh        -> 3 ups (../../../lib/...)
-#   scripts/linux/bar.sh            -> 2 ups (../../lib/...)
-#   scripts/sqlserver/linux/baz.sh  -> 3 ups
+#   scripts/aws/bash/foo.sh         -> 3 ups (../../../lib/...)
+#   scripts/linux/bash/bar.sh       -> 3 ups
+#   scripts/sqlserver/bash/baz.sh   -> 3 ups
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
 # shellcheck source=/dev/null

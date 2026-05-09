@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/aws/windows/Backup-Ami.ps1
+scripts/aws/powershell/Backup-Ami.ps1
 ```
 
 | 項目 | 値 |

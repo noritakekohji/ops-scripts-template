@@ -57,16 +57,18 @@ ops-scripts/
 ├── scripts/                       # 実スクリプト本体
 │   ├── tomcat/                    # ミドルウェア（OS 横断）
 │   │   ├── common/                # OS 非依存の資産
-│   │   ├── windows/               # PowerShell 実装
-│   │   └── linux/                 # Bash 実装
+│   │   ├── powershell/            # PowerShell 実装
+│   │   └── bash/                  # Bash 実装
 │   │
 │   ├── sqlserver/
 │   │   ├── common/                # T-SQL（.sql）はここに集約
-│   │   ├── windows/
-│   │   └── linux/
+│   │   ├── powershell/
+│   │   └── bash/
 │   │
-│   ├── windows/                   # OS 固有のみ（AD、IIS、イベントログ 等）
-│   ├── linux/                     # OS 固有のみ（systemd、cron 等）
+│   ├── windows/                   # OS 固有（AD、IIS、イベントログ 等）
+│   │   └── powershell/            # PowerShell 実装
+│   ├── linux/                     # OS 固有（systemd、cron 等）
+│   │   └── bash/                  # Bash 実装
 │   │
 │   └── common/                    # ミドル横断の汎用処理（通知、監査送信 等）
 │
@@ -181,12 +183,12 @@ scripts/tomcat/
 ├── common/                        # OS 非依存の資産
 │   ├── server.xml.template        # 設定テンプレート
 │   └── healthcheck-logic.md       # 検証手順の真の定義
-├── windows/                       # PowerShell 実装（直下にファイル）
+├── powershell/                    # PowerShell 実装（直下にファイル）
 │   ├── Deploy-War.ps1
 │   ├── Start-Tomcat.ps1
 │   ├── Stop-Tomcat.ps1
 │   └── Get-ThreadDump.ps1
-└── linux/                         # Bash 実装（直下にファイル）
+└── bash/                          # Bash 実装（直下にファイル）
     ├── deploy_war.sh
     ├── start_tomcat.sh
     ├── stop_tomcat.sh
@@ -198,24 +200,26 @@ scripts/tomcat/
 - SQL Server の `.sql` ファイル（T-SQL）は OS に依存しないので `sqlserver/common/` に集約し、Windows / Linux のラッパは中身を呼び出すだけにする。
 - Tomcat の `server.xml` テンプレや JVM 引数表も `tomcat/common/` に置けば、PowerShell と Bash の二重管理を避けられる。
 
-**アクションはディレクトリではなくファイル名で表現する**（`Deploy-War.ps1`、`Start-Tomcat.ps1` のように `Verb-Noun`）。ファイル数が増えて視認性が落ちた段階で、対象別サブディレクトリ（`tomcat/windows/lifecycle/` など）を再導入する余地は残しておきます。
+**アクションはディレクトリではなくファイル名で表現する**（`Deploy-War.ps1`、`Start-Tomcat.ps1` のように `Verb-Noun`）。ファイル数が増えて視認性が落ちた段階で、対象別サブディレクトリ（`tomcat/powershell/lifecycle/` など）を再導入する余地は残しておきます。
 
 ##### パターン B：OS 固有の運用（AD、systemd 等）
 
-ミドル名で括れないもの（その OS にしか存在しない概念）は `scripts/windows/` または `scripts/linux/` 直下に置きます。
+ミドル名で括れないもの（その OS にしか存在しない概念）は `scripts/windows/powershell/` または `scripts/linux/bash/` に置きます。
 
 ```
 scripts/windows/
-├── Disable-AdUser.ps1             # Active Directory
-├── Restart-IisAppPool.ps1         # IIS
-├── Export-EventLog.ps1            # Windows イベントログ
-├── Invoke-WindowsPatch.ps1        # WSUS / Windows Update
-└── Rotate-Log.ps1                 # ログローテーション
+└── powershell/
+    ├── Disable-AdUser.ps1         # Active Directory
+    ├── Restart-IisAppPool.ps1     # IIS
+    ├── Export-EventLog.ps1        # Windows イベントログ
+    ├── Invoke-WindowsPatch.ps1    # WSUS / Windows Update
+    └── Rotate-Log.ps1             # ログローテーション
 
 scripts/linux/
-├── restart_systemd_service.sh     # systemd
-├── invoke_yum_patch.sh            # yum / apt
-└── rotate_log.sh                  # ログローテーション
+└── bash/
+    ├── restart_systemd_service.sh # systemd
+    ├── invoke_yum_patch.sh        # yum / apt
+    └── rotate_log.sh              # ログローテーション
 ```
 
 ##### パターン C：ミドル横断の汎用処理
@@ -379,18 +383,18 @@ tools/
 そのスクリプトは何を操作する？
 │
 ├─ 特定のミドルウェア（Tomcat / SQL Server / Nginx / Redis / AWS 等）
-│   └─ scripts/<middleware>/<os>/<file>
-│       例: scripts/tomcat/linux/deploy_war.sh
-│           scripts/aws/windows/Backup-Ami.ps1
+│   └─ scripts/<middleware>/<lang>/<file>     (lang = powershell / bash)
+│       例: scripts/tomcat/bash/deploy_war.sh
+│           scripts/aws/powershell/Backup-Ami.ps1
 │
 ├─ ミドル中の OS 非依存資産（T-SQL、設定テンプレ等）
 │   └─ scripts/<middleware>/common/<file>
 │       例: scripts/sqlserver/common/full_backup.sql
 │
 ├─ OS にしか存在しない概念（AD / systemd / イベントログ / ログローテ 等）
-│   └─ scripts/<os>/<file>
-│       例: scripts/windows/Disable-AdUser.ps1
-│           scripts/linux/rotate_log.sh
+│   └─ scripts/<os>/<lang>/<file>
+│       例: scripts/windows/powershell/Disable-AdUser.ps1
+│           scripts/linux/bash/rotate_log.sh
 │
 ├─ ミドル横断の汎用処理（通知 / 監査送信 等）
 │   └─ scripts/common/<file>
@@ -447,7 +451,7 @@ tools/
 **してはいけないこと**
 
 - 共通処理を各スクリプトに直接書く（→ `lib/` に集約する）
-- ミドルに紐づく操作を `scripts/<os>/` 直下に置く（→ `scripts/<middleware>/<os>/` に置く）
+- ミドルに紐づく操作を `scripts/<os>/<lang>/` 直下に置く（→ `scripts/<middleware>/<lang>/` に置く）
 - シークレットを `config/` の YAML に直接書く（→ Vault 参照にする）
 - Playbook を経由せず本番スクリプトを直接叩くことを常態化する（→ 監査ログが分散する）
 

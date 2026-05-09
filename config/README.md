@@ -34,7 +34,7 @@ CLI で明示されたものは常に勝つ（運用中の緊急上書きが効�
 `OPS_ENV` 環境変数で切り替え。未設定なら `common` のみ参照されます。
 
 ```bash
-OPS_ENV=prd ./scripts/aws/linux/backup_ami.sh -i i-0abc -p prod-web
+OPS_ENV=prd ./scripts/aws/bash/backup_ami.sh -i i-0abc -p prod-web
 ```
 
 ## ファイルフォーマット
