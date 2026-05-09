@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 # ============================================================================
 # ec2ctl.sh
-#   EC2 lifecycle control: start / stop / restart / status (idempotent).
+#   EC2 ライフサイクル制御：start / stop / restart / status（冪等）
 #
 # 使い方:
 #   ec2ctl.sh <action> <instance_id[,instance_id,...]> [-r <region>]
 #             [-w] [-t <sec>] [-F]
 #
 # アクション:
-#   start    start instance(s); already-running ones are skipped
-#   stop     stop instance(s);  already-stopped ones are skipped
-#   restart  reboot running instance(s) via AWS reboot API
-#   status   show current state (read-only)
+#   start    インスタンス起動。既に running のものはスキップ
+#   stop     インスタンス停止。既に stopped のものはスキップ
+#   restart  AWS Reboot API で再起動（running 必須）
+#   status   状態のみ表示（read-only）
 #
 # オプション:
-#   -r  AWS region (default: from environment / profile / config)
-#   -w  Wait until target state (start->running, stop->stopped). Ignored for restart/status.
-#   -t  Wait timeout seconds (default 600, range 30..3600)
-#   -F  Force-stop (stop only). Data loss possible.
-#   -h  Show usage
+#   -r  AWS リージョン（既定: 環境変数 / プロファイル / config）
+#   -w  目的状態到達まで待機（start->running、stop->stopped）。restart/status では無視
+#   -t  待機タイムアウト秒（既定 600、範囲 30..3600）
+#   -F  強制停止（stop のみ）。データ損失の可能性あり
+#   -h  usage 表示
 #
-# Behavior options can be set in config/<env>/ec2ctl.conf.
+# 挙動オプションは config/<env>/ec2ctl.conf に設定可能。
 # 認証: デフォルト AWS credential chain
-# Exit codes: 0 ok / skipped, 1 usage, 2 not found, 3 wait/state invalid,
-#             4 API failed, 10 aws missing, 20 auth
+# 終了コード: 0 成功/スキップ, 1 usage, 2 不在, 3 待機/状態不正,
+#             4 API 失敗, 10 aws CLI 不在, 20 認証
 # ============================================================================
 set -euo pipefail
 
@@ -225,7 +225,7 @@ case "$action" in
         ;;
 esac
 
-# Wait (start/stop only)
+# 完了待ち（start / stop のみ）
 if [[ "$wait_for_completion" -eq 1 && "${#acted[@]}" -gt 0 && "$action" != "restart" ]]; then
     target_state=$([[ "$action" == "start" ]] && echo "running" || echo "stopped")
     waiter=$([[ "$action" == "start" ]] && echo "instance-running" || echo "instance-stopped")

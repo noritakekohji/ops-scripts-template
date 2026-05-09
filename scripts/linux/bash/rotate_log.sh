@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # rotate_log.sh
-#   Rotate log files based on size or age, with optional gzip compression.
+#   ログファイルをサイズまたは経過時間でローテート（任意で gzip 圧縮）
 #
 # 使い方:
 #   rotate_log.sh [-p <path>] [-L <list-file>] [-P <pattern>]
@@ -17,8 +17,8 @@
 # MaxSizeMB と MaxAgeDays の両方が effective=0 のエントリは
 # WARN を出してそのエントリのみスキップ。他には波及しない
 #
-# Naming: <name>.YYYYMMDD-HHMMSS [.gz] (UTC).
-# Exit codes: 0 success / skipped, 1 usage, 2 list file not found, 4 rotate failed
+# 命名: <name>.YYYYMMDD-HHMMSS [.gz]（JST）
+# 終了コード: 0 成功/スキップ, 1 usage, 2 リストファイル不在, 4 ローテート失敗
 # ============================================================================
 set -euo pipefail
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # s3upload.sh
-#   Upload local files to Amazon S3 with per-entry overrides.
+#   ローカルファイルを Amazon S3 にアップロード（行単位上書き対応）
 #
 # 使い方:
 #   s3upload.sh [-p <local>] [-L <list-file>] [-b <bucket>] [-x <prefix>]
@@ -14,13 +14,13 @@
 #
 # 解決順位: 行内 > CLI > config/<env>/s3upload.conf > 既定値
 # モード:
-#   archive  s3://<bucket>/<prefix>/<filename>.<UTC yyyyMMdd-HHmmss>  (default)
-#   mirror   s3://<bucket>/<prefix>/<filename>                        (overwrite)
+#   archive  s3://<bucket>/<prefix>/<filename>.<JST yyyyMMdd-HHmmss>（既定）
+#   mirror   s3://<bucket>/<prefix>/<filename>（上書き）
 #
 # 認証: デフォルト AWS credential chain
 # 空のローカルファイルはスキップ（冪等）
-# Exit codes: 0 ok / skipped, 1 usage, 2 list file not found,
-#             4 all uploads failed, 10 aws missing
+# 終了コード: 0 成功/スキップ, 1 usage, 2 リストファイル不在,
+#             4 全件アップロード失敗, 10 aws CLI 不在
 # ============================================================================
 set -euo pipefail
 

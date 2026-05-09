@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # ============================================================================
 # backup_ebs_snapshot.sh
-#   Create EBS snapshot(s) and optionally prune old ones.
+#   EBS スナップショットを作成し、必要に応じて古いものを世代削除する
 #
 # 使い方:
 #   backup_ebs_snapshot.sh (-v <volume-id> | -i <instance-id>) -p <name-prefix>
 #                          [-r <region>] [-d <retention-days>]
 #                          [-m <min-interval-min>] [-w]
 #
-# Behavior parameters can be set via CLI, via config files, or fall back to
-# script defaults. Per-run targets (-v / -i / -p) are CLI-only.
+# 挙動パラメータは CLI、config、もしくはスクリプト既定値で指定可能。
+# 実行ごとの対象 (-v / -i / -p) は CLI 専用。
 #
 # 認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）
-# Exit codes: 0 success / skipped, 1 usage, 2 not found, 3 wait timeout,
-#             4 create failed, 10 aws missing, 20 auth
+# 終了コード: 0 成功/スキップ, 1 usage, 2 不在, 3 待機タイムアウト,
+#             4 作成失敗, 10 aws CLI 不在, 20 認証
 # ============================================================================
 set -euo pipefail
 

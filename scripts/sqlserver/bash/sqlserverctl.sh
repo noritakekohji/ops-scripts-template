@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # sqlserverctl.sh
-#   SQL Server lifecycle control: start / stop / restart / status (idempotent).
+#   SQL Server ライフサイクル制御：start / stop / restart / status（冪等）
 #
 # 使い方:
 #   sqlserverctl.sh <action> <service_name> [-w] [-t <sec>]
@@ -19,10 +19,10 @@
 # オプション:
 #   -w  Wait until target state
 #   -t  Wait timeout seconds (default 120, range 5..600)
-#   -h  Show usage
+#   -h  usage 表示
 #
-# Exit codes: 0 ok / skipped, 1 usage, 2 service not found,
-#             3 wait timeout, 4 systemctl failed, 10 systemctl missing
+# 終了コード: 0 成功/スキップ, 1 usage, 2 サービス不在,
+#             3 待機タイムアウト, 4 systemctl 失敗, 10 systemctl 不在
 # ============================================================================
 set -euo pipefail
 

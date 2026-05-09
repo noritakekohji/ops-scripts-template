@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # ============================================================================
 # backup_ami.sh
-#   Create an AMI backup of an EC2 instance and optionally prune old AMIs.
+#   EC2 インスタンスから AMI を作成し、必要に応じて古い AMI を世代削除する
 #
 # 使い方:
 #   backup_ami.sh -i <instance-id> -p <name-prefix> [-r <region>]
 #                 [-d <retention-days>] [-m <min-interval-min>] [-R] [-w]
 #
-# Behavior parameters can be set via CLI, via config files (config/<env>/
-# backup_ami.conf), or fall back to script defaults. CLI > config > default.
-# Per-run targets (-i / -p) are CLI-only.
+# 挙動パラメータは CLI、config ファイル (config/<env>/
+# backup_ami.conf) もしくはスクリプト既定値で指定可能。優先順位: CLI > config > 既定値。
+# 実行ごとの対象 (-i / -p) は CLI 専用
 #
 # 認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）
-# Exit codes: 0 success / skipped, 1 usage, 2 instance not found,
-#             3 wait timeout, 4 create failed, 10 aws missing, 20 auth
+# 終了コード: 0 成功/スキップ, 1 usage, 2 インスタンス不在,
+#             3 待機タイムアウト, 4 作成失敗, 10 aws CLI 不在, 20 認証
 # ============================================================================
 set -euo pipefail
 
