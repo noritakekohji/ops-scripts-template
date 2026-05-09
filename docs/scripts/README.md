@@ -11,10 +11,9 @@
 
 ## AWS EC2 ライフサイクル
 
-| 機能 | Windows | Linux |
+| 機能 | スクリプト | 仕様書（PS / Bash 共通） |
 |---|---|---|
-| EC2 起動 | [Start-Ec2Instance.md](Start-Ec2Instance.md) | [start_ec2_instance.md](start_ec2_instance.md) |
-| EC2 停止 | [Stop-Ec2Instance.md](Stop-Ec2Instance.md) | [stop_ec2_instance.md](stop_ec2_instance.md) |
+| EC2 統合制御（start / stop / restart / status） | `Ec2Ctl.ps1` / `ec2ctl.sh` | [Ec2Ctl.md](Ec2Ctl.md) |
 
 ## ログ運用
 
