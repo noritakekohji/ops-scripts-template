@@ -77,26 +77,58 @@ scripts/windows/Rotate-Log.ps1
 
 ## 6. リストファイル形式
 
-`-PathList` で指定するテキストファイルの仕様：
+各行は `<path> [Key=Value ...]` の形式で、**エントリ単位でオプションを上書き**できる。Key を指定しなかったオプションは CLI / config / 既定値 が継承される。
+
+### 形式
 
 ```
-# 行頭 # はコメント
-# 空行は無視
-# 前後の空白は trim される
+# 行頭 '#' はコメント、空行は無視、前後空白は自動 trim
+# <path> [Key=Value ...]
+#
+# Recognised keys (CLI と同じ名前、case-sensitive):
+#   Pattern, MaxSizeMB, MaxAgeDays, Compress, RetentionCount, CopyTruncate
 
+# CLI / config の既定をそのまま使う
 C:\logs\app.log
-C:\logs\nginx                     # ディレクトリは -Pattern で glob 展開
-D:\app\logs\error.log
+
+# size と retention だけ上書き
+C:\logs\critical\audit.log MaxSizeMB=200 RetentionCount=90
+
+# Tomcat: 大きいファイル、copy+truncate
+D:\tomcat\logs\catalina.out MaxSizeMB=500 CopyTruncate=true Compress=true RetentionCount=14
+
+# ディレクトリで pattern 上書き
+D:\logs\nginx Pattern=access*.log MaxAgeDays=1 Compress=true RetentionCount=30
 ```
+
+### 解決順位（高 → 低）
+
+```
+1. 行内の Key=Value
+2. CLI 引数
+3. config/<env>/Rotate-Log.conf
+4. config/common/Rotate-Log.conf
+5. スクリプトの既定値
+```
+
+### バリデーション
+
+| 状況 | 動作 |
+|---|---|
+| 不明なキー（例：`Foo=bar`） | WARN を出してそのキーだけ無視（エントリは継承値で処理） |
+| 不正な値（例：`MaxSizeMB=-1` や `Compress=foo`） | WARN を出してそのキーだけ無視 |
+| 行内の `MaxSizeMB` と `MaxAgeDays` が両方 0（effective） | WARN を出してそのエントリだけスキップ。他は継続 |
+| パスが存在しない | WARN を出してそのエントリだけスキップ |
+
+### その他のルール
 
 | ルール | 内容 |
 |---|---|
-| 1 行 1 パス | 単一ファイル or ディレクトリ |
-| `#` で始まる行 | コメント（無視） |
-| 空行 | 無視 |
-| 前後空白 | 自動 trim |
-| 相対パス | 不可（絶対パス推奨） |
+| 1 行 1 エントリ | パスを含むスペース不可（パスにスペースを使わない） |
+| キー名 | PowerShell の CLI と同じ PascalCase（`MaxSizeMB` 等）|
+| 値のクォート | `"..."` / `'...'` で囲んでも可（除去される） |
 | 文字コード | UTF-8 |
+| 同じパスを複数回指定 | それぞれ別エントリとして処理（重複排除なし） |
 
 ## 7. ローテート命名規則
 

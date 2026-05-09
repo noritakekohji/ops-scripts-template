@@ -72,16 +72,41 @@ scripts/linux/rotate_log.sh
 
 ## 6. リストファイル形式
 
-[`Rotate-Log.md`](Rotate-Log.md#6-リストファイル形式) と同一。
+各行は `<path> [Key=Value ...]` の形式で、**エントリ単位でオプションを上書き**できる。詳細は [`Rotate-Log.md`](Rotate-Log.md#6-リストファイル形式) と同一。
+
+### 例
 
 ```
-# 行頭 # はコメント
-# 空行は無視
+# 行頭 '#' はコメント、空行は無視
+# <path> [Key=Value ...]
+#
+# Recognised keys (CLI と同じ名前、case-sensitive):
+#   Pattern, MaxSizeMB, MaxAgeDays, Compress, RetentionCount, CopyTruncate
 
+# CLI / config の既定をそのまま使う
 /var/log/myapp/app.log
-/var/log/nginx                    # ディレクトリは -P で glob 展開
-/opt/tomcat/logs/catalina.out
+
+# size と retention だけ上書き
+/var/log/critical/audit.log MaxSizeMB=200 RetentionCount=90
+
+# Tomcat: 大きいファイル、copy+truncate
+/opt/tomcat/logs/catalina.out MaxSizeMB=500 CopyTruncate=true Compress=true RetentionCount=14
+
+# ディレクトリで pattern 上書き
+/var/log/nginx Pattern=access*.log MaxAgeDays=1 Compress=true RetentionCount=30
 ```
+
+### 解決順位（高 → 低）
+
+```
+1. 行内の Key=Value
+2. CLI 引数（-s / -a / -c / -k / -P / -T）
+3. config/<env>/rotate_log.conf
+4. config/common/rotate_log.conf
+5. スクリプトの既定値
+```
+
+不明なキー / 不正な値 → WARN で当該キーだけ無視。両トリガが effective=0 のエントリ → そのエントリだけスキップ。他は継続。
 
 ## 7. ローテート命名規則
 
