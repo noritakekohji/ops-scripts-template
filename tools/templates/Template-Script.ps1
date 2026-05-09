@@ -13,11 +13,21 @@
       4. Main processing         (the actual work)
       5. Post-processing         (always runs via finally; cleanup + final log)
 
+    This file is a runnable demonstration. Each phase is implemented with
+    placeholder logic so that running the script as-is produces a complete
+    end-to-end log demonstrating all five phases plus idempotent skip.
+    Replace the demo logic with your real checks / work.
+
 .PARAMETER ParamName
-    <パラメータの意味と制約>
+    Identifier used in the demo to name the per-run idempotency marker.
 
 .EXAMPLE
-    .\Template-Script.ps1 -ParamName value
+    # First run: full success
+    .\Template-Script.ps1 -ParamName demo
+
+.EXAMPLE
+    # Run again within 60 seconds: idempotent skip (status=skipped, exit 0)
+    .\Template-Script.ps1 -ParamName demo
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -51,61 +61,67 @@ $tempFile = $null
 $exitCode = 0
 $status = 'unknown'
 
+# Demo-only: idempotency window in seconds. Re-runs within this window skip.
+$IdempotencyWindowSec = 60
+
 try {
     # The do/while($false) pattern lets each phase 'break' out cleanly while
-    # still allowing the finally block (Phase 5) to run.
+    # still letting the finally block (Phase 5) run.
     do {
         # --------------------------------------------------------------------
         # Phase 1b: Cross-parameter validation
         # --------------------------------------------------------------------
         # if (-not (... cross-param condition ...)) {
         #     Write-OpsLog -Level ERROR -Message "Invalid combination: paramX=$X paramY=$Y"
-        #     $exitCode = 1; $status = 'failed'
-        #     break
+        #     $exitCode = 1; $status = 'failed'; break
         # }
         Write-OpsLog -Level INFO -Message "Args validated: paramName=$ParamName"
 
         # --------------------------------------------------------------------
         # Phase 3: Pre-check (prerequisites + idempotency)
         # All checks here MUST be side-effect free (read-only).
+        # Replace each demo check with the relevant real check for your script.
         # --------------------------------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         # 3-a: Required modules / CLIs present
-        # if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
-        #     Write-OpsLog -Level ERROR -Message 'AWS.Tools.EC2 module not installed'
-        #     $exitCode = 10; $status = 'failed'
-        #     break
-        # }
+        # DEMO: ensure Get-Date cmdlet is loadable. REAL: e.g. AWS.Tools.EC2.
+        if (-not (Get-Command Get-Date -ErrorAction SilentlyContinue)) {
+            Write-OpsLog -Level ERROR -Message 'Required cmdlet not found: Get-Date'
+            $exitCode = 10; $status = 'failed'; break
+        }
 
         # 3-b: Authentication usable
-        # try { Get-STSCallerIdentity | Out-Null }
-        # catch {
-        #     Write-OpsLog -Level ERROR -Message "Auth failed: error=$($_.Exception.Message)"
-        #     $exitCode = 20; $status = 'failed'
-        #     break
-        # }
+        # DEMO: confirm we have a username. REAL: e.g. Get-STSCallerIdentity.
+        if (-not $env:USERNAME) {
+            Write-OpsLog -Level ERROR -Message 'No username; cannot determine identity'
+            $exitCode = 20; $status = 'failed'; break
+        }
 
-        # 3-c: Target resource exists / is reachable
-        # if (-not (Test-Path -LiteralPath $Target)) {
-        #     Write-OpsLog -Level ERROR -Message "Target not found: target=$Target"
-        #     $exitCode = 2; $status = 'failed'
-        #     break
-        # }
+        # 3-c: Target resource exists / reachable
+        # DEMO: working directory ($env:TEMP) is reachable. REAL: target file/host.
+        $workDir = $env:TEMP
+        if (-not (Test-Path -LiteralPath $workDir -PathType Container)) {
+            Write-OpsLog -Level ERROR -Message "Working dir not found: dir=$workDir"
+            $exitCode = 2; $status = 'failed'; break
+        }
 
         # 3-d: Idempotency — already in desired state? If yes, skip cleanly.
-        # if (... already done ...) {
-        #     Write-OpsLog -Level INFO -Message 'Skipped (idempotent): reason=already_completed'
-        #     $exitCode = 0; $status = 'skipped'
-        #     break
-        # }
+        # DEMO: skip if a per-ParamName marker file was touched within the
+        # IdempotencyWindowSec. REAL: check whether the action was recently
+        # performed (e.g. AMI created in the last hour for this NamePrefix).
+        $marker = Join-Path $workDir "template-demo-$ParamName.marker"
+        if (Test-Path -LiteralPath $marker) {
+            $ageSec = ((Get-Date) - (Get-Item -LiteralPath $marker).LastWriteTime).TotalSeconds
+            if ($ageSec -lt $IdempotencyWindowSec) {
+                Write-OpsLog -Level INFO -Message "Skipped (idempotent): reason=marker_recent marker=$marker ageSec=$([math]::Round($ageSec))"
+                $exitCode = 0; $status = 'skipped'; break
+            }
+        }
 
         # 3-e: External dependency reachability
-        # if (-not (Test-NetConnection -ComputerName 'host' -Port 443 -Quiet)) {
-        #     Write-OpsLog -Level ERROR -Message 'External dependency unreachable: host=...'
-        #     $exitCode = 5; $status = 'failed'
-        #     break
-        # }
+        # DEMO: skipped (no external dependency in the demo).
+        # REAL: e.g. Test-NetConnection -ComputerName ... -Port 443 -Quiet.
 
         Write-OpsLog -Level INFO -Message 'Pre-check passed'
 
@@ -114,11 +130,18 @@ try {
         # --------------------------------------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
-        if ($PSCmdlet.ShouldProcess($ParamName, 'Describe the action here')) {
-            # TODO: replace with the real implementation
-            # Example: $tempFile = New-TemporaryFile
+        if ($PSCmdlet.ShouldProcess($ParamName, 'Run demo work')) {
+            # DEMO: write a payload to a scratch temp file, then update the
+            # idempotency marker. REAL: replace with the actual operation.
 
-            Write-OpsLog -Level INFO -Message "Doing work: paramName=$ParamName"
+            $tempFile = New-TemporaryFile
+            "Demo payload for $ParamName written at $(Get-Date)" |
+                Set-Content -LiteralPath $tempFile -Encoding utf8
+            $size = (Get-Item -LiteralPath $tempFile).Length
+            Write-OpsLog -Level INFO -Message "Wrote scratch file: file=$($tempFile.FullName) bytes=$size"
+
+            (Get-Date).ToString('o') | Set-Content -LiteralPath $marker -Encoding utf8
+            Write-OpsLog -Level INFO -Message "Marker updated: marker=$marker"
         }
 
         Write-OpsLog -Level INFO -Message 'Main complete'
@@ -138,6 +161,7 @@ finally {
         try {
             if (Test-Path -LiteralPath $tempFile) {
                 Remove-Item -LiteralPath $tempFile -Force
+                Write-OpsLog -Level INFO -Message "Cleanup: removed temp file=$tempFile"
             }
         }
         catch {

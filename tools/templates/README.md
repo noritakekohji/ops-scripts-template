@@ -89,12 +89,63 @@
 | ④ 完了 | `Main complete` |
 | ⑤ 必ず | `Script end: status=<success/failed/skipped> exitCode=<N>` |
 
-## 使い方
+## テンプレートはそのまま動く
+
+両テンプレートは **コピー前にそのまま実行できる完全な動作デモ** です。各フェーズに動くダミー処理が入っており、ログ出力で 5 段階の流れと冪等スキップを目視確認できます。
+
+### 動かしてみる
+
+```powershell
+# 1 回目：成功（status=success exitCode=0）
+pwsh tools/templates/Template-Script.ps1 -ParamName demo
+
+# 60 秒以内に再実行：冪等スキップ（status=skipped exitCode=0）
+pwsh tools/templates/Template-Script.ps1 -ParamName demo
+```
+
+```bash
+# 1 回目：成功
+bash tools/templates/template_script.sh -p demo
+
+# 60 秒以内に再実行：冪等スキップ
+bash tools/templates/template_script.sh -p demo
+```
+
+### 出力例（1 回目：成功）
+
+```
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Args validated: paramName=demo
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Pre-check start
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Pre-check passed
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Main start
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Wrote scratch file: file=C:\Users\...\Temp\xxx.tmp bytes=64
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Marker updated: marker=C:\Users\...\Temp\template-demo-demo.marker
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Main complete
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Cleanup: removed temp file=C:\Users\...\Temp\xxx.tmp
+[2026-05-09 12:14:05] [INFO ] (Template-Script.ps1:1234) Script end: status=success exitCode=0
+```
+
+### 出力例（2 回目：冪等スキップ）
+
+```
+[2026-05-09 12:14:25] [INFO ] (Template-Script.ps1:1234) Args validated: paramName=demo
+[2026-05-09 12:14:25] [INFO ] (Template-Script.ps1:1234) Pre-check start
+[2026-05-09 12:14:25] [INFO ] (Template-Script.ps1:1234) Skipped (idempotent): reason=marker_recent marker=... ageSec=20
+[2026-05-09 12:14:25] [INFO ] (Template-Script.ps1:1234) Script end: status=skipped exitCode=0
+```
+
+## 新規スクリプトを書く手順
 
 1. 適切な配置先にコピー（例：`scripts/aws/windows/ami/Backup-Foo.ps1`）
 2. ファイル名と内部のヘッダ（`SYNOPSIS` / `DESCRIPTION` / `Usage` 等）を実際の用途に書き換え
 3. **lib のインポートパスを配置深さに合わせて調整**（テンプレ内に "TEMPLATE: adjust ..." コメントあり）
-4. パラメータ・プレチェック条件・メイン処理の `# TODO` を実装
+4. デモ用の `# DEMO:` コメント部分を **実際のチェック / 処理に置き換え**
+   - 3-a：必要モジュール・CLI のチェック
+   - 3-b：認証確認（`Get-STSCallerIdentity`、`aws sts get-caller-identity` 等）
+   - 3-c：対象リソースの存在確認
+   - 3-d：冪等スキップ条件（直近 N 分のリソース有無、状態確認 等）
+   - 3-e：外部依存到達性（必要なら）
+   - 4：本来の処理に置き換え
 5. 実行権限を付与（Bash のみ、`git update-index --chmod=+x`）
 6. （推奨）`docs/scripts/<filename>.md` の個別仕様書も追加
 

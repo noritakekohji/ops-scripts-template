@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================================
 # template_script.sh
-#   <一行サマリ：このスクリプトが何をするか>
+#   Runnable template demonstrating the 5-phase script structure.
 #
 # Usage:
 #   template_script.sh -p <param> [-n]
 #
 # Options:
-#   -p  <パラメータの意味と制約>
-#   -n  Dry-run (optional)
+#   -p  Identifier used to name the per-run idempotency marker (required)
+#   -n  Dry-run (skip the actual file writes, still log)
 #   -h  Show this usage
 #
-# Authentication: <認証要件：IAM ロール / Vault 参照 / 不要 など>
+# Authentication: <REAL: IAM role / Vault reference / none>
 #
 # Flow:
 #   1. Argument parsing & validation
@@ -24,11 +24,15 @@
 #   0  = success or idempotent skip
 #   1  = usage / validation
 #   2  = target resource not found
-#   3  = resource state invalid (timeout etc.)
+#   3  = resource state invalid
 #   4  = main operation failed
 #   5  = external dependency unreachable
 #   10+= environment prerequisite (CLI / module missing)
 #   20+= authentication / permission
+#
+# This file is a runnable demonstration. Each phase has placeholder logic so
+# you can run it as-is and observe all five phases in the log, including an
+# idempotent skip when re-run within IDEMPOTENCY_WINDOW_SEC seconds.
 # ============================================================================
 set -euo pipefail
 
@@ -48,26 +52,26 @@ tmp_file=""
 exit_code=0
 status="unknown"
 
+# Demo-only: idempotency window. Re-runs within this window skip.
+IDEMPOTENCY_WINDOW_SEC=60
+
 cleanup() {
-    # Capture the exit code being returned right now
     local rc=$?
-
-    # Remove temp artifacts
     if [[ -n "$tmp_file" && -f "$tmp_file" ]]; then
-        rm -f -- "$tmp_file" || log_warn "Cleanup failed: file=$tmp_file"
+        if rm -f -- "$tmp_file"; then
+            log_info "Cleanup: removed temp file=$tmp_file"
+        else
+            log_warn "Cleanup failed: file=$tmp_file"
+        fi
     fi
-
-    # If we're exiting through the natural end and status is still unknown,
-    # treat it as success.
     if [[ "$status" == "unknown" && "$rc" -eq 0 ]]; then
         status="success"
     fi
-
     log_info "Script end: status=$status exitCode=$rc"
 }
 trap cleanup EXIT
 
-usage() { sed -n '2,28p' "$0" >&2; exit 1; }
+usage() { sed -n '2,33p' "$0" >&2; exit 1; }
 
 # ----------------------------------------------------------------------------
 # Phase 1: Argument parsing & validation
@@ -99,43 +103,52 @@ log_info "Args validated: param=$param dryRun=$dry_run"
 # ----------------------------------------------------------------------------
 # Phase 3: Pre-check (prerequisites + idempotency)
 # All checks here MUST be side-effect free (read-only).
+# Replace each demo check with the relevant real check for your script.
 # ----------------------------------------------------------------------------
 log_info "Pre-check start"
 
-# 3-a: Required CLIs present
-# if ! command -v aws >/dev/null 2>&1; then
-#     log_error "aws CLI not installed"
-#     status="failed"; exit_code=10
-#     exit 10
-# fi
+# 3-a: Required CLIs present.
+# DEMO: ensure 'cat' is available. REAL: e.g. command -v aws.
+if ! command -v cat >/dev/null 2>&1; then
+    log_error "Required tool not found: cat"
+    status="failed"; exit_code=10
+    exit 10
+fi
 
-# 3-b: Authentication usable
-# if ! aws sts get-caller-identity >/dev/null 2>&1; then
-#     log_error "AWS auth failed"
-#     status="failed"; exit_code=20
-#     exit 20
-# fi
+# 3-b: Authentication usable.
+# DEMO: confirm we have an actor name. REAL: e.g. aws sts get-caller-identity.
+actor="${USER:-${LOGNAME:-}}"
+if [[ -z "$actor" ]]; then
+    log_error "Cannot determine identity (USER / LOGNAME both empty)"
+    status="failed"; exit_code=20
+    exit 20
+fi
 
-# 3-c: Target resource exists / reachable
-# if [[ ! -e "$target" ]]; then
-#     log_error "Target not found: target=$target"
-#     status="failed"; exit_code=2
-#     exit 2
-# fi
+# 3-c: Target resource exists / reachable.
+# DEMO: working directory exists. REAL: target file or host.
+work_dir="${TMPDIR:-/tmp}"
+if [[ ! -d "$work_dir" ]]; then
+    log_error "Working dir not found: dir=$work_dir"
+    status="failed"; exit_code=2
+    exit 2
+fi
 
 # 3-d: Idempotency — already in desired state? If yes, skip cleanly.
-# if [[ <already_done> ]]; then
-#     log_info "Skipped (idempotent): reason=already_completed"
-#     status="skipped"; exit_code=0
-#     exit 0
-# fi
+# DEMO: skip if a per-param marker file was touched within the window.
+# REAL: check whether the action was recently performed.
+marker="$work_dir/template-demo-${param}.marker"
+if [[ -f "$marker" ]]; then
+    age=$(( $(date +%s) - $(stat -c %Y -- "$marker") ))
+    if [[ "$age" -lt "$IDEMPOTENCY_WINDOW_SEC" ]]; then
+        log_info "Skipped (idempotent): reason=marker_recent marker=$marker ageSec=$age"
+        status="skipped"; exit_code=0
+        exit 0
+    fi
+fi
 
-# 3-e: External dependency reachable
-# if ! curl -sfo /dev/null --max-time 5 https://example.internal/health; then
-#     log_error "External dependency unreachable"
-#     status="failed"; exit_code=5
-#     exit 5
-# fi
+# 3-e: External dependency reachability.
+# DEMO: skipped (no external dependency).
+# REAL: e.g. curl -sfo /dev/null --max-time 5 https://example.internal/health.
 
 log_info "Pre-check passed"
 
@@ -145,12 +158,18 @@ log_info "Pre-check passed"
 log_info "Main start"
 
 if [[ "$dry_run" -eq 1 ]]; then
-    log_info "[DRY-RUN] would do work: param=$param"
+    log_info "[DRY-RUN] would write demo payload: param=$param"
 else
-    # TODO: replace with the real implementation
-    # Example: tmp_file=$(mktemp); ...
+    # DEMO: write a payload to a scratch temp file, then update the
+    # idempotency marker. REAL: replace with the actual operation.
 
-    log_info "Doing work: param=$param"
+    tmp_file=$(mktemp)
+    printf 'Demo payload for %s written at %s\n' "$param" "$(date)" > "$tmp_file"
+    size=$(stat -c %s -- "$tmp_file")
+    log_info "Wrote scratch file: file=$tmp_file bytes=$size"
+
+    date +%s > "$marker"
+    log_info "Marker updated: marker=$marker"
 fi
 
 log_info "Main complete"
