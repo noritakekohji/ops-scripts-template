@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     繝ｭ繧ｰ繝輔ぃ繧､繝ｫ繧偵し繧､繧ｺ縺ｾ縺溘・邨碁℃譎る俣縺ｧ繝ｭ繝ｼ繝・・繝医☆繧具ｼ井ｻｻ諢上〒 gzip 蝨ｧ邵ｮ・峨・
@@ -40,12 +40,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Ο繧ｬ繝ｼ -------------------------------------------------
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
 
 # --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壹ヱ繝ｩ繝｡繝ｼ繧ｿ縺ｸ蜿肴丐 ---------------
-$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'rotate_log'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
@@ -54,10 +54,10 @@ if (-not $PSBoundParameters.ContainsKey('MaxSizeMB')      -and $cfg.ContainsKey(
 if (-not $PSBoundParameters.ContainsKey('MaxAgeDays')     -and $cfg.ContainsKey('MaxAgeDays'))     { $MaxAgeDays     = [int]$cfg['MaxAgeDays'] }
 if (-not $PSBoundParameters.ContainsKey('RetentionCount') -and $cfg.ContainsKey('RetentionCount')) { $RetentionCount = [int]$cfg['RetentionCount'] }
 if (-not $PSBoundParameters.ContainsKey('Compress')       -and $cfg.ContainsKey('Compress')) {
-    if ([System.Convert]::ToBoolean($cfg['Compress'])) { $Compress = [switch]::Present }
+    if ([System.Convert]::ToBoolean($cfg['Compress'])) { $Compress = $true }
 }
 if (-not $PSBoundParameters.ContainsKey('CopyTruncate')   -and $cfg.ContainsKey('CopyTruncate')) {
-    if ([System.Convert]::ToBoolean($cfg['CopyTruncate'])) { $CopyTruncate = [switch]::Present }
+    if ([System.Convert]::ToBoolean($cfg['CopyTruncate'])) { $CopyTruncate = $true }
 }
 # CLI 縺ｧ -PathList 譛ｪ謖・ｮ壹↑繧・config 縺ｮ PathList 繧呈治逕ｨ縲ら嶌蟇ｾ繝代せ縺ｯ repo root 襍ｷ轤ｹ縺ｧ邨ｶ蟇ｾ蛹悶・if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
     $PathList = [string]$cfg['PathList']

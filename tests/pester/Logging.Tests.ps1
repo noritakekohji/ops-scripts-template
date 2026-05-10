@@ -1,4 +1,4 @@
-#Requires -Version 7
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     lib/powershell/Logging.psm1 のユニットテスト（Pester 5+）。
@@ -8,7 +8,7 @@
 #>
 
 BeforeAll {
-    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+    $repoRoot = (Resolve-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path
     Import-Module (Join-Path $repoRoot 'lib' 'powershell' 'Logging.psm1') -Force
 }
 

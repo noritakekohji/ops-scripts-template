@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     EBS 繧ｹ繝翫ャ繝励す繝ｧ繝・ヨ繧剃ｽ懈・縺励∝ｿ・ｦ√↓蠢懊§縺ｦ蜿､縺・ｂ縺ｮ繧剃ｸ紋ｻ｣蜑企勁縺吶ｋ縲・
@@ -41,14 +41,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Ο繧ｬ繝ｼ -------------------------------------------------
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
 # --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壹ヱ繝ｩ繝｡繝ｼ繧ｿ縺ｸ蜿肴丐 ---------------
-$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'backup_ebs_snapshot'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
@@ -56,7 +56,7 @@ if (-not $PSBoundParameters.ContainsKey('Region')             -and $cfg.Contains
 if (-not $PSBoundParameters.ContainsKey('RetentionDays')      -and $cfg.ContainsKey('RetentionDays'))      { $RetentionDays      = [int]$cfg['RetentionDays'] }
 if (-not $PSBoundParameters.ContainsKey('MinIntervalMinutes') -and $cfg.ContainsKey('MinIntervalMinutes')) { $MinIntervalMinutes = [int]$cfg['MinIntervalMinutes'] }
 if (-not $PSBoundParameters.ContainsKey('Wait')               -and $cfg.ContainsKey('Wait')) {
-    if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = [switch]::Present }
+    if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = $true }
 }
 
 $exitCode = 0

@@ -42,7 +42,7 @@ function Get-OpsConfig {
 
     # env 指定なし → config/default/、env 指定あり → config/<env>/ のみ読む
     $config = @{}
-    $configDir = if ($Env) { Join-Path $RepoRoot 'config' $Env } else { Join-Path $RepoRoot 'config' 'default' }
+    $configDir = if ($Env) { [IO.Path]::Combine($RepoRoot, 'config', $Env) } else { [IO.Path]::Combine($RepoRoot, 'config', 'default') }
     $sources = @(
         Join-Path $configDir 'global.conf'
         Join-Path $configDir "$Name.conf"

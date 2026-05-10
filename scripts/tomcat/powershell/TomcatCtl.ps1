@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Tomcat 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ峨・
@@ -42,17 +42,17 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- Phase 2: lib + config --------------------------------------------------
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'tomcatctl'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
 if (-not $PSBoundParameters.ContainsKey('WaitTimeoutSec') -and $cfg.ContainsKey('WaitTimeoutSec')) { $WaitTimeoutSec = [int]$cfg['WaitTimeoutSec'] }
 if (-not $PSBoundParameters.ContainsKey('Wait')           -and $cfg.ContainsKey('Wait')) {
-    if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = [switch]::Present }
+    if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = $true }
 }
 
 $exitCode = 0

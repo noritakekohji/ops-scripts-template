@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     1 縺､莉･荳翫・繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ繧・Amazon S3 縺ｫ繧｢繝・・繝ｭ繝ｼ繝峨☆繧具ｼ郁｡悟腰菴堺ｸ頑嶌縺榊ｯｾ蠢懶ｼ峨・
@@ -43,11 +43,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Λ繧､繝悶Λ繝ｪ ----------------------------------------------------
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 's3upload'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
@@ -161,7 +161,7 @@ try {
                 $skipped++; continue
             }
 
-            $prefixTrim = ($e.Prefix ?? '').Trim('/')
+            $prefixTrim = (if ($null -ne $e.Prefix) { $e.Prefix } else { '' }).Trim('/')
             $key = if ($prefixTrim) { "$prefixTrim/$($file.Name)" } else { "$($file.Name)" }
             if ($e.Mode -eq 'archive') { $key = "$key.$stamp" }
 

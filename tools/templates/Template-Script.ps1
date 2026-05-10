@@ -1,4 +1,4 @@
-#Requires -Version 7
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     <一行サマリ：このスクリプトが何をするか>
@@ -51,7 +51,7 @@ Set-StrictMode -Version Latest
 #   scripts/aws/powershell/Foo.ps1       -> 3 ups (../../../lib/...)
 #   scripts/windows/powershell/Bar.ps1   -> 3 ups
 #   scripts/sqlserver/powershell/Baz.ps1 -> 3 ups
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
@@ -62,7 +62,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 #           > config/default/<Name>.conf > config/default/global.conf > script default.
 # TEMPLATE: change 'template_script' to your feature's snake_case name.
 # The same name is shared between the PS and Bash pair (config/<env>/<name>.conf).
-$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'template_script'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }

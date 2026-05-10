@@ -1,4 +1,4 @@
-#Requires -Version 7
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     リポジトリの scripts/ / config/ から指定対象だけを
@@ -50,11 +50,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- ライブラリ ---
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-$configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 
 # -Env 未指定なら OPS_ENV 環境変数を使う
@@ -67,7 +67,7 @@ if (-not $PSBoundParameters.ContainsKey('OptRoot') -and $cfg.ContainsKey('opt_ro
     $OptRoot = [string]$cfg['opt_root_dir']
 }
 if (-not $PSBoundParameters.ContainsKey('Backup') -and $cfg.ContainsKey('Backup')) {
-    if ([System.Convert]::ToBoolean($cfg['Backup'])) { $Backup = [switch]::Present }
+    if ([System.Convert]::ToBoolean($cfg['Backup'])) { $Backup = $true }
 }
 if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
     $PathList = [string]$cfg['PathList']
@@ -83,7 +83,7 @@ $script:unchanged = 0
 $script:backedUp = 0
 $script:failed = 0
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..')).Path
+$repoRoot = (Resolve-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..', '..'))).Path
 
 # ----------------------------------------------------------------------------
 # ヘルパ
@@ -149,7 +149,7 @@ function Invoke-OpsDeployConf {
     $filename = Split-Path -Leaf $FilePath
     $dst = Join-Path $OptRoot 'config' $filename
 
-    $configDir = if ($Env) { Join-Path $repoRoot 'config' $Env } else { Join-Path $repoRoot 'config' 'default' }
+    $configDir = if ($Env) { [IO.Path]::Combine($repoRoot, 'config', $Env) } else { [IO.Path]::Combine($repoRoot, 'config', 'default') }
     $src = Join-Path $configDir $FilePath
 
     if (Test-Path -LiteralPath $src -PathType Leaf) {

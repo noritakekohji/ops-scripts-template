@@ -1,7 +1,7 @@
-#Requires -Version 7
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$Path = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')),
+    [string]$Path = (Resolve-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..'))),
     [string]$ReportFile = 'psscriptanalyzer-report.json'
 )
 
