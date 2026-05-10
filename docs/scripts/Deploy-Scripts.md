@@ -55,7 +55,7 @@ GitHub から ZIP でダウンロードして展開したファイルは、Windo
 リポジトリのルートで一度だけ実行します。以後は通常通り動作します。
 
 ```powershell
-Get-ChildItem -Path "リポジトリのルートパス" -Recurse -Filter "*.ps1" | Unblock-File
+Get-ChildItem -Path "リポジトリのルートパス" -Recurse -Include "*.ps1","*.psm1" | Unblock-File
 ```
 
 **解決策 B：実行時に `-ExecutionPolicy Bypass` を付ける（一時的）**

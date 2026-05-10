@@ -20,7 +20,7 @@ GitHub から ZIP でダウンロード・展開したファイルは Windows �
 **リポジトリルートで一度だけ**以下を実行してブロックを解除してください。
 
 ```powershell
-Get-ChildItem -Path "." -Recurse -Filter "*.ps1" | Unblock-File
+Get-ChildItem -Path "." -Recurse -Include "*.ps1","*.psm1" | Unblock-File
 ```
 
 > `git clone` で取得した場合はこの手順は不要です。

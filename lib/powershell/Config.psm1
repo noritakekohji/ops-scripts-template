@@ -51,7 +51,7 @@ function Get-OpsConfig {
     foreach ($file in $sources) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
         Write-Verbose "Loading config: $file"
-        Get-Content -LiteralPath $file | ForEach-Object {
+        Get-Content -LiteralPath $file -Encoding UTF8 | ForEach-Object {
             $line = $_.Trim()
             # 空行とコメント行はスキップ
             if (-not $line -or $line.StartsWith('#')) { return }
