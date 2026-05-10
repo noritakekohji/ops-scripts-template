@@ -34,10 +34,42 @@
 
 | 項目 | Windows | Linux |
 |---|---|---|
-| ランタイム | PowerShell 7+ | Bash 4+ |
+| ランタイム | PowerShell 5.1 以上（7 推奨） | Bash 4+ |
 | 必須 CLI | （なし） | `sha256sum`、`cp`、`chmod` |
 | 認証 | 配備先パスへの書込み権 | 同左（必要なら sudo） |
 | 既定 `<opt_root_dir>` | `C:\ProgramData\ops-scripts` | `/opt/ops-scripts` |
+
+### 3.1 Windows 初回セットアップ（ZIP 展開した場合）
+
+GitHub から ZIP でダウンロードして展開したファイルは、Windows が「インターネット由来」のマークを付けるため、
+そのままでは PowerShell のセキュリティポリシーに弾かれます。
+
+**症状：**
+```
+ファイル ... Deploy-Scripts.ps1 はデジタル署名されていません。
+このスクリプトは現在のシステムでは実行できません。
+```
+
+**解決策 A：ブロックを一括解除する（推奨）**
+
+リポジトリのルートで一度だけ実行します。以後は通常通り動作します。
+
+```powershell
+Get-ChildItem -Path "リポジトリのルートパス" -Recurse -Filter "*.ps1" | Unblock-File
+```
+
+**解決策 B：実行時に `-ExecutionPolicy Bypass` を付ける（一時的）**
+
+毎回付ける必要があるため、解決策 A を推奨します。
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File "...\Deploy-Scripts.ps1" -Env dev
+```
+
+> **備考：** `install.bat` 経由で実行する場合は `-ExecutionPolicy Bypass` を自動で付けているため、
+> この問題は発生しません。`install.bat` の利用を推奨します。
+
+> **備考：** `git clone` で取得した場合はブロックが付かないため、この手順は不要です。
 
 ## 4. 引数 / オプション
 
