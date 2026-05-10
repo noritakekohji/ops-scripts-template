@@ -3,6 +3,10 @@ Set-StrictMode -Version Latest
 # JST タイムゾーン情報のキャッシュ（モジュール初回利用時に解決）
 $script:_OpsJstTz = $null
 
+$script:_OpsLogFile  = $null
+$script:_OpsLogLevel = 'INFO'
+$script:_LevelOrder  = @{ DEBUG = 0; INFO = 1; WARN = 2; ERROR = 3 }
+
 function _Get-OpsJstTz {
     # JST (Asia/Tokyo) のタイムゾーン情報を取得して返す。
     # PowerShell 7+ は全プラットフォームで IANA 名を受け付けるが、
@@ -12,6 +16,25 @@ function _Get-OpsJstTz {
         catch { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time') }
     }
     return $script:_OpsJstTz
+}
+
+function Set-OpsLogConfig {
+    <#
+    .SYNOPSIS
+        Configure file output for Write-OpsLog.
+    .PARAMETER LogFile
+        Path to the log file. Empty string disables file logging.
+    .PARAMETER LogLevel
+        Minimum severity level written to the log file (DEBUG/INFO/WARN/ERROR).
+        Default: INFO.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()][AllowNull()][string]$LogFile = '',
+        [ValidateSet('DEBUG','INFO','WARN','ERROR')][string]$LogLevel = 'INFO'
+    )
+    $script:_OpsLogFile  = if ($LogFile) { $LogFile } else { $null }
+    $script:_OpsLogLevel = $LogLevel
 }
 
 function Get-OpsJstStamp {
@@ -90,6 +113,20 @@ function Write-OpsLog {
     else {
         [Console]::Out.WriteLine($line)
     }
+
+    # Write to log file if configured and level meets the threshold
+    if ($script:_OpsLogFile -and ($script:_LevelOrder[$Level] -ge $script:_LevelOrder[$script:_OpsLogLevel])) {
+        try {
+            $logDir = Split-Path -Parent $script:_OpsLogFile
+            if ($logDir -and -not (Test-Path -LiteralPath $logDir)) {
+                New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+            }
+            Add-Content -LiteralPath $script:_OpsLogFile -Value $line -Encoding UTF8
+        }
+        catch {
+            [Console]::Error.WriteLine("[WARN ] Log file write failed: $($_.Exception.Message)")
+        }
+    }
 }
 
-Export-ModuleMember -Function Write-OpsLog, Get-OpsJstStamp
+Export-ModuleMember -Function Write-OpsLog, Get-OpsJstStamp, Set-OpsLogConfig

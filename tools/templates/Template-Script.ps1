@@ -66,6 +66,9 @@ $configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', '
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'template_script'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+$logFile  = if ($cfg.ContainsKey('LogFile'))  { [string]$cfg['LogFile'] }  else { '' }
+$logLevel = if ($cfg.ContainsKey('LogLevel')) { [string]$cfg['LogLevel'] } else { 'INFO' }
+Set-OpsLogConfig -LogFile $logFile -LogLevel $logLevel
 # TEMPLATE: for each behavior parameter, copy this pattern:
 # if (-not $PSBoundParameters.ContainsKey('<ParamName>') -and $cfg.ContainsKey('<ParamName>')) {
 #     $<ParamName> = [<type>]$cfg['<ParamName>']

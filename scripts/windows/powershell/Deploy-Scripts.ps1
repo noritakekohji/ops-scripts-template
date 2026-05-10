@@ -62,6 +62,9 @@ if (-not $PSBoundParameters.ContainsKey('Env') -and $env:OPS_ENV) { $Env = $env:
 
 $cfg = Get-OpsConfig -Name 'deploy_scripts' -Env $Env
 $cfgEnv = if ($Env) { $Env } else { 'default' }
+$logFile  = if ($cfg.ContainsKey('LogFile'))  { [string]$cfg['LogFile'] }  else { '' }
+$logLevel = if ($cfg.ContainsKey('LogLevel')) { [string]$cfg['LogLevel'] } else { 'INFO' }
+Set-OpsLogConfig -LogFile $logFile -LogLevel $logLevel
 
 if (-not $PSBoundParameters.ContainsKey('OptRoot') -and $cfg.ContainsKey('opt_root_dir')) {
     $OptRoot = [string]$cfg['opt_root_dir']

@@ -49,6 +49,9 @@ $configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', '
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'rotate_log'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
+$logFile  = if ($cfg.ContainsKey('LogFile'))  { [string]$cfg['LogFile'] }  else { '' }
+$logLevel = if ($cfg.ContainsKey('LogLevel')) { [string]$cfg['LogLevel'] } else { 'INFO' }
+Set-OpsLogConfig -LogFile $logFile -LogLevel $logLevel
 if (-not $PSBoundParameters.ContainsKey('Pattern')        -and $cfg.ContainsKey('Pattern'))        { $Pattern        = [string]$cfg['Pattern'] }
 if (-not $PSBoundParameters.ContainsKey('MaxSizeMB')      -and $cfg.ContainsKey('MaxSizeMB'))      { $MaxSizeMB      = [int]$cfg['MaxSizeMB'] }
 if (-not $PSBoundParameters.ContainsKey('MaxAgeDays')     -and $cfg.ContainsKey('MaxAgeDays'))     { $MaxAgeDays     = [int]$cfg['MaxAgeDays'] }

@@ -99,3 +99,41 @@ Describe 'Write-OpsLog' {
         $sw.ToString() | Should -Match '\[INFO \]'
     }
 }
+
+Describe 'Set-OpsLogConfig / file logging' {
+
+    BeforeEach {
+        $script:tmpLog = Join-Path ([System.IO.Path]::GetTempPath()) ("ops-log-test-$([Guid]::NewGuid().ToString('N')).log")
+        Set-OpsLogConfig -LogFile $script:tmpLog -LogLevel 'INFO'
+    }
+
+    AfterEach {
+        Set-OpsLogConfig -LogFile '' -LogLevel 'INFO'
+        if ($script:tmpLog -and (Test-Path -LiteralPath $script:tmpLog)) {
+            Remove-Item -LiteralPath $script:tmpLog -Force
+        }
+    }
+
+    It 'INFO メッセージがファイルに書き込まれる' {
+        Write-OpsLog -Level INFO -Message 'file-test'
+        (Get-Content -LiteralPath $script:tmpLog -Encoding UTF8) | Should -Match 'file-test'
+    }
+
+    It 'LogLevel=WARN のとき INFO はファイルに書かれない' {
+        Set-OpsLogConfig -LogFile $script:tmpLog -LogLevel 'WARN'
+        Write-OpsLog -Level INFO -Message 'should-not-appear'
+        Test-Path -LiteralPath $script:tmpLog | Should -Be $false
+    }
+
+    It 'LogLevel=WARN のとき WARN はファイルに書かれる' {
+        Set-OpsLogConfig -LogFile $script:tmpLog -LogLevel 'WARN'
+        Write-OpsLog -Level WARN -Message 'warn-test'
+        (Get-Content -LiteralPath $script:tmpLog -Encoding UTF8) | Should -Match 'warn-test'
+    }
+
+    It 'LogFile 未設定のときファイルは生成されない' {
+        Set-OpsLogConfig -LogFile '' -LogLevel 'INFO'
+        Write-OpsLog -Level INFO -Message 'no-file'
+        Test-Path -LiteralPath $script:tmpLog | Should -Be $false
+    }
+}

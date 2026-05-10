@@ -53,6 +53,9 @@ $configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', '
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'backup_ami'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
+$logFile  = if ($cfg.ContainsKey('LogFile'))  { [string]$cfg['LogFile'] }  else { '' }
+$logLevel = if ($cfg.ContainsKey('LogLevel')) { [string]$cfg['LogLevel'] } else { 'INFO' }
+Set-OpsLogConfig -LogFile $logFile -LogLevel $logLevel
 if (-not $PSBoundParameters.ContainsKey('Region')             -and $cfg.ContainsKey('Region'))             { $Region             = [string]$cfg['Region'] }
 if (-not $PSBoundParameters.ContainsKey('NoReboot')           -and $cfg.ContainsKey('NoReboot'))           { $NoReboot           = [System.Convert]::ToBoolean($cfg['NoReboot']) }
 if (-not $PSBoundParameters.ContainsKey('RetentionDays')      -and $cfg.ContainsKey('RetentionDays'))      { $RetentionDays      = [int]$cfg['RetentionDays'] }

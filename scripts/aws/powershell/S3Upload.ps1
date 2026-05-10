@@ -51,6 +51,9 @@ $configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', '
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 's3upload'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
+$logFile  = if ($cfg.ContainsKey('LogFile'))  { [string]$cfg['LogFile'] }  else { '' }
+$logLevel = if ($cfg.ContainsKey('LogLevel')) { [string]$cfg['LogLevel'] } else { 'INFO' }
+Set-OpsLogConfig -LogFile $logFile -LogLevel $logLevel
 foreach ($k in 'Bucket','Prefix','Region','StorageClass','ServerSideEncryption','KmsKeyId','Mode') {
     if (-not $PSBoundParameters.ContainsKey($k) -and $cfg.ContainsKey($k)) {
         Set-Variable -Name $k -Value ([string]$cfg[$k])
