@@ -1,8 +1,7 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
-    EC2 ライフサイクル制御：start / stop / restart / status（冪等）。
-
+    EC2 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ峨・
 .DESCRIPTION
     Usage: Ec2Ctl.ps1 <action> <instanceId[,instanceId,...]> [options]
 
@@ -58,7 +57,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'ec2ctl'
-$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
 if (-not $PSBoundParameters.ContainsKey('Region')         -and $cfg.ContainsKey('Region'))         { $Region         = [string]$cfg['Region'] }
 if (-not $PSBoundParameters.ContainsKey('WaitTimeoutSec') -and $cfg.ContainsKey('WaitTimeoutSec')) { $WaitTimeoutSec = [int]$cfg['WaitTimeoutSec'] }
 if (-not $PSBoundParameters.ContainsKey('Wait')           -and $cfg.ContainsKey('Wait')) {
@@ -78,7 +77,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: action=$Action instanceCount=$($InstanceId.Count) region=$Region wait=$Wait timeoutSec=$WaitTimeoutSec forceStop=$ForceStop"
 
-        # --- フェーズ 3: プレチェック ---------------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
@@ -162,7 +161,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: action=$Action toAct=$($toAct.Count) skipped=$($skipped.Count)"
 
-        # --- フェーズ 4: メイン処理 ---------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         if ($PSCmdlet.ShouldProcess(($toAct -join ','), "EC2 $Action")) {
@@ -187,8 +186,7 @@ try {
             }
         }
 
-        # 完了待ち（start/stop のみ。restart は外部状態が変わらない）
-        if ($Wait -and $acted.Count -gt 0 -and $Action -ne 'restart') {
+        # 螳御ｺ・ｾ・■・・tart/stop 縺ｮ縺ｿ縲Ｓestart 縺ｯ螟夜Κ迥ｶ諷九′螟峨ｏ繧峨↑縺・ｼ・        if ($Wait -and $acted.Count -gt 0 -and $Action -ne 'restart') {
             $targetState = if ($Action -eq 'start') { 'running' } else { 'stopped' }
             Write-OpsLog -Level INFO -Message "Waiting for '$targetState': count=$($acted.Count) timeoutSec=$WaitTimeoutSec"
             $deadline = (Get-Date).AddSeconds($WaitTimeoutSec)

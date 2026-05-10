@@ -1,26 +1,21 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # ============================================================================
 # tomcatctl.sh
-#   Tomcat ライフサイクル制御：start / stop / restart / status（冪等）
-#
-# 使い方:
+#   Tomcat 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ・#
+# 菴ｿ縺・婿:
 #   tomcatctl.sh <action> <service_name> [-w] [-t <sec>]
 #
-# アクション:
-#   start    既に active ならスキップ。それ以外は systemctl start
-#   stop     既に inactive ならスキップ。それ以外は systemctl stop
-#   restart  systemctl restart（常に実行、冪等スキップなし）
-#   status   状態のみ表示（read-only）
-#
-# オプション:
+# 繧｢繧ｯ繧ｷ繝ｧ繝ｳ:
+#   start    譌｢縺ｫ active 縺ｪ繧峨せ繧ｭ繝・・縲ゅ◎繧御ｻ･螟悶・ systemctl start
+#   stop     譌｢縺ｫ inactive 縺ｪ繧峨せ繧ｭ繝・・縲ゅ◎繧御ｻ･螟悶・ systemctl stop
+#   restart  systemctl restart・亥ｸｸ縺ｫ螳溯｡後∝・遲峨せ繧ｭ繝・・縺ｪ縺暦ｼ・#   status   迥ｶ諷九・縺ｿ陦ｨ遉ｺ・・ead-only・・#
+# 繧ｪ繝励す繝ｧ繝ｳ:
 #   -w  Wait until target state (start->active, stop->inactive)
 #   -t  Wait timeout seconds (default 60, range 5..600)
-#   -h  usage 表示
+#   -h  usage 陦ｨ遉ｺ
 #
-# 挙動オプションは config/<env>/tomcatctl.conf に設定可能。
-# 認証: systemctl のため sudo / root 権限が必要
-# 終了コード: 0 成功/スキップ, 1 usage, 2 サービス不在,
-#             3 待機タイムアウト, 4 systemctl 失敗, 10 systemctl 不在
+# 謖吝虚繧ｪ繝励す繝ｧ繝ｳ縺ｯ config/<env>/tomcatctl.conf 縺ｫ險ｭ螳壼庄閭ｽ縲・# 隱崎ｨｼ: systemctl 縺ｮ縺溘ａ sudo / root 讓ｩ髯舌′蠢・ｦ・# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 繧ｵ繝ｼ繝薙せ荳榊惠,
+#             3 蠕・ｩ溘ち繧､繝繧｢繧ｦ繝・ 4 systemctl 螟ｱ謨・ 10 systemctl 荳榊惠
 # ============================================================================
 set -euo pipefail
 
@@ -45,7 +40,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- フェーズ 1: 位置引数 + オプション ------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 1: 菴咲ｽｮ蠑墓焚 + 繧ｪ繝励す繝ｧ繝ｳ ------------------------------------------
 action="${1:-}"
 case "$action" in
     start|stop|restart|status) shift ;;
@@ -73,16 +68,16 @@ while getopts "wt:h" opt; do
     esac
 done
 
-# --- フェーズ 2: 設定ファイル読込み ---------------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ ---------------------------------------------------
 load_ops_config "tomcatctl"
 [[ "$wait_timeout_set" -eq 0 && -n "${OPS_CONFIG[WaitTimeoutSec]:-}" ]] && wait_timeout="${OPS_CONFIG[WaitTimeoutSec]}"
 if [[ "$wait_set" -eq 0 && -n "${OPS_CONFIG[Wait]:-}" ]]; then
     case "${OPS_CONFIG[Wait]}" in true|TRUE|True|1) wait_for_completion=1 ;; *) wait_for_completion=0 ;; esac
 fi
 
-log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
-# --- フェーズ 1（続き）: バリデーション ---------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 1・育ｶ壹″・・ 繝舌Μ繝・・繧ｷ繝ｧ繝ｳ ---------------------------------------------
 if ! [[ "$service_name" =~ ^[A-Za-z0-9._@\-]+$ ]]; then
     log_error "Invalid service name: $service_name"
     status="failed"; exit 1
@@ -94,7 +89,7 @@ fi
 
 log_info "Args validated: action=$action service=$service_name wait=$wait_for_completion timeoutSec=$wait_timeout"
 
-# --- フェーズ 3: プレチェック -----------------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け -----------------------------------------------------
 log_info "Pre-check start"
 
 if ! command -v systemctl >/dev/null 2>&1; then
@@ -102,8 +97,7 @@ if ! command -v systemctl >/dev/null 2>&1; then
     status="failed"; exit 10
 fi
 
-# unit が存在すること（loaded もしくは systemd が認識）
-if ! systemctl list-unit-files --no-legend "${service_name}.service" 2>/dev/null | grep -q . \
+# unit 縺悟ｭ伜惠縺吶ｋ縺薙→・・oaded 繧ゅ＠縺上・ systemd 縺瑚ｪ崎ｭ假ｼ・if ! systemctl list-unit-files --no-legend "${service_name}.service" 2>/dev/null | grep -q . \
    && ! systemctl status "${service_name}" >/dev/null 2>&1; then
     log_error "Service not found: service=$service_name"
     status="failed"; exit 2
@@ -131,10 +125,10 @@ fi
 
 log_info "Pre-check passed"
 
-# --- フェーズ 4: メイン処理 -----------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・-----------------------------------------------
 log_info "Main start"
 
-# systemctl start/stop/restart は既定でブロッキング。-w 時は timeout で囲む
+# systemctl start/stop/restart 縺ｯ譌｢螳壹〒繝悶Ο繝・く繝ｳ繧ｰ縲・w 譎ゅ・ timeout 縺ｧ蝗ｲ繧
 sysctl_args=( "$action" "$service_name" )
 if [[ "$wait_for_completion" -eq 1 ]]; then
     if ! timeout "$wait_timeout" systemctl "${sysctl_args[@]}"; then
@@ -143,8 +137,7 @@ if [[ "$wait_for_completion" -eq 1 ]]; then
         status="failed"; exit 3
     fi
 else
-    # -w なしでも systemd は同期実行。timeout でくるまないだけ
-    if ! systemctl "${sysctl_args[@]}"; then
+    # -w 縺ｪ縺励〒繧・systemd 縺ｯ蜷梧悄螳溯｡後Ｕimeout 縺ｧ縺上ｋ縺ｾ縺ｪ縺・□縺・    if ! systemctl "${sysctl_args[@]}"; then
         after_state=$(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")
         log_error "systemctl $action failed: service=$service_name actual=$after_state"
         status="failed"; exit 4

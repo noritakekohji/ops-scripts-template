@@ -1,4 +1,4 @@
-# `rotate_log.sh`
+﻿# `rotate_log.sh`
 
 > サイズまたは経過時間でログをローテートする（Linux / Bash 版）。リストファイルによる一括処理、gzip 圧縮、世代保持に対応。
 
@@ -102,7 +102,7 @@ scripts/linux/bash/rotate_log.sh
 1. 行内の Key=Value
 2. CLI 引数（-s / -a / -c / -k / -P / -T）
 3. config/<env>/rotate_log.conf
-4. config/common/rotate_log.conf
+4. config/default/rotate_log.conf
 5. スクリプトの既定値
 ```
 

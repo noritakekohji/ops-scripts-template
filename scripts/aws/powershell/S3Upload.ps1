@@ -1,27 +1,23 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
-    1 つ以上のローカルファイルを Amazon S3 にアップロードする（行単位上書き対応）。
-
+    1 縺､莉･荳翫・繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ繧・Amazon S3 縺ｫ繧｢繝・・繝ｭ繝ｼ繝峨☆繧具ｼ郁｡悟腰菴堺ｸ頑嶌縺榊ｯｾ蠢懶ｼ峨・
 .DESCRIPTION
-    対象は -Path（単一ファイル）と -PathList（テキストファイル）から
-    解決する。リストの各行は次の形式:
+    蟇ｾ雎｡縺ｯ -Path・亥腰荳繝輔ぃ繧､繝ｫ・峨→ -PathList・医ユ繧ｭ繧ｹ繝医ヵ繧｡繧､繝ｫ・峨°繧・    隗｣豎ｺ縺吶ｋ縲ゅΜ繧ｹ繝医・蜷・｡後・谺｡縺ｮ蠖｢蠑・
 
         <local_path> [Key=Value ...]
 
-    Recognised keys (CLI と同じ名前、case-sensitive):
+    Recognised keys (CLI 縺ｨ蜷後§蜷榊燕縲…ase-sensitive):
       Bucket, Prefix, Region, StorageClass, ServerSideEncryption,
       KmsKeyId, Mode (= archive|mirror)
 
     Resolution: per-line > CLI > config/<env>/s3upload.conf > script default.
 
-    モード:
+    繝｢繝ｼ繝・
       archive  S3 key = <prefix>/<filename>.<UTC yyyyMMdd-HHmmss>   (default)
       mirror   S3 key = <prefix>/<filename>                          (overwrite)
 
-    認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）。
-    空のローカルファイルはスキップ（冪等）。
-
+    隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain・育腸蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / IAM 繝ｭ繝ｼ繝ｫ・峨・    遨ｺ縺ｮ繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ縺ｯ繧ｹ繧ｭ繝・・・亥・遲会ｼ峨・
 .EXAMPLE
     .\S3Upload.ps1 -Path C:\backup\db.bak -Bucket my-backups -Prefix db/prod
 .EXAMPLE
@@ -46,7 +42,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- フェーズ 2: 共通ライブラリ ----------------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Λ繧､繝悶Λ繝ｪ ----------------------------------------------------
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
@@ -54,14 +50,13 @@ Import-Module (Resolve-Path $libPath).Path -Force
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 's3upload'
-$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
 foreach ($k in 'Bucket','Prefix','Region','StorageClass','ServerSideEncryption','KmsKeyId','Mode') {
     if (-not $PSBoundParameters.ContainsKey($k) -and $cfg.ContainsKey($k)) {
         Set-Variable -Name $k -Value ([string]$cfg[$k])
     }
 }
-# CLI で -PathList 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
-if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
+# CLI 縺ｧ -PathList 譛ｪ謖・ｮ壹↑繧・config 縺ｮ PathList 繧呈治逕ｨ縲ら嶌蟇ｾ繝代せ縺ｯ repo root 襍ｷ轤ｹ縺ｧ邨ｶ蟇ｾ蛹悶・if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
     $PathList = [string]$cfg['PathList']
     if ($PathList -and -not [System.IO.Path]::IsPathRooted($PathList)) {
         $PathList = Join-Path (Get-OpsRepoRoot) $PathList
@@ -118,7 +113,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: path='$Path' pathList='$PathList' bucket='$Bucket' prefix='$Prefix' region='$Region' storageClass=$StorageClass sse=$ServerSideEncryption mode=$Mode"
 
-        # --- フェーズ 3: プレチェック ---------------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.S3)) {
@@ -147,7 +142,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: entryCount=$($entries.Count)"
 
-        # --- フェーズ 4: メイン処理 ---------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
         $stamp = Get-OpsJstStamp
 

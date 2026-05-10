@@ -1,4 +1,4 @@
-#!/usr/bin/env bats
+﻿#!/usr/bin/env bats
 # lib/bash/config.sh のユニットテスト
 #
 # 各テストでは make_test_repo で隔離 repo を作り、3 番目の引数で
@@ -26,7 +26,7 @@ teardown() {
 # ----------------------------------------------------------------------------
 
 @test "common/ops.conf からキーを読み込む" {
-    cat > "$TEST_REPO/config/common/ops.conf" <<'EOF'
+    cat > "$TEST_REPO/config/default/ops.conf" <<'EOF'
 Region = ap-northeast-1
 Wait   = true
 EOF
@@ -36,28 +36,28 @@ EOF
 }
 
 @test "common/<name>.conf が common/ops.conf を上書きする" {
-    echo "Region = ap-northeast-1" > "$TEST_REPO/config/common/ops.conf"
-    echo "Region = us-east-1"      > "$TEST_REPO/config/common/foo.conf"
+    echo "Region = ap-northeast-1" > "$TEST_REPO/config/default/ops.conf"
+    echo "Region = us-east-1"      > "$TEST_REPO/config/default/foo.conf"
     load_ops_config 'foo' 'common' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "us-east-1" ]
 }
 
 @test "env/<name>.conf が common/<name>.conf を上書きする" {
-    echo "Region = us-east-1" > "$TEST_REPO/config/common/foo.conf"
+    echo "Region = us-east-1" > "$TEST_REPO/config/default/foo.conf"
     echo "Region = eu-west-1" > "$TEST_REPO/config/dev/foo.conf"
     load_ops_config 'foo' 'dev' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "eu-west-1" ]
 }
 
 @test "env/ops.conf が common/<name>.conf を上書きする" {
-    echo "Wait = false" > "$TEST_REPO/config/common/foo.conf"
+    echo "Wait = false" > "$TEST_REPO/config/default/foo.conf"
     echo "Wait = true"  > "$TEST_REPO/config/dev/ops.conf"
     load_ops_config 'foo' 'dev' "$TEST_REPO"
     [ "${OPS_CONFIG[Wait]}" = "true" ]
 }
 
 @test "env が common のときは common/ のみ読み込まれる" {
-    echo "Region = us-east-1" > "$TEST_REPO/config/common/foo.conf"
+    echo "Region = us-east-1" > "$TEST_REPO/config/default/foo.conf"
     echo "Region = eu-west-1" > "$TEST_REPO/config/dev/foo.conf"
     load_ops_config 'foo' 'common' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "us-east-1" ]
@@ -68,7 +68,7 @@ EOF
 # ----------------------------------------------------------------------------
 
 @test "コメント行と空行は無視される" {
-    cat > "$TEST_REPO/config/common/foo.conf" <<'EOF'
+    cat > "$TEST_REPO/config/default/foo.conf" <<'EOF'
 # 行頭コメント
 
 Region = ap-northeast-1
@@ -82,7 +82,7 @@ EOF
 }
 
 @test "値の前後の引用符は除去される（ダブル / シングル）" {
-    cat > "$TEST_REPO/config/common/foo.conf" <<'EOF'
+    cat > "$TEST_REPO/config/default/foo.conf" <<'EOF'
 Description = "weekly backup"
 Note        = 'with spaces'
 EOF
@@ -92,7 +92,7 @@ EOF
 }
 
 @test "前後空白は trim される" {
-    echo "   Region   =   ap-northeast-1   " > "$TEST_REPO/config/common/foo.conf"
+    echo "   Region   =   ap-northeast-1   " > "$TEST_REPO/config/default/foo.conf"
     load_ops_config 'foo' 'common' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "ap-northeast-1" ]
 }

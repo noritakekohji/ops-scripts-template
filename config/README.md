@@ -1,4 +1,4 @@
-# 設定ファイル
+﻿# 設定ファイル
 
 スクリプトの挙動を決める変数（リージョン、保持日数、冪等性ウィンドウ 等）をリポジトリ管理する場所。
 
@@ -29,8 +29,8 @@ config/
 1. **CLI 引数**（`-Region ap-northeast-1` 等）
 2. `config/<env>/<script-name>.conf`
 3. `config/<env>/ops.conf`
-4. `config/common/<script-name>.conf`
-5. `config/common/ops.conf`
+4. `config/default/<script-name>.conf`
+5. `config/default/ops.conf`
 6. **スクリプトのハードコード既定値**
 
 CLI で明示されたものは常に勝つ（運用中の緊急上書きが効く）。
@@ -106,7 +106,7 @@ Wait               = true
 ```
 
 ```ini
-# config/common/ops.conf
+# config/default/ops.conf
 # どの環境でも有効な既定（リージョンは Tokyo を既定にする）
 
 Region = ap-northeast-1

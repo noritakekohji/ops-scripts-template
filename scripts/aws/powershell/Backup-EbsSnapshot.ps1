@@ -1,21 +1,17 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
-    EBS スナップショットを作成し、必要に応じて古いものを世代削除する。
-
+    EBS 繧ｹ繝翫ャ繝励す繝ｧ繝・ヨ繧剃ｽ懈・縺励∝ｿ・ｦ√↓蠢懊§縺ｦ蜿､縺・ｂ縺ｮ繧剃ｸ紋ｻ｣蜑企勁縺吶ｋ縲・
 .DESCRIPTION
-    挙動パラメータは CLI、config ファイル、もしくはスクリプト既定値で
-    指定可能。優先順位は config/README.md を参照。
-    実行ごとの対象 (-VolumeId / -InstanceId / -NamePrefix) は CLI 専用。
-
-    認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）。
-
-    フロー（shell-specification.md 準拠）:
-      1. 引数バリデーション
-      2. 環境セットアップ (ロガー / config)
-      3. プレチェック            (モジュール / 対象 / 冪等性)
-      4. メイン処理              (スナップショット作成 / 待機 / pruning)
-      5. 後処理                  (最終 status ログ)
+    謖吝虚繝代Λ繝｡繝ｼ繧ｿ縺ｯ CLI縲…onfig 繝輔ぃ繧､繝ｫ縲√ｂ縺励￥縺ｯ繧ｹ繧ｯ繝ｪ繝励ヨ譌｢螳壼､縺ｧ
+    謖・ｮ壼庄閭ｽ縲ょ━蜈磯・ｽ阪・ config/README.md 繧貞盾辣ｧ縲・    螳溯｡後＃縺ｨ縺ｮ蟇ｾ雎｡ (-VolumeId / -InstanceId / -NamePrefix) 縺ｯ CLI 蟆ら畑縲・
+    隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain・育腸蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / IAM 繝ｭ繝ｼ繝ｫ・峨・
+    繝輔Ο繝ｼ・・hell-specification.md 貅匁侠・・
+      1. 蠑墓焚繝舌Μ繝・・繧ｷ繝ｧ繝ｳ
+      2. 迺ｰ蠅・そ繝・ヨ繧｢繝・・ (繝ｭ繧ｬ繝ｼ / config)
+      3. 繝励Ξ繝√ぉ繝・け            (繝｢繧ｸ繝･繝ｼ繝ｫ / 蟇ｾ雎｡ / 蜀ｪ遲画ｧ)
+      4. 繝｡繧､繝ｳ蜃ｦ逅・             (繧ｹ繝翫ャ繝励す繝ｧ繝・ヨ菴懈・ / 蠕・ｩ・/ pruning)
+      5. 蠕悟・逅・                 (譛邨・status 繝ｭ繧ｰ)
 #>
 [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Volume')]
 param(
@@ -44,18 +40,18 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- フェーズ 2: 共通ロガー -------------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Ο繧ｬ繝ｼ -------------------------------------------------
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-# --- フェーズ 2: 設定ファイル読込み、未指定パラメータへ反映 ---------------
+# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壹ヱ繝ｩ繝｡繝ｼ繧ｿ縺ｸ蜿肴丐 ---------------
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'backup_ebs_snapshot'
-$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
 if (-not $PSBoundParameters.ContainsKey('Region')             -and $cfg.ContainsKey('Region'))             { $Region             = [string]$cfg['Region'] }
 if (-not $PSBoundParameters.ContainsKey('RetentionDays')      -and $cfg.ContainsKey('RetentionDays'))      { $RetentionDays      = [int]$cfg['RetentionDays'] }
 if (-not $PSBoundParameters.ContainsKey('MinIntervalMinutes') -and $cfg.ContainsKey('MinIntervalMinutes')) { $MinIntervalMinutes = [int]$cfg['MinIntervalMinutes'] }
@@ -72,7 +68,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: paramSet=$($PSCmdlet.ParameterSetName) namePrefix=$NamePrefix region=$Region retentionDays=$RetentionDays minIntervalMin=$MinIntervalMinutes"
 
-        # --- フェーズ 3: プレチェック ---------------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
@@ -148,7 +144,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: volumeCount=$($volumes.Count)"
 
-        # --- フェーズ 4: メイン処理 ---------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         $ts = Get-OpsJstStamp

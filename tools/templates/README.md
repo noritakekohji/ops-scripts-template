@@ -1,4 +1,4 @@
-# スクリプトテンプレート
+﻿# スクリプトテンプレート
 
 新規スクリプトを追加するときの **出発点となる骨組み**。CI の `template-check` ジョブはここで定義された必須要素が含まれているかを `scripts/**` 配下の全スクリプトで検証します。
 
@@ -148,7 +148,7 @@ bash tools/templates/template_script.sh -p demo
    - 3-d：冪等スキップ条件
    - 4：本来の処理に置き換え
 7. 実行権限を付与（Bash のみ、`git update-index --chmod=+x`）
-8. （推奨）`config/common/<name>.conf` に既定値の雛形を追加
+8. （推奨）`config/default/<name>.conf` に既定値の雛形を追加
 9. （推奨）`docs/scripts/<filename>.md` の個別仕様書も追加
 
 ## CI チェック内容

@@ -1,4 +1,4 @@
-# `Rotate-Log.ps1`
+﻿# `Rotate-Log.ps1`
 
 > サイズまたは経過時間でログをローテートする（Windows / PowerShell 版）。リストファイルによる一括処理、gzip 圧縮、世代保持に対応。
 
@@ -107,7 +107,7 @@ D:\logs\nginx Pattern=access*.log MaxAgeDays=1 Compress=true RetentionCount=30
 1. 行内の Key=Value
 2. CLI 引数
 3. config/<env>/Rotate-Log.conf
-4. config/common/Rotate-Log.conf
+4. config/default/Rotate-Log.conf
 5. スクリプトの既定値
 ```
 

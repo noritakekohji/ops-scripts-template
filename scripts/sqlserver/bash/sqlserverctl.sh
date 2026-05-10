@@ -1,28 +1,24 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # ============================================================================
 # sqlserverctl.sh
-#   SQL Server ライフサイクル制御：start / stop / restart / status（冪等）
-#
-# 使い方:
+#   SQL Server 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ・#
+# 菴ｿ縺・婿:
 #   sqlserverctl.sh <action> <service_name> [-w] [-t <sec>]
 #
-# Linux のサービス名は通常 'mssql-server'。SQL Server Agent は
-# 別 unit（例: 'mssql-server@<instance>')。本スクリプトの対象外 —
-# 必要なら別呼び出しで制御すること
+# Linux 縺ｮ繧ｵ繝ｼ繝薙せ蜷阪・騾壼ｸｸ 'mssql-server'縲４QL Server Agent 縺ｯ
+# 蛻･ unit・井ｾ・ 'mssql-server@<instance>')縲よ悽繧ｹ繧ｯ繝ｪ繝励ヨ縺ｮ蟇ｾ雎｡螟・窶・# 蠢・ｦ√↑繧牙挨蜻ｼ縺ｳ蜃ｺ縺励〒蛻ｶ蠕｡縺吶ｋ縺薙→
 #
-# アクション:
-#   start    既に active ならスキップ。それ以外は systemctl start
-#   stop     既に inactive ならスキップ。それ以外は systemctl stop
-#   restart  systemctl restart（常に実行）
-#   status   状態のみ表示（read-only）
-#
-# オプション:
+# 繧｢繧ｯ繧ｷ繝ｧ繝ｳ:
+#   start    譌｢縺ｫ active 縺ｪ繧峨せ繧ｭ繝・・縲ゅ◎繧御ｻ･螟悶・ systemctl start
+#   stop     譌｢縺ｫ inactive 縺ｪ繧峨せ繧ｭ繝・・縲ゅ◎繧御ｻ･螟悶・ systemctl stop
+#   restart  systemctl restart・亥ｸｸ縺ｫ螳溯｡鯉ｼ・#   status   迥ｶ諷九・縺ｿ陦ｨ遉ｺ・・ead-only・・#
+# 繧ｪ繝励す繝ｧ繝ｳ:
 #   -w  Wait until target state
 #   -t  Wait timeout seconds (default 120, range 5..600)
-#   -h  usage 表示
+#   -h  usage 陦ｨ遉ｺ
 #
-# 終了コード: 0 成功/スキップ, 1 usage, 2 サービス不在,
-#             3 待機タイムアウト, 4 systemctl 失敗, 10 systemctl 不在
+# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 繧ｵ繝ｼ繝薙せ荳榊惠,
+#             3 蠕・ｩ溘ち繧､繝繧｢繧ｦ繝・ 4 systemctl 螟ｱ謨・ 10 systemctl 荳榊惠
 # ============================================================================
 set -euo pipefail
 
@@ -80,7 +76,7 @@ if [[ "$wait_set" -eq 0 && -n "${OPS_CONFIG[Wait]:-}" ]]; then
     case "${OPS_CONFIG[Wait]}" in true|TRUE|True|1) wait_for_completion=1 ;; *) wait_for_completion=0 ;; esac
 fi
 
-log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
 if ! [[ "$service_name" =~ ^[A-Za-z0-9._@\-]+$ ]]; then
     log_error "Invalid service name: $service_name"

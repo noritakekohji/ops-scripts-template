@@ -5,23 +5,24 @@
 #   <opt_root> 配下にローカル配備（インストール）する。
 #
 # 使い方:
-#   deploy_scripts.sh -L <list-file> [-d <opt-root>] [-e <envs>]
+#   deploy_scripts.sh -L <list-file> [-d <opt-root>] [-e <env>]
 #                     [-m <mode>] [-b] [-n]
 #
 # オプション:
 #   -L  デプロイ対象リストファイル（必須、1 行 1 スクリプト）
 #   -d  配備先 root（既定 /opt/ops-scripts、config 可）
-#   -e  含める env 群: common（既定）、dev、staging、production、all、カンマ区切り
+#   -e  環境名（OPS_ENV と同等）: dev / staging / production など
+#       省略時は $OPS_ENV、それも未設定なら config/default/ のみ参照
 #   -m  既定 mode: script-only / with-config（既定）/ with-tests / all
 #   -b  既存ファイルをタイムスタンプ付きでバックアップしてから上書き
 #   -n  Dry-run（実際の操作なし、ログのみ）
 #   -h  usage 表示
 #
 # 配備後レイアウト:
-#   <opt_root>/script/<file>.sh       (mode 0755)
-#   <opt_root>/conf/<env>/<file>.conf (mode 0644)
-#   <opt_root>/tests/<file>.bats      (mode 0755)
-#   <opt_root>/lib/bash/<file>.sh     (必須付帯)
+#   <opt_root>/script/<file>.sh   (mode 0755)
+#   <opt_root>/conf/<file>.conf   (mode 0644) ← default を基底に env で上書き
+#   <opt_root>/tests/<file>.bats  (mode 0755)
+#   <opt_root>/lib/bash/<file>.sh (必須付帯)
 #
 # 配備時にスクリプト内の lib import パスを ../../../lib/ → ../lib/ に書換え。
 #
@@ -47,6 +48,7 @@ status="unknown"
 opt_root="/opt/ops-scripts"
 backup_existing=0
 dry_run=0
+env_name="${OPS_ENV:-}"
 
 cleanup() {
     local rc=$?
@@ -155,26 +157,32 @@ deploy_entry() {
     fi
 
     # (2) 設定ファイル
+    # conf/ 直下にフラット配置。default を基底に env 指定があれば上書き。
+    # キーレベルのマージではなくファイルレベルの上書き（後者が優先）。
     if [[ "$entry_mode" == "with-config" || "$entry_mode" == "all" ]]; then
         local conf_name="${exp_conf:-${stem}.conf}"
-        local envs
-        if [[ "$include_envs" == "all" ]]; then
-            envs="common dev staging production"
-        else
-            envs="${include_envs//,/ }"
+
+        # --- default の conf を先にコピー ---
+        local src_conf="$REPO_ROOT/config/default/$conf_name"
+        if [[ -f "$src_conf" ]]; then
+            copy_file "$src_conf" "$opt_root/conf/$conf_name" 644
         fi
-        local env src_conf src_ops
-        for env in $envs; do
-            src_conf="$REPO_ROOT/config/$env/$conf_name"
+        local src_ops="$REPO_ROOT/config/default/ops.conf"
+        if [[ -f "$src_ops" ]]; then
+            copy_file "$src_ops" "$opt_root/conf/ops.conf" 644
+        fi
+
+        # --- env が指定されていれば上書き ---
+        if [[ -n "$env_name" ]]; then
+            src_conf="$REPO_ROOT/config/$env_name/$conf_name"
             if [[ -f "$src_conf" ]]; then
-                copy_file "$src_conf" "$opt_root/conf/$env/$conf_name" 644
+                copy_file "$src_conf" "$opt_root/conf/$conf_name" 644
             fi
-            # 各 env の ops.conf も付帯（重複は copy_file の unchanged チェックで吸収）
-            src_ops="$REPO_ROOT/config/$env/ops.conf"
+            src_ops="$REPO_ROOT/config/$env_name/ops.conf"
             if [[ -f "$src_ops" ]]; then
-                copy_file "$src_ops" "$opt_root/conf/$env/ops.conf" 644
+                copy_file "$src_ops" "$opt_root/conf/ops.conf" 644
             fi
-        done
+        fi
     fi
 
     # (3) テスト
@@ -201,18 +209,17 @@ deploy_lib() {
 # --- フェーズ 1: 引数パース ---
 # ----------------------------------------------------------------------------
 list_file=""
-include_envs="common"
 mode="with-config"
 
 opt_root_set=0
-include_envs_set=0
+env_set=0
 mode_set=0
 
 while getopts "L:d:e:m:bnh" opt; do
     case "$opt" in
         L) list_file="$OPTARG" ;;
         d) opt_root="$OPTARG"; opt_root_set=1 ;;
-        e) include_envs="$OPTARG"; include_envs_set=1 ;;
+        e) env_name="$OPTARG"; env_set=1 ;;
         m) mode="$OPTARG"; mode_set=1 ;;
         b) backup_existing=1 ;;
         n) dry_run=1 ;;
@@ -223,10 +230,9 @@ done
 # ----------------------------------------------------------------------------
 # --- フェーズ 2: 設定ファイル読込み、未指定値へ反映 ---
 # ----------------------------------------------------------------------------
-load_ops_config "deploy_scripts"
-[[ "$opt_root_set" -eq 0     && -n "${OPS_CONFIG[OptRoot]:-}"     ]] && opt_root="${OPS_CONFIG[OptRoot]}"
-[[ "$include_envs_set" -eq 0 && -n "${OPS_CONFIG[IncludeEnvs]:-}" ]] && include_envs="${OPS_CONFIG[IncludeEnvs]}"
-[[ "$mode_set" -eq 0         && -n "${OPS_CONFIG[Mode]:-}"        ]] && mode="${OPS_CONFIG[Mode]}"
+load_ops_config "deploy_scripts" "$env_name"
+[[ "$opt_root_set" -eq 0 && -n "${OPS_CONFIG[OptRoot]:-}" ]] && opt_root="${OPS_CONFIG[OptRoot]}"
+[[ "$mode_set" -eq 0     && -n "${OPS_CONFIG[Mode]:-}"    ]] && mode="${OPS_CONFIG[Mode]}"
 # -L 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
 if [[ -z "$list_file" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
     list_file="${OPS_CONFIG[PathList]}"
@@ -235,7 +241,7 @@ if [[ -z "$list_file" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
     fi
 fi
 
-log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+log_info "Config loaded: env=${OPS_CONFIG_ENV} keys=${#OPS_CONFIG[@]}"
 
 # 入力検証
 [[ -z "$list_file" ]] && { log_error "Specify -L or set PathList in config"; status="failed"; exit 1; }
@@ -243,7 +249,7 @@ case "$mode" in script-only|with-config|with-tests|all) ;;
     *) log_error "Invalid mode: $mode"; status="failed"; exit 1 ;;
 esac
 
-log_info "Args validated: listFile=$list_file optRoot=$opt_root includeEnvs=$include_envs mode=$mode backup=$backup_existing dryRun=$dry_run"
+log_info "Args validated: listFile=$list_file optRoot=$opt_root env=${env_name:-default} mode=$mode backup=$backup_existing dryRun=$dry_run"
 
 # ----------------------------------------------------------------------------
 # --- フェーズ 3: プレチェック（リストパース、配備先確認）---

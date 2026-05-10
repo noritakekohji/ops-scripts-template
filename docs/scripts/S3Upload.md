@@ -1,4 +1,4 @@
-# `S3Upload.ps1` / `s3upload.sh`
+﻿# `S3Upload.ps1` / `s3upload.sh`
 
 > ローカルファイルを S3 にアップロード。リストファイルで複数対象 + 行内オプションをサポート。Windows / Linux 共通仕様。
 
@@ -78,7 +78,7 @@
 1. 行内の Key=Value
 2. CLI 引数
 3. config/<env>/s3upload.conf
-4. config/common/s3upload.conf
+4. config/default/s3upload.conf
 5. スクリプトの既定値
 ```
 

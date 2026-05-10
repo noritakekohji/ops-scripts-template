@@ -16,7 +16,7 @@
 
     レイアウト:
       <OptRoot>/script/<File>.ps1
-      <OptRoot>/conf/<env>/<file>.conf
+      <OptRoot>/conf/<file>.conf   ← default を基底に env で上書き
       <OptRoot>/tests/<File>.Tests.ps1
       <OptRoot>/lib/powershell/<File>.psm1
 #>
@@ -26,7 +26,8 @@ param(
 
     [string]$OptRoot = 'C:\ProgramData\ops-scripts',
 
-    [string]$IncludeEnvs = 'common',
+    # 環境名（OPS_ENV と同等）。省略時は $env:OPS_ENV、それも未設定なら config/default/ のみ参照
+    [string]$Env = '',
 
     [ValidateSet('script-only','with-config','with-tests','all')]
     [string]$Mode = 'with-config',
@@ -44,13 +45,16 @@ Import-Module (Resolve-Path $libPath).Path -Force
 
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
-$cfg = Get-OpsConfig -Name 'deploy_scripts'
-$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
 
-if (-not $PSBoundParameters.ContainsKey('OptRoot')     -and $cfg.ContainsKey('OptRoot'))     { $OptRoot     = [string]$cfg['OptRoot'] }
-if (-not $PSBoundParameters.ContainsKey('IncludeEnvs') -and $cfg.ContainsKey('IncludeEnvs')) { $IncludeEnvs = [string]$cfg['IncludeEnvs'] }
-if (-not $PSBoundParameters.ContainsKey('Mode')        -and $cfg.ContainsKey('Mode'))        { $Mode        = [string]$cfg['Mode'] }
-if (-not $PSBoundParameters.ContainsKey('Backup')      -and $cfg.ContainsKey('Backup')) {
+# -Env 未指定なら OPS_ENV 環境変数を使う
+if (-not $PSBoundParameters.ContainsKey('Env') -and $env:OPS_ENV) { $Env = $env:OPS_ENV }
+
+$cfg = Get-OpsConfig -Name 'deploy_scripts' -Env $Env
+$cfgEnv = if ($Env) { $Env } else { 'default' }
+
+if (-not $PSBoundParameters.ContainsKey('OptRoot') -and $cfg.ContainsKey('OptRoot')) { $OptRoot = [string]$cfg['OptRoot'] }
+if (-not $PSBoundParameters.ContainsKey('Mode')    -and $cfg.ContainsKey('Mode'))    { $Mode    = [string]$cfg['Mode'] }
+if (-not $PSBoundParameters.ContainsKey('Backup')  -and $cfg.ContainsKey('Backup')) {
     if ([System.Convert]::ToBoolean($cfg['Backup'])) { $Backup = [switch]::Present }
 }
 # CLI で -PathList 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
@@ -192,6 +196,7 @@ function Invoke-OpsDeployEntry {
     }
 
     # (2) 設定ファイル
+    # conf/ 直下にフラット配置。default を基底に env 指定があれば上書き。
     if ($Entry.Mode -in 'with-config','all') {
         # PS スクリプトの conf 名は snake_case 共有版（例: Backup-Ami.ps1 → backup_ami.conf）
         $confName = if ($Entry.Conf) {
@@ -204,17 +209,25 @@ function Invoke-OpsDeployEntry {
             "$stem.conf"
         }
 
-        $envList = if ($IncludeEnvs -eq 'all') { @('common', 'dev', 'staging', 'production') }
-                   else { ($IncludeEnvs -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+        # --- default の conf を先にコピー ---
+        $confSrc = Join-Path $repoRoot 'config' 'default' $confName
+        if (Test-Path -LiteralPath $confSrc -PathType Leaf) {
+            Copy-OpsFile -Src $confSrc -Dst (Join-Path $OptRoot 'conf' $confName) | Out-Null
+        }
+        $opsSrc = Join-Path $repoRoot 'config' 'default' 'ops.conf'
+        if (Test-Path -LiteralPath $opsSrc -PathType Leaf) {
+            Copy-OpsFile -Src $opsSrc -Dst (Join-Path $OptRoot 'conf' 'ops.conf') | Out-Null
+        }
 
-        foreach ($env in $envList) {
-            $confSrc = Join-Path $repoRoot 'config' $env $confName
+        # --- env が指定されていれば上書き ---
+        if ($Env) {
+            $confSrc = Join-Path $repoRoot 'config' $Env $confName
             if (Test-Path -LiteralPath $confSrc -PathType Leaf) {
-                Copy-OpsFile -Src $confSrc -Dst (Join-Path $OptRoot 'conf' $env $confName) | Out-Null
+                Copy-OpsFile -Src $confSrc -Dst (Join-Path $OptRoot 'conf' $confName) | Out-Null
             }
-            $opsSrc = Join-Path $repoRoot 'config' $env 'ops.conf'
+            $opsSrc = Join-Path $repoRoot 'config' $Env 'ops.conf'
             if (Test-Path -LiteralPath $opsSrc -PathType Leaf) {
-                Copy-OpsFile -Src $opsSrc -Dst (Join-Path $OptRoot 'conf' $env 'ops.conf') | Out-Null
+                Copy-OpsFile -Src $opsSrc -Dst (Join-Path $OptRoot 'conf' 'ops.conf') | Out-Null
             }
         }
     }
@@ -257,7 +270,7 @@ function Invoke-OpsDeployLib {
 try {
     do {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
-        Write-OpsLog -Level INFO -Message "Args validated: pathList='$PathList' optRoot='$OptRoot' includeEnvs='$IncludeEnvs' mode=$Mode backup=$Backup whatIf=$($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('WhatIf'))"
+        Write-OpsLog -Level INFO -Message "Args validated: pathList='$PathList' optRoot='$OptRoot' env=$cfgEnv mode=$Mode backup=$Backup whatIf=$($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('WhatIf'))"
 
         # --- フェーズ 3: プレチェック ---
         Write-OpsLog -Level INFO -Message 'Pre-check start'

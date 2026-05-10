@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     <一行サマリ：このスクリプトが何をするか>
@@ -59,7 +59,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 
 # Load config and apply to unspecified parameters.
 # Resolution: CLI > config/<env>/<Name>.conf > config/<env>/ops.conf
-#           > config/common/<Name>.conf > config/common/ops.conf > script default.
+#           > config/default/<Name>.conf > config/default/ops.conf > script default.
 # TEMPLATE: change 'template_script' to your feature's snake_case name.
 # The same name is shared between the PS and Bash pair (config/<env>/<name>.conf).
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'

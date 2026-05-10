@@ -1,20 +1,18 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
-    SQL Server ライフサイクル制御：start / stop / restart / status（冪等）。
-
+    SQL Server 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ峨・
 .DESCRIPTION
-    Windows サービスとして稼働する SQL Server を Get-Service /
-    Start-Service / Stop-Service / Restart-Service で制御する。
-
-    サービス名の例:
+    Windows 繧ｵ繝ｼ繝薙せ縺ｨ縺励※遞ｼ蜒阪☆繧・SQL Server 繧・Get-Service /
+    Start-Service / Stop-Service / Restart-Service 縺ｧ蛻ｶ蠕｡縺吶ｋ縲・
+    繧ｵ繝ｼ繝薙せ蜷阪・萓・
       - default instance: MSSQLSERVER
       - named instance:   MSSQL$<INSTANCE>
       - SQL Agent:        SQLSERVERAGENT (default) or SQLAgent$<INSTANCE>
 
     Usage: SqlServerCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
 
-    冪等性:
+    蜀ｪ遲画ｧ:
       start    skip if Running
       stop     skip if Stopped
       restart  always perform
@@ -53,7 +51,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 $configModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Config.psm1'
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'sqlserverctl'
-$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }
+$cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
 if (-not $PSBoundParameters.ContainsKey('WaitTimeoutSec') -and $cfg.ContainsKey('WaitTimeoutSec')) { $WaitTimeoutSec = [int]$cfg['WaitTimeoutSec'] }
 if (-not $PSBoundParameters.ContainsKey('Wait')           -and $cfg.ContainsKey('Wait')) {
     if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = [switch]::Present }
@@ -69,7 +67,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: action=$Action service=$ServiceName wait=$Wait timeoutSec=$WaitTimeoutSec"
 
-        # --- フェーズ 3: プレチェック ---------------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -96,7 +94,7 @@ try {
 
         Write-OpsLog -Level INFO -Message 'Pre-check passed'
 
-        # --- フェーズ 4: メイン処理 ---------------------------------------
+        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         if (-not $PSCmdlet.ShouldProcess($ServiceName, "SQL Server $Action")) { break }

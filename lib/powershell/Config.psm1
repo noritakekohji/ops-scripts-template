@@ -7,10 +7,10 @@ Set-StrictMode -Version Latest
 .DESCRIPTION
     次の優先順位（低 → 高）でファイルをマージしてハッシュテーブルを返す：
 
-        config/common/ops.conf
-        config/common/<Name>.conf
-        config/<Env>/ops.conf
-        config/<Env>/<Name>.conf
+        config/default/ops.conf
+        config/default/<Name>.conf
+        config/<Env>/ops.conf   ← OPS_ENV 指定時のみ
+        config/<Env>/<Name>.conf ← OPS_ENV 指定時のみ
 
     後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
 
@@ -21,7 +21,7 @@ Set-StrictMode -Version Latest
     スクリプト名（拡張子なし）。例：`backup_ami`、`ec2ctl`。
 
 .PARAMETER Env
-    環境名。指定なしなら `$env:OPS_ENV`、それも未設定なら `common` を使う。
+    環境名。指定なしなら `$env:OPS_ENV`、それも未設定なら `config/default/` のみ読む。
 
 .PARAMETER RepoRoot
     リポジトリのルートパス。指定なしなら、本モジュールの位置から
@@ -35,19 +35,21 @@ function Get-OpsConfig {
         [string]$RepoRoot
     )
 
-    if (-not $Env) { $Env = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' } }
+    # OPS_ENV 未設定なら空文字（default のみ読む）
+    if (-not $Env) { $Env = if ($env:OPS_ENV) { $env:OPS_ENV } else { '' } }
 
     if (-not $RepoRoot) {
         $RepoRoot = _Find-OpsRepoRoot
     }
 
     # 読み込み対象ファイルを優先度の低い順に列挙
+    # default/ は常に読む → env が指定された場合はその上に重ね書き
     $config = @{}
     $sources = @(
-        Join-Path $RepoRoot 'config' 'common' 'ops.conf'
-        Join-Path $RepoRoot 'config' 'common' "$Name.conf"
+        Join-Path $RepoRoot 'config' 'default' 'ops.conf'
+        Join-Path $RepoRoot 'config' 'default' "$Name.conf"
     )
-    if ($Env -ne 'common') {
+    if ($Env) {
         $sources += Join-Path $RepoRoot 'config' $Env 'ops.conf'
         $sources += Join-Path $RepoRoot 'config' $Env "$Name.conf"
     }

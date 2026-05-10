@@ -1,4 +1,4 @@
-# `Deploy-Scripts.ps1` / `deploy_scripts.sh`
+﻿# `Deploy-Scripts.ps1` / `deploy_scripts.sh`
 
 > リポジトリの `scripts/` / `config/` / `lib/` / `tests/` から指定対象だけを `<opt_root>` 配下にローカル配備する**インストーラ**。Windows / Linux 共通仕様。
 
@@ -24,17 +24,16 @@
 ├── script/                 # 実スクリプト本体（mode 0755）
 │   ├── backup_ami.sh       # Linux 例
 │   └── ec2ctl.sh
-├── conf/                   # 設定ファイル（mode 0644）
-│   ├── common/
-│   │   ├── ops.conf
-│   │   ├── backup_ami.conf
-│   │   └── ec2ctl.conf
-│   └── production/         # 含める env だけ（-e で制御）
-│       └── ...
+├── conf/                   # 設定ファイル（mode 0644）フラット配置
+│   ├── ops.conf            # default を基底に env で上書き済み
+│   ├── backup_ami.conf
+│   └── ec2ctl.conf
 ├── tests/                  # ユニットテスト（mode 0755、`-m with-tests` or `all` の場合のみ）
 └── lib/                    # 共通ライブラリ（必須付帯）
     └── bash/               # または powershell/
 ```
+
+**conf のマージ方針**：`config/default/<name>.conf` をコピーした後、`-e <env>`（または `OPS_ENV`）が指定されていれば `config/<env>/<name>.conf` で上書きします。結果はサブディレクトリなしの `conf/<name>.conf` 1 ファイルになります。
 
 配備時にスクリプト内の lib import パスを書換えます：
 - Bash：`source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"` → `source "${SCRIPT_DIR}/../lib/bash/logging.sh"`
@@ -57,7 +56,7 @@
 |---|---|---|---|---|---|
 | PathList | `-PathList <file>` | `-L <file>` | ✅ | — | 対象スクリプトのリストファイル |
 | OptRoot | `-OptRoot <path>` | `-d <path>` | — | OS 別 | 配備先 root |
-| IncludeEnvs | `-IncludeEnvs <list>` | `-e <list>` | — | `common` | 含める env（`common,production` / `all` 等） |
+| Env | `-Env <env>` | `-e <env>` | — | `$OPS_ENV`（未設定時は default のみ）| 環境名。dev / staging / production など |
 | Mode | `-Mode <mode>` | `-m <mode>` | — | `with-config` | 既定 mode |
 | Backup | `-Backup` | `-b` | — | off | 上書き前に `<opt_root>/.backup/` に退避 |
 | WhatIf / Dry-run | `-WhatIf` | `-n` | — | off | 実操作なし、ログのみ |
@@ -67,7 +66,7 @@
 | Mode | 配備内容 |
 |---|---|
 | `script-only` | 本体スクリプトのみ |
-| `with-config`（既定） | スクリプト + 対応する `<env>/<name>.conf` + `<env>/ops.conf` |
+| `with-config`（既定） | スクリプト + `conf/<name>.conf`（default → env マージ済み）|
 | `with-tests` | スクリプト + 対応するテスト |
 | `all` | スクリプト + conf + tests |
 
@@ -117,7 +116,6 @@ my_script  Conf=shared.conf  Tests=my_script_smoke.bats
 | キー | 型 | 説明 |
 |---|---|---|
 | `OptRoot` | string | 配備先 root |
-| `IncludeEnvs` | string | カンマ区切り or `all` |
 | `Mode` | enum | 既定 mode |
 | `Backup` | bool | 既存をバックアップ |
 
@@ -146,26 +144,25 @@ my_script  Conf=shared.conf  Tests=my_script_smoke.bats
 
 ## 9. 使用例
 
-### Bash：production 用に最小配備
+### Bash：production 用に最小配備（conf は default + production でマージ）
 ```bash
 # /etc/ops-scripts/deploy.list
 # backup_ami
 # ec2ctl
 # rotate_log
 
-sudo OPS_ENV=production /opt/ops-scripts-src/scripts/linux/bash/deploy_scripts.sh \
+sudo /opt/ops-scripts-src/scripts/linux/bash/deploy_scripts.sh \
     -L /etc/ops-scripts/deploy.list \
-    -e common,production \
+    -e production \
     -m with-config \
     -b
 ```
 
 ### PowerShell：dev 環境に全部入り
 ```powershell
-$env:OPS_ENV = 'dev'
 .\Deploy-Scripts.ps1 `
     -PathList C:\ops\deploy.list `
-    -IncludeEnvs all `
+    -Env dev `
     -Mode all `
     -Backup
 ```
@@ -182,20 +179,21 @@ deploy_scripts.sh -L /etc/ops-scripts/deploy.list -n
 
 ```
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Config loaded: env=production keys=4
-[2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Args validated: listFile=/etc/ops-scripts/deploy.list optRoot=/opt/ops-scripts includeEnvs=common,production mode=with-config backup=1 dryRun=0
+[2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Args validated: listFile=/etc/ops-scripts/deploy.list optRoot=/opt/ops-scripts env=production mode=with-config backup=1 dryRun=0
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Pre-check start
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Repo root: /opt/ops-scripts-src
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Pre-check passed: entryCount=3
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Main start
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../backup_ami.sh dst=/opt/ops-scripts/script/backup_ami.sh mode=755
-[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/common/backup_ami.conf dst=/opt/ops-scripts/conf/common/backup_ami.conf mode=644
-[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Unchanged: dst=/opt/ops-scripts/conf/common/ops.conf
+[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/default/backup_ami.conf dst=/opt/ops-scripts/conf/backup_ami.conf mode=644
+[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/production/backup_ami.conf dst=/opt/ops-scripts/conf/backup_ami.conf mode=644
+[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Unchanged: dst=/opt/ops-scripts/conf/ops.conf
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Backed up: from=/opt/ops-scripts/script/ec2ctl.sh to=/opt/ops-scripts/.backup/ec2ctl.sh.20260510-100002
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../ec2ctl.sh dst=/opt/ops-scripts/script/ec2ctl.sh mode=755
 [2026-05-10 10:00:03] [INFO ] (deploy_scripts.sh:1234) Deploying lib/bash
 [2026-05-10 10:00:03] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../lib/bash/logging.sh dst=/opt/ops-scripts/lib/bash/logging.sh mode=644
 [2026-05-10 10:00:03] [INFO ] (deploy_scripts.sh:1234) Main complete
-[2026-05-10 10:00:03] [INFO ] (deploy_scripts.sh:1234) Script end: status=success exitCode=0 deployed=8 unchanged=1 backedUp=1 failed=0
+[2026-05-10 10:00:03] [INFO ] (deploy_scripts.sh:1234) Script end: status=success exitCode=0 deployed=9 unchanged=1 backedUp=1 failed=0
 ```
 
 ## 11. v1 で含めない（今後の拡張余地）

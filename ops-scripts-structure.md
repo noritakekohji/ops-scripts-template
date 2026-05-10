@@ -41,7 +41,7 @@ ops-scripts/
 │   └── onboarding.md              # 新規担当者向け
 │
 ├── config/                        # 環境別設定（コードと完全分離）
-│   ├── common/                    # 全環境共通のパラメータ
+│   ├── default/                   # 全環境共通の既定パラメータ（OPS_ENV 未設定時もここを読む）
 │   ├── dev/
 │   ├── staging/
 │   └── production/
@@ -124,7 +124,7 @@ ops-scripts/
 
 ```
 config/
-├── common/              # 全環境共通（タイムアウト値、ログレベル既定 等）
+├── default/             # 全環境共通の既定値（OPS_ENV 未設定時のみ参照 / 指定時は env で上書き）
 ├── dev/
 ├── staging/
 └── production/

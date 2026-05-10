@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # ============================================================================
 # template_script.sh
 #   Runnable template demonstrating the 5-phase script structure.
@@ -97,7 +97,7 @@ done
 
 # Load config and apply to unspecified behavior parameters.
 # Resolution: CLI > config/<env>/<name>.conf > config/<env>/ops.conf
-#           > config/common/<name>.conf > config/common/ops.conf > script default.
+#           > config/default/<name>.conf > config/default/ops.conf > script default.
 # TEMPLATE: change 'template_script' to your script's name (no extension).
 load_ops_config "template_script"
 # TEMPLATE: for each behavior option, copy this pattern:

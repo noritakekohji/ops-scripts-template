@@ -8,10 +8,10 @@
 #
 # 連想配列 OPS_CONFIG に次のファイルをマージした結果を格納する：
 #
-#   config/common/ops.conf
-#   config/common/<script-name>.conf
-#   config/<env>/ops.conf
-#   config/<env>/<script-name>.conf
+#   config/default/ops.conf
+#   config/default/<script-name>.conf
+#   config/<env>/ops.conf       ← OPS_ENV 指定時のみ
+#   config/<env>/<script-name>.conf ← OPS_ENV 指定時のみ
 #
 # 後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
 # 1 行 1 設定（key=value）、行頭 '#' 行と空行は無視、前後空白は trim。
@@ -43,7 +43,8 @@ _ops_find_repo_root() {
 
 load_ops_config() {
     local name="$1"
-    local env="${2:-${OPS_ENV:-common}}"
+    # OPS_ENV 未設定なら空文字（default のみ読む）
+    local env="${2:-${OPS_ENV:-}}"
     # 第 3 引数を渡すと、リポジトリ root の自動検出を上書きできる
     # （主にユニットテスト用。PS 版 Get-OpsConfig の -RepoRoot と対応）
     local override_root="${3:-}"
@@ -63,14 +64,15 @@ load_ops_config() {
 
     # 連想配列を初期化（呼び出すたびにリセット）
     declare -gA OPS_CONFIG=()
-    OPS_CONFIG_ENV="$env"
+    OPS_CONFIG_ENV="${env:-default}"
 
     # 読み込み対象ファイルを優先度の低い順に列挙
+    # default/ は常に読む → env が指定された場合はその上に重ね書き
     local sources=(
-        "$repo_root/config/common/ops.conf"
-        "$repo_root/config/common/$name.conf"
+        "$repo_root/config/default/ops.conf"
+        "$repo_root/config/default/$name.conf"
     )
-    if [[ "$env" != "common" ]]; then
+    if [[ -n "$env" ]]; then
         sources+=( "$repo_root/config/$env/ops.conf" )
         sources+=( "$repo_root/config/$env/$name.conf" )
     fi

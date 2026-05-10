@@ -1,25 +1,20 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # ============================================================================
 # rotate_log.sh
-#   ログファイルをサイズまたは経過時間でローテート（任意で gzip 圧縮）
-#
-# 使い方:
+#   繝ｭ繧ｰ繝輔ぃ繧､繝ｫ繧偵し繧､繧ｺ縺ｾ縺溘・邨碁℃譎る俣縺ｧ繝ｭ繝ｼ繝・・繝茨ｼ井ｻｻ諢上〒 gzip 蝨ｧ邵ｮ・・#
+# 菴ｿ縺・婿:
 #   rotate_log.sh [-p <path>] [-L <list-file>] [-P <pattern>]
 #                 [-s <max-size-mb>] [-a <max-age-days>]
 #                 [-c] [-k <retention>] [-T] [-n]
 #
-# -L のリスト各行で対象ごとの上書きが可能:
+# -L 縺ｮ繝ｪ繧ｹ繝亥推陦後〒蟇ｾ雎｡縺斐→縺ｮ荳頑嶌縺阪′蜿ｯ閭ｽ:
 #     <path> [Key=Value ...]
-# 受け付けるキー（case-sensitive）:
+# 蜿励￠莉倥￠繧九く繝ｼ・・ase-sensitive・・
 #   Pattern, MaxSizeMB, MaxAgeDays, Compress, RetentionCount, CopyTruncate
-# 解決順位: 行内 > CLI > config > 既定値
-# 不明キー / 不正値は WARN を出してそのキーだけ無視（エントリは継承値で実行）
-# MaxSizeMB と MaxAgeDays の両方が effective=0 のエントリは
-# WARN を出してそのエントリのみスキップ。他には波及しない
-#
-# 命名: <name>.YYYYMMDD-HHMMSS [.gz]（JST）
-# 終了コード: 0 成功/スキップ, 1 usage, 2 リストファイル不在, 4 ローテート失敗
-# ============================================================================
+# 隗｣豎ｺ鬆・ｽ・ 陦悟・ > CLI > config > 譌｢螳壼､
+# 荳肴・繧ｭ繝ｼ / 荳肴ｭ｣蛟､縺ｯ WARN 繧貞・縺励※縺昴・繧ｭ繝ｼ縺縺醍┌隕厄ｼ医お繝ｳ繝医Μ縺ｯ邯呎価蛟､縺ｧ螳溯｡鯉ｼ・# MaxSizeMB 縺ｨ MaxAgeDays 縺ｮ荳｡譁ｹ縺・effective=0 縺ｮ繧ｨ繝ｳ繝医Μ縺ｯ
+# WARN 繧貞・縺励※縺昴・繧ｨ繝ｳ繝医Μ縺ｮ縺ｿ繧ｹ繧ｭ繝・・縲ゆｻ悶↓縺ｯ豕｢蜿翫＠縺ｪ縺・#
+# 蜻ｽ蜷・ <name>.YYYYMMDD-HHMMSS [.gz]・・ST・・# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 繝ｪ繧ｹ繝医ヵ繧｡繧､繝ｫ荳榊惠, 4 繝ｭ繝ｼ繝・・繝亥､ｱ謨・# ============================================================================
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -41,7 +36,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- フェーズ 1: 引数パース ----------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 1: 蠑墓焚繝代・繧ｹ ----------------------------------------------
 path=""
 path_list=""
 pattern="*.log"
@@ -74,7 +69,7 @@ while getopts "p:L:P:s:a:ck:Tnh" opt; do
     esac
 done
 
-# --- フェーズ 2: 設定ファイル読込み、未指定値へ反映 ---------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壼､縺ｸ蜿肴丐 ---------------------------
 load_ops_config "rotate_log"
 [[ "$pattern_set" -eq 0    && -n "${OPS_CONFIG[Pattern]:-}"        ]] && pattern="${OPS_CONFIG[Pattern]}"
 [[ "$max_size_set" -eq 0   && -n "${OPS_CONFIG[MaxSizeMB]:-}"      ]] && max_size_mb="${OPS_CONFIG[MaxSizeMB]}"
@@ -86,17 +81,16 @@ fi
 if [[ "$copy_truncate_set" -eq 0 && -n "${OPS_CONFIG[CopyTruncate]:-}" ]]; then
     case "${OPS_CONFIG[CopyTruncate]}" in true|TRUE|True|1) copy_truncate=1 ;; *) copy_truncate=0 ;; esac
 fi
-# -L 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
-if [[ -z "$path_list" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
+# -L 譛ｪ謖・ｮ壹↑繧・config 縺ｮ PathList 繧呈治逕ｨ縲ら嶌蟇ｾ繝代せ縺ｯ repo root 襍ｷ轤ｹ縺ｧ邨ｶ蟇ｾ蛹悶・if [[ -z "$path_list" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
     path_list="${OPS_CONFIG[PathList]}"
     if [[ "$path_list" != /* ]]; then
         path_list="$(ops_repo_root)/$path_list"
     fi
 fi
 
-log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
-# --- フェーズ 1（続き）: 数値バリデーション -------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 1・育ｶ壹″・・ 謨ｰ蛟､繝舌Μ繝・・繧ｷ繝ｧ繝ｳ -------------------------------
 if ! [[ "$max_size_mb" =~ ^[0-9]+$ ]] \
     || ! [[ "$max_age_days" =~ ^[0-9]+$ ]] \
     || ! [[ "$retention" =~ ^[0-9]+$ ]]; then
@@ -106,20 +100,17 @@ fi
 
 log_info "Args validated: path='$path' pathList='$path_list' pattern='$pattern' maxSizeMB=$max_size_mb maxAgeDays=$max_age_days compress=$compress retention=$retention copyTruncate=$copy_truncate dryRun=$dry_run"
 
-# --- フェーズ 3: プレチェック（対象収集） -----------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け・亥ｯｾ雎｡蜿朱寔・・-----------------------------------
 log_info "Pre-check start"
 
-# 各ターゲットはタブ区切りレコードとしてエンコード:
+# 蜷・ち繝ｼ繧ｲ繝・ヨ縺ｯ繧ｿ繝門玄蛻・ｊ繝ｬ繧ｳ繝ｼ繝峨→縺励※繧ｨ繝ｳ繧ｳ繝ｼ繝・
 # <path>\t<pattern>\t<maxSizeMB>\t<maxAgeDays>\t<compress>\t<retention>\t<copyTruncate>
-# $targets_text に 1 行ずつ蓄積（改行区切り）
-targets_text=""
+# $targets_text 縺ｫ 1 陦後★縺､闢・ｩ搾ｼ域隼陦悟玄蛻・ｊ・・targets_text=""
 
 parse_list_line() {
-    # 入力: $1 = 行（trim 済み、空・コメントは除外済み）
-    # 出力: $targets_text にタブレコードを追記
-    local line="$1"
+    # 蜈･蜉・ $1 = 陦鯉ｼ・rim 貂医∩縲∫ｩｺ繝ｻ繧ｳ繝｡繝ｳ繝医・髯､螟匁ｸ医∩・・    # 蜃ｺ蜉・ $targets_text 縺ｫ繧ｿ繝悶Ξ繧ｳ繝ｼ繝峨ｒ霑ｽ險・    local line="$1"
     # shellcheck disable=SC2206
-    local -a tok=( $line )    # 空白で split
+    local -a tok=( $line )    # 遨ｺ逋ｽ縺ｧ split
     local p_path="${tok[0]}"
     local p_pattern="$pattern"
     local p_size="$max_size_mb"
@@ -193,7 +184,7 @@ fi
 target_count=$(printf '%s' "$targets_text" | grep -c '^')
 log_info "Pre-check passed: targetCount=$target_count"
 
-# --- フェーズ 4: メイン処理（対象ごと） ----------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・ｼ亥ｯｾ雎｡縺斐→・・----------------------------------
 log_info "Main start"
 
 while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_copytruncate; do
@@ -294,8 +285,7 @@ while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_c
         fi
     done
 
-    # 対象ごとの世代保持（古いものから削除）
-    if [[ "$t_retention" -gt 0 && "$dry_run" -eq 0 ]]; then
+    # 蟇ｾ雎｡縺斐→縺ｮ荳紋ｻ｣菫晄戟・亥商縺・ｂ縺ｮ縺九ｉ蜑企勁・・    if [[ "$t_retention" -gt 0 && "$dry_run" -eq 0 ]]; then
         for f in "${files[@]}"; do
             shopt -s nullglob
             peers=( "${f}".[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]* )

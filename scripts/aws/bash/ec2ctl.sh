@@ -1,29 +1,22 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # ============================================================================
 # ec2ctl.sh
-#   EC2 ライフサイクル制御：start / stop / restart / status（冪等）
-#
-# 使い方:
+#   EC2 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ・#
+# 菴ｿ縺・婿:
 #   ec2ctl.sh <action> <instance_id[,instance_id,...]> [-r <region>]
 #             [-w] [-t <sec>] [-F]
 #
-# アクション:
-#   start    インスタンス起動。既に running のものはスキップ
-#   stop     インスタンス停止。既に stopped のものはスキップ
-#   restart  AWS Reboot API で再起動（running 必須）
-#   status   状態のみ表示（read-only）
+# 繧｢繧ｯ繧ｷ繝ｧ繝ｳ:
+#   start    繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ襍ｷ蜍輔よ里縺ｫ running 縺ｮ繧ゅ・縺ｯ繧ｹ繧ｭ繝・・
+#   stop     繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ蛛懈ｭ｢縲よ里縺ｫ stopped 縺ｮ繧ゅ・縺ｯ繧ｹ繧ｭ繝・・
+#   restart  AWS Reboot API 縺ｧ蜀崎ｵｷ蜍包ｼ・unning 蠢・茨ｼ・#   status   迥ｶ諷九・縺ｿ陦ｨ遉ｺ・・ead-only・・#
+# 繧ｪ繝励す繝ｧ繝ｳ:
+#   -r  AWS 繝ｪ繝ｼ繧ｸ繝ｧ繝ｳ・域里螳・ 迺ｰ蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / config・・#   -w  逶ｮ逧・憾諷句芦驕斐∪縺ｧ蠕・ｩ滂ｼ・tart->running縲《top->stopped・峨Ｓestart/status 縺ｧ縺ｯ辟｡隕・#   -t  蠕・ｩ溘ち繧､繝繧｢繧ｦ繝育ｧ抵ｼ域里螳・600縲∫ｯ・峇 30..3600・・#   -F  蠑ｷ蛻ｶ蛛懈ｭ｢・・top 縺ｮ縺ｿ・峨ゅョ繝ｼ繧ｿ謳榊､ｱ縺ｮ蜿ｯ閭ｽ諤ｧ縺ゅｊ
+#   -h  usage 陦ｨ遉ｺ
 #
-# オプション:
-#   -r  AWS リージョン（既定: 環境変数 / プロファイル / config）
-#   -w  目的状態到達まで待機（start->running、stop->stopped）。restart/status では無視
-#   -t  待機タイムアウト秒（既定 600、範囲 30..3600）
-#   -F  強制停止（stop のみ）。データ損失の可能性あり
-#   -h  usage 表示
-#
-# 挙動オプションは config/<env>/ec2ctl.conf に設定可能。
-# 認証: デフォルト AWS credential chain
-# 終了コード: 0 成功/スキップ, 1 usage, 2 不在, 3 待機/状態不正,
-#             4 API 失敗, 10 aws CLI 不在, 20 認証
+# 謖吝虚繧ｪ繝励す繝ｧ繝ｳ縺ｯ config/<env>/ec2ctl.conf 縺ｫ險ｭ螳壼庄閭ｽ縲・# 隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain
+# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 荳榊惠, 3 蠕・ｩ・迥ｶ諷倶ｸ肴ｭ｣,
+#             4 API 螟ｱ謨・ 10 aws CLI 荳榊惠, 20 隱崎ｨｼ
 # ============================================================================
 set -euo pipefail
 
@@ -47,7 +40,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- フェーズ 1: 位置引数 + オプション ------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 1: 菴咲ｽｮ蠑墓焚 + 繧ｪ繝励す繝ｧ繝ｳ ------------------------------------------
 action="${1:-}"
 case "$action" in
     start|stop|restart|status) shift ;;
@@ -82,7 +75,7 @@ while getopts "r:wt:Fh" opt; do
     esac
 done
 
-# --- フェーズ 2: 設定ファイル読込み ---------------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ ---------------------------------------------------
 load_ops_config "ec2ctl"
 [[ "$region_set" -eq 0       && -n "${OPS_CONFIG[Region]:-}"         ]] && region="${OPS_CONFIG[Region]}"
 [[ "$wait_timeout_set" -eq 0 && -n "${OPS_CONFIG[WaitTimeoutSec]:-}" ]] && wait_timeout="${OPS_CONFIG[WaitTimeoutSec]}"
@@ -99,9 +92,9 @@ if [[ "$force_set" -eq 0 && -n "${OPS_CONFIG[ForceStop]:-}" ]]; then
     esac
 fi
 
-log_info "Config loaded: env=${OPS_CONFIG_ENV:-common} keys=${#OPS_CONFIG[@]}"
+log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
-# --- フェーズ 1（続き）: バリデーション ---------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 1・育ｶ壹″・・ 繝舌Μ繝・・繧ｷ繝ｧ繝ｳ ---------------------------------------------
 if ! [[ "$wait_timeout" =~ ^[0-9]+$ ]] || [[ "$wait_timeout" -lt 30 ]] || [[ "$wait_timeout" -gt 3600 ]]; then
     log_error "Invalid wait timeout: $wait_timeout (range 30..3600)"
     status="failed"; exit 1
@@ -121,7 +114,7 @@ log_info "Args validated: action=$action instanceCount=${#instance_ids[@]} regio
 region_arg=()
 [[ -n "$region" ]] && region_arg=(--region "$region")
 
-# --- フェーズ 3: プレチェック -----------------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け -----------------------------------------------------
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -142,8 +135,7 @@ fi
 states_raw=$(aws ec2 describe-instances --instance-ids "${instance_ids[@]}" "${region_arg[@]}" \
     --query 'Reservations[].Instances[].[InstanceId, State.Name, Placement.AvailabilityZone, LaunchTime]' --output text)
 
-# status: 状態を出力して終了
-if [[ "$action" == "status" ]]; then
+# status: 迥ｶ諷九ｒ蜃ｺ蜉帙＠縺ｦ邨ゆｺ・if [[ "$action" == "status" ]]; then
     while IFS=$'\t' read -r iid st az lt; do
         [[ -z "$iid" ]] && continue
         log_info "Status: instanceId=$iid state=$st az=$az launchTime=$lt"
@@ -193,7 +185,7 @@ fi
 
 log_info "Pre-check passed: action=$action toAct=${#to_act[@]} skipped=${#skipped[@]}"
 
-# --- フェーズ 4: メイン処理 -----------------------------------------------
+# --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・-----------------------------------------------
 log_info "Main start"
 
 case "$action" in
@@ -225,8 +217,7 @@ case "$action" in
         ;;
 esac
 
-# 完了待ち（start / stop のみ）
-if [[ "$wait_for_completion" -eq 1 && "${#acted[@]}" -gt 0 && "$action" != "restart" ]]; then
+# 螳御ｺ・ｾ・■・・tart / stop 縺ｮ縺ｿ・・if [[ "$wait_for_completion" -eq 1 && "${#acted[@]}" -gt 0 && "$action" != "restart" ]]; then
     target_state=$([[ "$action" == "start" ]] && echo "running" || echo "stopped")
     waiter=$([[ "$action" == "start" ]] && echo "instance-running" || echo "instance-stopped")
     log_info "Waiting for '$target_state': count=${#acted[@]} timeoutSec=$wait_timeout"
