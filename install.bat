@@ -1,34 +1,43 @@
 @echo off
 :: ============================================================================
 :: install.bat
-::   Deploy-Scripts.ps1 を呼び出す薄いラッパ。
-::   リポジトリルートから実行し、第 1 引数に環境名を渡す。
+::   Thin wrapper that invokes Deploy-Scripts.ps1.
+::   Run from the repository root. The first argument is the environment name.
 ::
 :: Usage:
-::   install.bat [<env>] [Deploy-Scripts.ps1 のオプション...]
+::   install.bat [<env>] [options]
+::
+:: Arguments:
+::   <env>   Environment name (dev / staging / production / ...).
+::           Defaults to "default" when omitted.
+::
+:: Options (passed through to Deploy-Scripts.ps1):
+::   -Backup   Back up existing files before overwriting.
+::   -WhatIf   Dry-run; log actions without making changes.
 ::
 :: Examples:
-::   install.bat                    rem default 環境に配備
+::   install.bat
 ::   install.bat dev
-::   install.bat production
-::   install.bat staging -Backup
-::   install.bat dev -WhatIf
+::   install.bat production -Backup
+::   install.bat staging -WhatIf
 ::
-:: 配備対象は config\default\deploy_scripts.lst（または
-:: config\<env>\deploy_scripts.lst で上書き）を参照。
-:: 配備先は C:\ProgramData\ops-scripts（config で変更可）。
+:: Deploy targets : config\default\deploy_scripts.lst
+::                  (or config\<env>\deploy_scripts.lst when env is given)
+:: Deploy root    : C:\ProgramData\ops-scripts  (configurable via conf)
 ::
-:: 実行エンジン: pwsh (PS7) を優先し、未導入なら powershell.exe (PS5.1) にフォールバック。
-::
-:: Exit codes: Deploy-Scripts.ps1 の終了コードをそのまま返す
+:: Runtime        : powershell.exe (Windows PowerShell 5.1)
+:: Exit codes     : forwarded from Deploy-Scripts.ps1
 :: ============================================================================
 setlocal
 
-:: env を指定しない場合は "default" を使う
+:: ---------------------------------------------------------------------------
+:: Resolve env argument.
+:: If the first argument is missing or starts with "-", treat it as an option
+:: and use "default" as the environment name.
+:: ---------------------------------------------------------------------------
 if "%~1"=="" (
     set "ENV_NAME=default"
 ) else (
-    :: 最初の引数を確認（"-" で始まる場合はオプション、そうでない場合は env）
     if "%~1:~0,1%"=="-" (
         set "ENV_NAME=default"
     ) else (
@@ -37,37 +46,9 @@ if "%~1"=="" (
     )
 )
 
-:: ----------------------------------------------------------------------------
-:: PowerShell を検索（優先順）
-::   1. PATH に pwsh (PS7) があればそれを使う
-::   2. 既定のインストール先に pwsh があれば使う
-::   3. powershell.exe (PS5.1) にフォールバック（Windows に標準搭載）
-:: ----------------------------------------------------------------------------
-set "PWSH="
-
-where pwsh >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    set "PWSH=pwsh"
-    goto :run
-)
-
-if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
-    set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
-    goto :run
-)
-
-:: バージョン番号付きディレクトリ（例: 7.4.6）を探す
-for /d %%d in ("%ProgramFiles%\PowerShell\7.*") do (
-    if exist "%%d\pwsh.exe" (
-        set "PWSH=%%d\pwsh.exe"
-        goto :run
-    )
-)
-
-:: PS7 が見つからない場合は PS5.1 (powershell.exe) にフォールバック
-set "PWSH=powershell.exe"
-
-:run
-"%PWSH%" -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %*
+:: ---------------------------------------------------------------------------
+:: Run Deploy-Scripts.ps1 with Windows PowerShell 5.1 (powershell.exe).
+:: ---------------------------------------------------------------------------
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %*
 
 exit /b %ERRORLEVEL%
