@@ -18,6 +18,8 @@
 :: config\<env>\deploy_scripts.lst で上書き）を参照。
 :: 配備先は C:\ProgramData\ops-scripts（config で変更可）。
 ::
+:: 実行エンジン: pwsh (PS7) を優先し、未導入なら powershell.exe (PS5.1) にフォールバック。
+::
 :: Exit codes: Deploy-Scripts.ps1 の終了コードをそのまま返す
 :: ============================================================================
 setlocal
@@ -36,10 +38,10 @@ if "%~1"=="" (
 )
 
 :: ----------------------------------------------------------------------------
-:: PowerShell 7 (pwsh) を検索
-::   1. PATH に pwsh があればそれを使う
-::   2. 既定のインストール先を順に確認する
-::   3. 見つからなければエラー（PS 5.1 の powershell.exe は #Requires -Version 7 で弾かれるため不使用）
+:: PowerShell を検索（優先順）
+::   1. PATH に pwsh (PS7) があればそれを使う
+::   2. 既定のインストール先に pwsh があれば使う
+::   3. powershell.exe (PS5.1) にフォールバック（Windows に標準搭載）
 :: ----------------------------------------------------------------------------
 set "PWSH="
 
@@ -62,9 +64,8 @@ for /d %%d in ("%ProgramFiles%\PowerShell\7.*") do (
     )
 )
 
-echo [ERROR] PowerShell 7 が見つかりません。以下からインストールしてください: 1>&2
-echo         https://github.com/PowerShell/PowerShell/releases 1>&2
-exit /b 1
+:: PS7 が見つからない場合は PS5.1 (powershell.exe) にフォールバック
+set "PWSH=powershell.exe"
 
 :run
 "%PWSH%" -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %*
