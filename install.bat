@@ -34,21 +34,33 @@ setlocal
 :: Resolve env argument.
 :: If the first argument is missing or starts with "-", treat it as an option
 :: and use "default" as the environment name.
+::
+:: NOTE: %* does not reflect shift in cmd.exe, so we branch into two
+::       separate run labels to avoid passing the env name twice.
 :: ---------------------------------------------------------------------------
 if "%~1"=="" (
     set "ENV_NAME=default"
-) else (
-    if "%~1:~0,1%"=="-" (
-        set "ENV_NAME=default"
-    ) else (
-        set "ENV_NAME=%~1"
-        shift
-    )
+    goto :run_noshift
 )
+if "%~1:~0,1%"=="-" (
+    set "ENV_NAME=default"
+    goto :run_noshift
+)
+set "ENV_NAME=%~1"
+shift
+goto :run_shifted
 
 :: ---------------------------------------------------------------------------
-:: Run Deploy-Scripts.ps1 with Windows PowerShell 5.1 (powershell.exe).
+:: No shift was done: pass remaining args via %* (all original args).
 :: ---------------------------------------------------------------------------
+:run_noshift
 powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %*
+exit /b %ERRORLEVEL%
 
+:: ---------------------------------------------------------------------------
+:: Env arg was consumed by shift: pass remaining args via %1 %2 ... %9.
+:: After shift, %1 is the original %2, so the env name is no longer included.
+:: ---------------------------------------------------------------------------
+:run_shifted
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
