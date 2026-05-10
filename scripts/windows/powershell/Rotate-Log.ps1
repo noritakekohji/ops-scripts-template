@@ -59,7 +59,7 @@ if (-not $PSBoundParameters.ContainsKey('Compress')       -and $cfg.ContainsKey(
 if (-not $PSBoundParameters.ContainsKey('CopyTruncate')   -and $cfg.ContainsKey('CopyTruncate')) {
     if ([System.Convert]::ToBoolean($cfg['CopyTruncate'])) { $CopyTruncate = $true }
 }
-# CLI 縺ｧ -PathList 譛ｪ謖・ｮ壹↑繧・config 縺ｮ PathList 繧呈治逕ｨ縲ら嶌蟇ｾ繝代せ縺ｯ repo root 襍ｷ轤ｹ縺ｧ邨ｶ蟇ｾ蛹悶・if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
+if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
     $PathList = [string]$cfg['PathList']
     if ($PathList -and -not [System.IO.Path]::IsPathRooted($PathList)) {
         $PathList = Join-Path (Get-OpsRepoRoot) $PathList
@@ -260,7 +260,7 @@ try {
                 }
             }
 
-            # 蟇ｾ雎｡縺斐→縺ｮ荳紋ｻ｣菫晄戟・亥商縺・ｂ縺ｮ縺九ｉ蜑企勁・・            if ($t.RetentionCount -gt 0) {
+            if ($t.RetentionCount -gt 0) {
                 foreach ($f in $files) {
                     $dir = Split-Path -Parent $f.FullName
                     $name = Split-Path -Leaf $f.FullName

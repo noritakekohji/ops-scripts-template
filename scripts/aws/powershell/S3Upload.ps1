@@ -56,7 +56,7 @@ foreach ($k in 'Bucket','Prefix','Region','StorageClass','ServerSideEncryption',
         Set-Variable -Name $k -Value ([string]$cfg[$k])
     }
 }
-# CLI 縺ｧ -PathList 譛ｪ謖・ｮ壹↑繧・config 縺ｮ PathList 繧呈治逕ｨ縲ら嶌蟇ｾ繝代せ縺ｯ repo root 襍ｷ轤ｹ縺ｧ邨ｶ蟇ｾ蛹悶・if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
+if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
     $PathList = [string]$cfg['PathList']
     if ($PathList -and -not [System.IO.Path]::IsPathRooted($PathList)) {
         $PathList = Join-Path (Get-OpsRepoRoot) $PathList

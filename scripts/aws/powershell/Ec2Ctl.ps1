@@ -186,7 +186,7 @@ try {
             }
         }
 
-        # 螳御ｺ・ｾ・■・・tart/stop 縺ｮ縺ｿ縲Ｓestart 縺ｯ螟夜Κ迥ｶ諷九′螟峨ｏ繧峨↑縺・ｼ・        if ($Wait -and $acted.Count -gt 0 -and $Action -ne 'restart') {
+        if ($Wait -and $acted.Count -gt 0 -and $Action -ne 'restart') {
             $targetState = if ($Action -eq 'start') { 'running' } else { 'stopped' }
             Write-OpsLog -Level INFO -Message "Waiting for '$targetState': count=$($acted.Count) timeoutSec=$WaitTimeoutSec"
             $deadline = (Get-Date).AddSeconds($WaitTimeoutSec)
