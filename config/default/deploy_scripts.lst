@@ -12,7 +12,7 @@
 # deploy_scripts.conf の PathList を上書きすること。
 
 # --- 設定ファイル ---
-# CONF, ops.conf
+# CONF, global.conf
 # CONF, ec2ctl.conf
 # CONF, backup_ami.conf
 # CONF, rotate_log.conf

@@ -1,4 +1,4 @@
-﻿# 設定ファイル
+# 設定ファイル
 
 スクリプトの挙動を決める変数（リージョン、保持日数、冪等性ウィンドウ 等）をリポジトリ管理する場所。
 
@@ -7,7 +7,7 @@
 ```
 config/
 ├── common/                       # 全環境共通の既定値（基本コメントアウト）
-│   ├── ops.conf                  # 全スクリプト共通の既定（Region 等）
+│   ├── global.conf                  # 全スクリプト共通の既定（Region 等）
 │   ├── backup_ami.conf           # スクリプト別の既定値（PS / Bash 共有）
 │   ├── backup_ebs_snapshot.conf
 │   ├── ec2ctl.conf
@@ -20,7 +20,7 @@ config/
 └── production/                   # 本番：長期 retention、KMS 暗号化、長い待機
 ```
 
-各環境ディレクトリには **差分のみ** 配置すれば良い（CLI / 行内 / `<env>/<script>.conf` / `<env>/ops.conf` / `common/<script>.conf` / `common/ops.conf` / 既定値、の順で解決）。
+各環境ディレクトリには **差分のみ** 配置すれば良い（CLI / 行内 / `<env>/<script>.conf` / `<env>/global.conf` / `common/<script>.conf` / `common/global.conf` / 既定値、の順で解決）。
 
 `OPS_ENV` で切替：`OPS_ENV=dev` / `staging` / `production`。未設定なら `common/` のみ参照。
 
@@ -28,9 +28,9 @@ config/
 
 1. **CLI 引数**（`-Region ap-northeast-1` 等）
 2. `config/<env>/<script-name>.conf`
-3. `config/<env>/ops.conf`
+3. `config/<env>/global.conf`
 4. `config/default/<script-name>.conf`
-5. `config/default/ops.conf`
+5. `config/default/global.conf`
 6. **スクリプトのハードコード既定値**
 
 CLI で明示されたものは常に勝つ（運用中の緊急上書きが効く）。
@@ -72,7 +72,7 @@ NoReboot = true
 
 | ファイル | 役割 |
 |---|---|
-| `ops.conf` | 全スクリプト共通の既定値（Region 等） |
+| `global.conf` | 全スクリプト共通の既定値（Region 等） |
 | `<feature>.conf` | その機能固有の既定値（**Windows / Linux 共有、snake_case 小文字**） |
 
 **PowerShell と Bash のペアは同じ config ファイルを共有**します（snake_case の小文字に統一）。
@@ -106,7 +106,7 @@ Wait               = true
 ```
 
 ```ini
-# config/default/ops.conf
+# config/default/global.conf
 # どの環境でも有効な既定（リージョンは Tokyo を既定にする）
 
 Region = ap-northeast-1

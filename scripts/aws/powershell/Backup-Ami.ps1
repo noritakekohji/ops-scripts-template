@@ -1,12 +1,12 @@
-﻿#Requires -Version 7
+#Requires -Version 7
 <#
 .SYNOPSIS
     EC2 繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ縺九ｉ AMI 繧剃ｽ懈・縺励∝ｿ・ｦ√↓蠢懊§縺ｦ蜿､縺・AMI 繧剃ｸ紋ｻ｣蜑企勁縺吶ｋ縲・
 .DESCRIPTION
     謖吝虚繝代Λ繝｡繝ｼ繧ｿ縺ｯ CLI縲…onfig 繝輔ぃ繧､繝ｫ縲√ｂ縺励￥縺ｯ繧ｹ繧ｯ繝ｪ繝励ヨ譌｢螳壼､縺ｧ
     謖・ｮ壼庄閭ｽ縲ょ━蜈磯・ｽ搾ｼ磯ｫ・竊・菴趣ｼ・
-        CLI -> config/<env>/Backup-Ami.conf -> config/<env>/ops.conf
-            -> config/default/Backup-Ami.conf -> config/default/ops.conf
+        CLI -> config/<env>/Backup-Ami.conf -> config/<env>/global.conf
+            -> config/default/Backup-Ami.conf -> config/default/global.conf
             -> script default
 
     螳溯｡後＃縺ｨ縺ｮ蟇ｾ雎｡ (-InstanceId / -NamePrefix) 縺ｯ CLI 蟆ら畑縲・

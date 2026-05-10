@@ -28,16 +28,16 @@ Describe 'Get-OpsConfig' {
         }
     }
 
-    It 'common/ops.conf からキーを読み込む' {
-        Set-Content -Path (Join-Path $script:TestRoot 'config' 'common' 'ops.conf') `
+    It 'common/global.conf からキーを読み込む' {
+        Set-Content -Path (Join-Path $script:TestRoot 'config' 'common' 'global.conf') `
             -Value "Region = ap-northeast-1`nWait = true"
         $cfg = Get-OpsConfig -Name 'foo' -Env 'common' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'ap-northeast-1'
         $cfg['Wait']   | Should -Be 'true'
     }
 
-    It 'common/<name>.conf が common/ops.conf を上書きする' {
-        Set-Content -Path (Join-Path $script:TestRoot 'config' 'common' 'ops.conf') -Value 'Region = ap-northeast-1'
+    It 'common/<name>.conf が common/global.conf を上書きする' {
+        Set-Content -Path (Join-Path $script:TestRoot 'config' 'common' 'global.conf') -Value 'Region = ap-northeast-1'
         Set-Content -Path (Join-Path $script:TestRoot 'config' 'common' 'foo.conf') -Value 'Region = us-east-1'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'common' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'us-east-1'
@@ -50,9 +50,9 @@ Describe 'Get-OpsConfig' {
         $cfg['Region'] | Should -Be 'eu-west-1'
     }
 
-    It 'env/ops.conf が common/<name>.conf を上書きする' {
+    It 'env/global.conf が common/<name>.conf を上書きする' {
         Set-Content -Path (Join-Path $script:TestRoot 'config' 'common' 'foo.conf') -Value 'Wait = false'
-        Set-Content -Path (Join-Path $script:TestRoot 'config' 'dev'    'ops.conf') -Value 'Wait = true'
+        Set-Content -Path (Join-Path $script:TestRoot 'config' 'dev'    'global.conf') -Value 'Wait = true'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Wait'] | Should -Be 'true'
     }

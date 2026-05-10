@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bats
+#!/usr/bin/env bats
 # lib/bash/config.sh のユニットテスト
 #
 # 各テストでは make_test_repo で隔離 repo を作り、3 番目の引数で
@@ -25,8 +25,8 @@ teardown() {
 # load_ops_config: 基本動作
 # ----------------------------------------------------------------------------
 
-@test "common/ops.conf からキーを読み込む" {
-    cat > "$TEST_REPO/config/default/ops.conf" <<'EOF'
+@test "common/global.conf からキーを読み込む" {
+    cat > "$TEST_REPO/config/default/global.conf" <<'EOF'
 Region = ap-northeast-1
 Wait   = true
 EOF
@@ -35,8 +35,8 @@ EOF
     [ "${OPS_CONFIG[Wait]}"   = "true" ]
 }
 
-@test "common/<name>.conf が common/ops.conf を上書きする" {
-    echo "Region = ap-northeast-1" > "$TEST_REPO/config/default/ops.conf"
+@test "common/<name>.conf が common/global.conf を上書きする" {
+    echo "Region = ap-northeast-1" > "$TEST_REPO/config/default/global.conf"
     echo "Region = us-east-1"      > "$TEST_REPO/config/default/foo.conf"
     load_ops_config 'foo' 'common' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "us-east-1" ]
@@ -49,9 +49,9 @@ EOF
     [ "${OPS_CONFIG[Region]}" = "eu-west-1" ]
 }
 
-@test "env/ops.conf が common/<name>.conf を上書きする" {
+@test "env/global.conf が common/<name>.conf を上書きする" {
     echo "Wait = false" > "$TEST_REPO/config/default/foo.conf"
-    echo "Wait = true"  > "$TEST_REPO/config/dev/ops.conf"
+    echo "Wait = true"  > "$TEST_REPO/config/dev/global.conf"
     load_ops_config 'foo' 'dev' "$TEST_REPO"
     [ "${OPS_CONFIG[Wait]}" = "true" ]
 }

@@ -1,4 +1,4 @@
-﻿# シェルスクリプト仕様書
+# シェルスクリプト仕様書
 
 このリポジトリで運用シェルスクリプト（PowerShell / Bash / T-SQL）を書くときの **規約と必須要件** をまとめたものです。すべてのスクリプトはこの仕様に準拠してください。CI のチェック項目はこの仕様をベースにしています。
 
@@ -331,9 +331,9 @@ AMI creation initiated: amiId=ami-0xyz instanceId=i-0abc namePrefix=prod-web
 ```
 1. CLI 引数
 2. config/<env>/<script-name>.conf
-3. config/<env>/ops.conf
+3. config/<env>/global.conf
 4. config/default/<script-name>.conf
-5. config/default/ops.conf
+5. config/default/global.conf
 6. スクリプトのハードコード既定値
 ```
 

@@ -1,0 +1,47 @@
+# =============================================================================
+# .gitattributes
+# テキストファイルの改行コード・エンコーディングを統一する。
+#
+# - checkout 時: eol=lf のファイルは常に LF、eol=crlf は常に CRLF
+# - commit 時  : 改行コードを正規化して保存（text=auto）
+# - BOM なし UTF-8 を全ファイルで使用する
+#   （.sh は BOM があるとシェバン行が壊れ Linux で実行不可になる）
+# =============================================================================
+
+# デフォルト: テキスト/バイナリを自動判定、改行を正規化
+* text=auto
+
+# ---------- Unix スクリプト: LF 必須 ----------
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.bats  text eol=lf
+
+# ---------- Windows スクリプト: CRLF ----------
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.bat   text eol=crlf
+
+# ---------- 設定・ドキュメント: LF 統一 ----------
+# PS/Bash 両方から読む共有ファイルは LF で統一する
+# （PowerShell 7 は LF を正しく読める）
+*.conf  text eol=lf
+*.lst   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sql   text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+
+# ---------- バイナリ: 変換しない ----------
+*.zip   binary
+*.tar   binary
+*.gz    binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary

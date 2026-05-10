@@ -7,9 +7,9 @@ Set-StrictMode -Version Latest
 .DESCRIPTION
     次の優先順位（低 → 高）でファイルをマージしてハッシュテーブルを返す：
 
-        config/default/ops.conf
+        config/default/global.conf
         config/default/<Name>.conf
-        config/<Env>/ops.conf   ← OPS_ENV 指定時のみ
+        config/<Env>/global.conf   ← OPS_ENV 指定時のみ
         config/<Env>/<Name>.conf ← OPS_ENV 指定時のみ
 
     後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
@@ -46,11 +46,11 @@ function Get-OpsConfig {
     # default/ は常に読む → env が指定された場合はその上に重ね書き
     $config = @{}
     $sources = @(
-        Join-Path $RepoRoot 'config' 'default' 'ops.conf'
+        Join-Path $RepoRoot 'config' 'default' 'global.conf'
         Join-Path $RepoRoot 'config' 'default' "$Name.conf"
     )
     if ($Env) {
-        $sources += Join-Path $RepoRoot 'config' $Env 'ops.conf'
+        $sources += Join-Path $RepoRoot 'config' $Env 'global.conf'
         $sources += Join-Path $RepoRoot 'config' $Env "$Name.conf"
     }
 

@@ -8,9 +8,9 @@
 #
 # 連想配列 OPS_CONFIG に次のファイルをマージした結果を格納する：
 #
-#   config/default/ops.conf
+#   config/default/global.conf
 #   config/default/<script-name>.conf
-#   config/<env>/ops.conf       ← OPS_ENV 指定時のみ
+#   config/<env>/global.conf       ← OPS_ENV 指定時のみ
 #   config/<env>/<script-name>.conf ← OPS_ENV 指定時のみ
 #
 # 後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
@@ -69,11 +69,11 @@ load_ops_config() {
     # 読み込み対象ファイルを優先度の低い順に列挙
     # default/ は常に読む → env が指定された場合はその上に重ね書き
     local sources=(
-        "$repo_root/config/default/ops.conf"
+        "$repo_root/config/default/global.conf"
         "$repo_root/config/default/$name.conf"
     )
     if [[ -n "$env" ]]; then
-        sources+=( "$repo_root/config/$env/ops.conf" )
+        sources+=( "$repo_root/config/$env/global.conf" )
         sources+=( "$repo_root/config/$env/$name.conf" )
     fi
 

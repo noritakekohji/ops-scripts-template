@@ -23,7 +23,7 @@
 │   ├── ec2ctl.sh
 │   └── Backup-Ami.ps1
 └── config/     # 設定ファイル（mode 0644）フラット配置
-    ├── ops.conf
+    ├── global.conf
     ├── ec2ctl.conf
     └── backup_ami.conf
 ```
@@ -56,7 +56,7 @@
 
 # CONF: config/default/<filename> → <opt_root_dir>/config/<filename>
 #       env 指定時は config/<env>/<filename> で上書き
-CONF, ops.conf
+CONF, global.conf
 CONF, ec2ctl.conf
 CONF, backup_ami.conf
 
@@ -150,8 +150,8 @@ install.bat staging -WhatIf
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Pre-check start
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Pre-check passed: entryCount=5
 [2026-05-10 10:00:01] [INFO ] (deploy_scripts.sh:1234) Main start
-[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/default/ops.conf dst=/opt/ops/config/ops.conf mode=644
-[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/production/ops.conf dst=/opt/ops/config/ops.conf mode=644
+[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/default/global.conf dst=/opt/ops/config/global.conf mode=644
+[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/production/global.conf dst=/opt/ops/config/global.conf mode=644
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/default/ec2ctl.conf dst=/opt/ops/config/ec2ctl.conf mode=644
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Unchanged: dst=/opt/ops/config/backup_ami.conf
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Backed up: from=/opt/ops/bin/ec2ctl.sh to=/opt/ops/.backup/ec2ctl.sh.20260510-100002

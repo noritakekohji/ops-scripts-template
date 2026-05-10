@@ -137,7 +137,7 @@ Tests Passed: 17, Failed: 0, Skipped: 0 NotRun: 0
 
 ### 失敗例（赤字部分が原因）
 ```
-[-] tests/pester/Config.Tests.ps1.Get-OpsConfig.common/<name>.conf が common/ops.conf を上書きする 50ms
+[-] tests/pester/Config.Tests.ps1.Get-OpsConfig.common/<name>.conf が common/global.conf を上書きする 50ms
    Expected: 'us-east-1'
    But was : 'ap-northeast-1'
 ```
