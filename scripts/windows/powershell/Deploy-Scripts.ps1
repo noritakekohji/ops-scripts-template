@@ -1,24 +1,38 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    リポジトリの scripts / config / lib / tests から指定対象だけを
+    リポジトリの scripts/ / config/ から指定対象だけを
     <OptRoot> 配下にローカル配備する。
 
 .DESCRIPTION
-    Bash 版 deploy_scripts.sh と同等。Windows サーバ向け（.ps1 を中心に
-    配備、lib/powershell/ を必須付帯）。
+    Bash 版 deploy_scripts.sh と同等。Windows サーバ向け。
 
-    配備時にスクリプト内の lib import パスを
-        Join-Path $PSScriptRoot '..' '..' '..' 'lib' ...
-    から
-        Join-Path $PSScriptRoot '..' 'lib' ...
-    へ書換える（フラット配置に追従）。
+    リストファイル形式:
+      CONF, <filename>       config/default/<filename> → <OptRoot>/config/<filename>
+      SRC,  <repo_filepath>  scripts/<repo_filepath>   → <OptRoot>/bin/<basename>
 
-    レイアウト:
-      <OptRoot>/script/<File>.ps1
-      <OptRoot>/conf/<file>.conf   ← default を基底に env で上書き
-      <OptRoot>/tests/<File>.Tests.ps1
-      <OptRoot>/lib/powershell/<File>.psm1
+    env が指定された場合、CONF は default を先に配備し、その後
+    config/<env>/<filename> が存在すれば上書きする。
+
+.PARAMETER PathList
+    対象リストファイルのパス。
+
+.PARAMETER OptRoot
+    配備先 root ディレクトリ（既定: C:\ProgramData\ops-scripts）。
+    config の opt_root_dir でも指定可（CLI 優先）。
+
+.PARAMETER Env
+    環境名（dev / staging / production 等）。
+    省略時は $env:OPS_ENV、それも未設定なら config/default/ のみ参照。
+
+.PARAMETER Backup
+    上書き前に既存ファイルを <OptRoot>/.backup/ に退避する。
+
+.EXAMPLE
+    .\Deploy-Scripts.ps1 -PathList C:\ops\deploy.list -Env production -Backup
+
+.EXAMPLE
+    .\Deploy-Scripts.ps1 -PathList C:\ops\deploy.list -Env dev -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -29,16 +43,13 @@ param(
     # 環境名（OPS_ENV と同等）。省略時は $env:OPS_ENV、それも未設定なら config/default/ のみ参照
     [string]$Env = '',
 
-    [ValidateSet('script-only','with-config','with-tests','all')]
-    [string]$Mode = 'with-config',
-
     [switch]$Backup
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- フェーズ 2: 共通ライブラリ ---
+# --- ライブラリ ---
 $libPath = Join-Path $PSScriptRoot '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
 if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
 Import-Module (Resolve-Path $libPath).Path -Force
@@ -52,12 +63,12 @@ if (-not $PSBoundParameters.ContainsKey('Env') -and $env:OPS_ENV) { $Env = $env:
 $cfg = Get-OpsConfig -Name 'deploy_scripts' -Env $Env
 $cfgEnv = if ($Env) { $Env } else { 'default' }
 
-if (-not $PSBoundParameters.ContainsKey('OptRoot') -and $cfg.ContainsKey('OptRoot')) { $OptRoot = [string]$cfg['OptRoot'] }
-if (-not $PSBoundParameters.ContainsKey('Mode')    -and $cfg.ContainsKey('Mode'))    { $Mode    = [string]$cfg['Mode'] }
-if (-not $PSBoundParameters.ContainsKey('Backup')  -and $cfg.ContainsKey('Backup')) {
+if (-not $PSBoundParameters.ContainsKey('OptRoot') -and $cfg.ContainsKey('opt_root_dir')) {
+    $OptRoot = [string]$cfg['opt_root_dir']
+}
+if (-not $PSBoundParameters.ContainsKey('Backup') -and $cfg.ContainsKey('Backup')) {
     if ([System.Convert]::ToBoolean($cfg['Backup'])) { $Backup = [switch]::Present }
 }
-# CLI で -PathList 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
 if (-not $PSBoundParameters.ContainsKey('PathList') -and $cfg.ContainsKey('PathList')) {
     $PathList = [string]$cfg['PathList']
     if ($PathList -and -not [System.IO.Path]::IsPathRooted($PathList)) {
@@ -81,8 +92,13 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..')).Path
 function Get-FileSha256 { param([string]$Path) (Get-FileHash -Algorithm SHA256 -Path $Path).Hash }
 
 function Copy-OpsFile {
-    # 単一ファイルを冪等にコピー
     param([string]$Src, [string]$Dst)
+
+    if (-not (Test-Path -LiteralPath $Src -PathType Leaf)) {
+        Write-OpsLog -Level WARN -Message "Source not found, skipping: src=$Src"
+        $script:failed++
+        return $false
+    }
 
     if (Test-Path -LiteralPath $Dst) {
         if ((Get-FileSha256 $Src) -eq (Get-FileSha256 $Dst)) {
@@ -125,143 +141,36 @@ function Copy-OpsFile {
     }
 }
 
-function Update-OpsLibImport {
-    # 配備先の PS スクリプトの lib import パスを書換え
-    # Join-Path $PSScriptRoot '..' '..' '..' 'lib'  →  '..' 'lib'
-    param([string]$File)
-    if ($PSCmdlet.ShouldProcess($File, 'Rewrite lib import path') -eq $false) { return }
-    if (-not (Test-Path -LiteralPath $File)) { return }
-    $content = Get-Content -LiteralPath $File -Raw
-    $newContent = $content -replace "(?:'\.\.'\s+){2,}'lib'", "'..' 'lib'"
-    if ($newContent -ne $content) {
-        Set-Content -LiteralPath $File -Value $newContent -NoNewline
-    }
-}
+# CONF エントリ: config/default/<filename> を配備し、env があれば上書き
+function Invoke-OpsDeployConf {
+    param([string]$FilePath)
+    $filename = Split-Path -Leaf $FilePath
+    $dst = Join-Path $OptRoot 'config' $filename
 
-function Resolve-OpsScriptSource {
-    # スクリプト名 → 実体パス。拡張子省略時は .ps1 を試行、
-    # snake_case → PascalCase の変換も試す。
-    param([string]$Name, [string]$Explicit)
-    if ($Explicit) {
-        $cand = Join-Path $repoRoot $Explicit
-        if (Test-Path -LiteralPath $cand -PathType Leaf) { return $cand }
-        if (Test-Path -LiteralPath $Explicit -PathType Leaf) { return $Explicit }
-        return $null
-    }
-    # 検索候補名を作る
-    $candidates = @()
-    if ($Name -like '*.ps1' -or $Name -like '*.sh') {
-        $candidates = @($Name)
+    $srcDefault = Join-Path $repoRoot 'config' 'default' $FilePath
+    if (Test-Path -LiteralPath $srcDefault -PathType Leaf) {
+        Copy-OpsFile -Src $srcDefault -Dst $dst | Out-Null
     }
     else {
-        $candidates += "$Name.ps1"
-        # snake_case → PascalCase 変換も候補に
-        if ($Name -like '*_*') {
-            $pascal = ($Name -split '_' | ForEach-Object {
-                if ($_) { $_.Substring(0, 1).ToUpper() + $_.Substring(1) }
-            }) -join '-'
-            $candidates += "$pascal.ps1"
-        }
-    }
-    foreach ($cn in $candidates) {
-        $found = @(Get-ChildItem -Path (Join-Path $repoRoot 'scripts') -Recurse -File -Filter $cn -ErrorAction SilentlyContinue)
-        if ($found.Count -gt 0) {
-            if ($found.Count -gt 1) {
-                Write-OpsLog -Level WARN -Message "Multiple matches for '$Name' (using first): $(($found.FullName | Select-Object -First 5) -join ',')"
-            }
-            return $found[0].FullName
-        }
-    }
-    return $null
-}
-
-# 1 エントリを配備（script + 関連 conf / tests）
-function Invoke-OpsDeployEntry {
-    param([hashtable]$Entry)
-
-    $src = Resolve-OpsScriptSource -Name $Entry.Name -Explicit $Entry.Path
-    if (-not $src) {
-        Write-OpsLog -Level WARN -Message "Script not found in repo, skipping: name=$($Entry.Name)"
+        Write-OpsLog -Level WARN -Message "Default config not found: src=$srcDefault"
         $script:failed++
-        return
     }
 
-    $base = Split-Path -Leaf $src
-    $stem = [System.IO.Path]::GetFileNameWithoutExtension($base)
-
-    # (1) 本体
-    $dstScript = Join-Path $OptRoot 'script' $base
-    if (Copy-OpsFile -Src $src -Dst $dstScript) {
-        Update-OpsLibImport -File $dstScript
-    }
-
-    # (2) 設定ファイル
-    # conf/ 直下にフラット配置。default を基底に env 指定があれば上書き。
-    if ($Entry.Mode -in 'with-config','all') {
-        # PS スクリプトの conf 名は snake_case 共有版（例: Backup-Ami.ps1 → backup_ami.conf）
-        $confName = if ($Entry.Conf) {
-            $Entry.Conf
-        }
-        elseif ($base -like '*.ps1') {
-            ($stem -replace '-', '_').ToLower() + '.conf'
-        }
-        else {
-            "$stem.conf"
-        }
-
-        # --- default の conf を先にコピー ---
-        $confSrc = Join-Path $repoRoot 'config' 'default' $confName
-        if (Test-Path -LiteralPath $confSrc -PathType Leaf) {
-            Copy-OpsFile -Src $confSrc -Dst (Join-Path $OptRoot 'conf' $confName) | Out-Null
-        }
-        $opsSrc = Join-Path $repoRoot 'config' 'default' 'ops.conf'
-        if (Test-Path -LiteralPath $opsSrc -PathType Leaf) {
-            Copy-OpsFile -Src $opsSrc -Dst (Join-Path $OptRoot 'conf' 'ops.conf') | Out-Null
-        }
-
-        # --- env が指定されていれば上書き ---
-        if ($Env) {
-            $confSrc = Join-Path $repoRoot 'config' $Env $confName
-            if (Test-Path -LiteralPath $confSrc -PathType Leaf) {
-                Copy-OpsFile -Src $confSrc -Dst (Join-Path $OptRoot 'conf' $confName) | Out-Null
-            }
-            $opsSrc = Join-Path $repoRoot 'config' $Env 'ops.conf'
-            if (Test-Path -LiteralPath $opsSrc -PathType Leaf) {
-                Copy-OpsFile -Src $opsSrc -Dst (Join-Path $OptRoot 'conf' 'ops.conf') | Out-Null
-            }
-        }
-    }
-
-    # (3) テスト
-    if ($Entry.Mode -in 'with-tests','all') {
-        $testName = if ($Entry.Tests) {
-            $Entry.Tests
-        }
-        elseif ($base -like '*.ps1') {
-            "$stem.Tests.ps1"
-        }
-        else {
-            "$stem.bats"
-        }
-        $testSrc = if ($base -like '*.sh') {
-            Join-Path $repoRoot 'tests' 'bats' $testName
-        }
-        else {
-            Join-Path $repoRoot 'tests' 'pester' $testName
-        }
-        if (Test-Path -LiteralPath $testSrc -PathType Leaf) {
-            Copy-OpsFile -Src $testSrc -Dst (Join-Path $OptRoot 'tests' (Split-Path -Leaf $testSrc)) | Out-Null
+    if ($Env) {
+        $srcEnv = Join-Path $repoRoot 'config' $Env $FilePath
+        if (Test-Path -LiteralPath $srcEnv -PathType Leaf) {
+            Copy-OpsFile -Src $srcEnv -Dst $dst | Out-Null
         }
     }
 }
 
-# lib/powershell/ を配備（スクリプトが必須）
-function Invoke-OpsDeployLib {
-    Write-OpsLog -Level INFO -Message 'Deploying lib/powershell'
-    $libDir = Join-Path $repoRoot 'lib' 'powershell'
-    Get-ChildItem -Path $libDir -Filter '*.psm1' -File -ErrorAction SilentlyContinue | ForEach-Object {
-        Copy-OpsFile -Src $_.FullName -Dst (Join-Path $OptRoot 'lib' 'powershell' $_.Name) | Out-Null
-    }
+# SRC エントリ: scripts/<repo_filepath> → <OptRoot>/bin/<basename>
+function Invoke-OpsDeploySrc {
+    param([string]$FilePath)
+    $filename = Split-Path -Leaf $FilePath
+    $src = Join-Path $repoRoot 'scripts' $FilePath
+    $dst = Join-Path $OptRoot 'bin' $filename
+    Copy-OpsFile -Src $src -Dst $dst | Out-Null
 }
 
 # ----------------------------------------------------------------------------
@@ -270,13 +179,13 @@ function Invoke-OpsDeployLib {
 try {
     do {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
-        Write-OpsLog -Level INFO -Message "Args validated: pathList='$PathList' optRoot='$OptRoot' env=$cfgEnv mode=$Mode backup=$Backup whatIf=$($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('WhatIf'))"
+        Write-OpsLog -Level INFO -Message "Args validated: pathList='$PathList' optRoot='$OptRoot' env=$cfgEnv backup=$Backup whatIf=$($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('WhatIf'))"
 
-        # --- フェーズ 3: プレチェック ---
+        # --- プレチェック ---
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not $PathList) {
-            Write-OpsLog -Level ERROR -Message 'Specify -PathList or set PathList in config'
+            Write-OpsLog -Level ERROR -Message 'Specify -PathList or set PathList in deploy_scripts.conf'
             $exitCode = 1; $status = 'failed'; break
         }
         if (-not (Test-Path -LiteralPath $PathList -PathType Leaf)) {
@@ -287,65 +196,59 @@ try {
         if ($PSCmdlet.ShouldProcess($OptRoot, 'Ensure OptRoot exists and is writable')) {
             try {
                 New-Item -ItemType Directory -Path $OptRoot -Force | Out-Null
-                # 書込みテスト
                 $probe = Join-Path $OptRoot ".probe.$([Guid]::NewGuid().ToString('N'))"
                 Set-Content -LiteralPath $probe -Value 'x'
                 Remove-Item -LiteralPath $probe -Force
             }
             catch {
-                Write-OpsLog -Level ERROR -Message "Cannot write to optRoot: $OptRoot error=$($_.Exception.Message)"
+                Write-OpsLog -Level ERROR -Message "Cannot write to opt_root_dir: $OptRoot error=$($_.Exception.Message)"
                 $exitCode = 5; $status = 'failed'; break
             }
         }
 
-        # リストパース
-        $entries = @()
+        # リスト解析
+        $entryTypes = [System.Collections.Generic.List[string]]::new()
+        $entryPaths = [System.Collections.Generic.List[string]]::new()
+
         $lines = Get-Content -LiteralPath $PathList |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and -not $_.StartsWith('#') }
+            ForEach-Object { ($_ -replace '#.*$', '').Trim() } |
+            Where-Object { $_ }
+
         foreach ($line in $lines) {
-            $tokens = $line -split '\s+'
-            $entry = @{
-                Name = $tokens[0]
-                Mode = $Mode
-                Path = ''
-                Conf = ''
-                Tests = ''
+            $comma = $line.IndexOf(',')
+            if ($comma -lt 1) {
+                Write-OpsLog -Level WARN -Message "Invalid format, skipping: line='$line'"
+                continue
             }
-            for ($i = 1; $i -lt $tokens.Count; $i++) {
-                $tok = $tokens[$i]
-                $eq = $tok.IndexOf('=')
-                if ($eq -lt 1) { Write-OpsLog -Level WARN -Message "Invalid token: line='$line' token='$tok'"; continue }
-                $key = $tok.Substring(0, $eq)
-                $val = $tok.Substring($eq + 1)
-                switch ($key) {
-                    'Mode' {
-                        if ($val -in 'script-only','with-config','with-tests','all') { $entry.Mode = $val }
-                        else { Write-OpsLog -Level WARN -Message "Invalid Mode: line='$line' value='$val'" }
-                    }
-                    'Path'  { $entry.Path  = $val }
-                    'Conf'  { $entry.Conf  = $val }
-                    'Tests' { $entry.Tests = $val }
-                    default { Write-OpsLog -Level WARN -Message "Unknown key: line='$line' key='$key'" }
-                }
+            $t = $line.Substring(0, $comma).Trim().ToUpper()
+            $p = $line.Substring($comma + 1).Trim()
+
+            if ($t -in 'CONF', 'SRC') {
+                $entryTypes.Add($t)
+                $entryPaths.Add($p)
             }
-            $entries += $entry
+            else {
+                Write-OpsLog -Level WARN -Message "Unknown type, skipping: type=$t line='$line'"
+            }
         }
 
-        if ($entries.Count -eq 0) {
+        if ($entryTypes.Count -eq 0) {
             Write-OpsLog -Level WARN -Message 'No entries to deploy (skipped)'
             $status = 'skipped'; break
         }
-        Write-OpsLog -Level INFO -Message "Pre-check passed: entryCount=$($entries.Count)"
+        Write-OpsLog -Level INFO -Message "Pre-check passed: entryCount=$($entryTypes.Count)"
 
-        # --- フェーズ 4: メイン処理 ---
+        # --- メイン処理 ---
         Write-OpsLog -Level INFO -Message 'Main start'
-        foreach ($e in $entries) {
-            Invoke-OpsDeployEntry -Entry $e
-        }
-        Invoke-OpsDeployLib
 
-        if ($script:failed -gt 0 -and $script:deployed -eq 0) {
+        for ($i = 0; $i -lt $entryTypes.Count; $i++) {
+            switch ($entryTypes[$i]) {
+                'CONF' { Invoke-OpsDeployConf -FilePath $entryPaths[$i] }
+                'SRC'  { Invoke-OpsDeploySrc  -FilePath $entryPaths[$i] }
+            }
+        }
+
+        if ($script:failed -gt 0 -and $script:deployed -eq 0 -and $script:unchanged -eq 0) {
             Write-OpsLog -Level ERROR -Message 'All entries failed'
             $exitCode = 4; $status = 'failed'; break
         }

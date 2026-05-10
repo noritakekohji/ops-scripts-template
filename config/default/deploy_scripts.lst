@@ -1,44 +1,39 @@
 # deploy_scripts.sh / Deploy-Scripts.ps1 のサンプルリストファイル
 #
-# 形式: <name> [Key=Value ...]
-# 受け付けるキー: Mode, Path, Conf, Tests
+# 形式:
+#   CONF, <filename>       config/default/<filename> → <opt_root_dir>/config/<filename>
+#   SRC,  <repo_filepath>  scripts/<repo_filepath>   → <opt_root_dir>/bin/<basename>
 #
-# Mode:
-#   script-only   本体のみ
-#   with-config   本体 + 対応する <env>/<name>.conf + ops.conf（既定）
-#   with-tests    本体 + 対応するテスト
-#   all           本体 + conf + tests
-#
-# 拡張子は省略可（Linux なら .sh、Windows なら .ps1 を自動補完）。
-# Windows 側は snake_case → PascalCase の変換も試行する：
-#   'backup_ami' → 'Backup-Ami.ps1'
+# env が指定された場合、CONF は default を配備した後 config/<env>/ で上書き。
+# スペースはカンマの前後で自由に入れてよい。行頭 # はコメント。
 #
 # このサンプルでは全エントリをコメントアウトしている。実運用時は本ファイルを
 # 編集するか、環境別に config/<env>/deploy_scripts.lst を作って
 # deploy_scripts.conf の PathList を上書きすること。
 
-# --- AWS バックアップ ---
-# backup_ami
-# backup_ebs_snapshot
+# --- 設定ファイル ---
+# CONF, ops.conf
+# CONF, ec2ctl.conf
+# CONF, backup_ami.conf
+# CONF, rotate_log.conf
+# CONF, s3upload.conf
+# CONF, tomcatctl.conf
+# CONF, sqlserverctl.conf
 
-# --- AWS ライフサイクル ---
-# ec2ctl
+# --- Linux スクリプト ---
+# SRC, aws/bash/ec2ctl.sh
+# SRC, aws/bash/backup_ami.sh
+# SRC, aws/bash/backup_ebs_snapshot.sh
+# SRC, aws/bash/s3upload.sh
+# SRC, linux/bash/rotate_log.sh
+# SRC, tomcat/bash/tomcatctl.sh
+# SRC, sqlserver/bash/sqlserverctl.sh
 
-# --- AWS S3 ---
-# s3upload
-
-# --- ログ運用 ---
-# rotate_log
-
-# --- ミドルウェア（必要なサーバだけに配備） ---
-# tomcatctl
-# sqlserverctl
-
-# --- 行内オプションの例：tests も付けて配備 ---
-# ec2ctl  Mode=all
-
-# --- 明示パス指定の例（Path で名前解決を上書き） ---
-# my_special  Path=scripts/aws/bash/my_special.sh
-
-# --- conf 名のエイリアス例 ---
-# my_script  Conf=shared.conf  Tests=my_script_smoke.bats
+# --- Windows スクリプト ---
+# SRC, aws/powershell/Ec2Ctl.ps1
+# SRC, aws/powershell/Backup-Ami.ps1
+# SRC, aws/powershell/Backup-EbsSnapshot.ps1
+# SRC, aws/powershell/S3Upload.ps1
+# SRC, windows/powershell/Rotate-Log.ps1
+# SRC, tomcat/powershell/TomcatCtl.ps1
+# SRC, sqlserver/powershell/SqlServerCtl.ps1

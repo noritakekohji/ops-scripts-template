@@ -1,33 +1,35 @@
 #!/usr/bin/env bash
 # ============================================================================
 # deploy_scripts.sh
-#   リポジトリの scripts / config / lib / tests から指定対象だけを
-#   <opt_root> 配下にローカル配備（インストール）する。
+#   リポジトリの scripts/ / config/ から指定対象だけを
+#   <opt_root_dir> 配下にローカル配備（インストール）する。
 #
-# 使い方:
-#   deploy_scripts.sh -L <list-file> [-d <opt-root>] [-e <env>]
-#                     [-m <mode>] [-b] [-n]
+# Usage:
+#   deploy_scripts.sh -L <listfile> [-d <opt_root_dir>] [-e <env>] [-b] [-n]
 #
-# オプション:
-#   -L  デプロイ対象リストファイル（必須、1 行 1 スクリプト）
-#   -d  配備先 root（既定 /opt/ops-scripts、config 可）
-#   -e  環境名（OPS_ENV と同等）: dev / staging / production など
-#       省略時は $OPS_ENV、それも未設定なら config/default/ のみ参照
-#   -m  既定 mode: script-only / with-config（既定）/ with-tests / all
-#   -b  既存ファイルをタイムスタンプ付きでバックアップしてから上書き
-#   -n  Dry-run（実際の操作なし、ログのみ）
-#   -h  usage 表示
+# Options:
+#   -L <file>   対象リストファイル（必須）
+#   -d <path>   配備先 root（既定: /opt/ops-scripts、config で変更可）
+#   -e <env>    環境名（dev / staging / production 等）
+#               省略時は $OPS_ENV、それも未設定なら config/default/ のみ参照
+#   -b          上書き前に既存ファイルをバックアップ
+#   -n          Dry-run（実際の操作なし、ログのみ）
 #
-# 配備後レイアウト:
-#   <opt_root>/script/<file>.sh   (mode 0755)
-#   <opt_root>/conf/<file>.conf   (mode 0644) ← default を基底に env で上書き
-#   <opt_root>/tests/<file>.bats  (mode 0755)
-#   <opt_root>/lib/bash/<file>.sh (必須付帯)
+# List file format:
+#   # コメント（行頭 # またはインラインコメントは無視）
+#   CONF, <filename>       config/default/<filename> → <opt_root_dir>/config/<filename>
+#   SRC,  <repo_filepath>  scripts/<repo_filepath>   → <opt_root_dir>/bin/<basename>
 #
-# 配備時にスクリプト内の lib import パスを ../../../lib/ → ../lib/ に書換え。
+#   env が指定された場合、CONF は default を先に配備し、その後
+#   config/<env>/<filename> が存在すれば上書きする。
 #
-# 終了コード: 0 成功/skipped/partial、1 usage、2 リスト不在、4 全件失敗、
-#             5 配備先書込み不可
+# Authentication: 配備先パスへの書込み権（必要なら sudo）
+# Exit codes:
+#   0 = success / partial / skipped
+#   1 = 入力バリデーション失敗
+#   2 = リストファイル不在
+#   4 = 全件失敗
+#   5 = 配備先への書込み不可
 # ============================================================================
 set -euo pipefail
 
@@ -37,36 +39,70 @@ source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../lib/bash/config.sh"
 
-usage() { sed -n '2,30p' "$0" >&2; exit 1; }
+# ---------- デフォルト ----------
+list_file=""
+opt_root="/opt/ops-scripts"
+opt_root_set=0
+env_name="${OPS_ENV:-}"
+backup_existing=0
+dry_run=0
 
-# Phase 5 ステート
 deployed=0
 unchanged=0
 backed_up=0
 failed=0
 status="unknown"
-opt_root="/opt/ops-scripts"
-backup_existing=0
-dry_run=0
-env_name="${OPS_ENV:-}"
 
 cleanup() {
     local rc=$?
-    if [[ "$status" == "unknown" && "$rc" -eq 0 ]]; then status="success"; fi
+    [[ "$status" == "unknown" && "$rc" -eq 0 ]] && status="success"
     log_info "Script end: status=$status exitCode=$rc deployed=$deployed unchanged=$unchanged backedUp=$backed_up failed=$failed"
 }
 trap cleanup EXIT
 
-# ----------------------------------------------------------------------------
-# ヘルパ
-# ----------------------------------------------------------------------------
+# ---------- 引数解析 ----------
+while getopts "L:d:e:bn" opt; do
+    case "$opt" in
+        L) list_file="$OPTARG" ;;
+        d) opt_root="$OPTARG"; opt_root_set=1 ;;
+        e) env_name="$OPTARG" ;;
+        b) backup_existing=1 ;;
+        n) dry_run=1 ;;
+        *) log_error "Unknown option: -$OPTARG"; status="failed"; exit 1 ;;
+    esac
+done
 
-# 単一ファイルを冪等にコピー（既存と一致なら skip、異なれば backup → 上書き）
-# 引数: $1=src, $2=dst, $3=permission（例 0755）
+# ---------- 設定ファイル ----------
+load_ops_config "deploy_scripts" "$env_name"
+cfg_env="${OPS_CONFIG_ENV:-default}"
+
+[[ "$opt_root_set" -eq 0 && -n "${OPS_CONFIG[opt_root_dir]:-}" ]] && opt_root="${OPS_CONFIG[opt_root_dir]}"
+if [[ -z "$list_file" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
+    list_file="${OPS_CONFIG[PathList]}"
+    [[ "$list_file" != /* ]] && list_file="$(ops_repo_root)/$list_file"
+fi
+
+log_info "Config loaded: env=$cfg_env keys=${#OPS_CONFIG[@]}"
+log_info "Args validated: listFile=$list_file optRoot=$opt_root env=${env_name:-default} backup=$backup_existing dryRun=$dry_run"
+
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# ---------- ヘルパ ----------
+
+_sha256() { sha256sum "$1" | awk '{print $1}'; }
+
+# 冪等コピー
 copy_file() {
     local src="$1" dst="$2" perm="$3"
+
+    if [[ ! -f "$src" ]]; then
+        log_warn "Source not found, skipping: src=$src"
+        failed=$((failed+1))
+        return 1
+    fi
+
     if [[ -f "$dst" ]]; then
-        if [[ "$(sha256sum "$src" | awk '{print $1}')" == "$(sha256sum "$dst" | awk '{print $1}')" ]]; then
+        if [[ "$(_sha256 "$src")" == "$(_sha256 "$dst")" ]]; then
             log_info "Unchanged: dst=$dst"
             unchanged=$((unchanged+1))
             return 0
@@ -81,23 +117,24 @@ copy_file() {
                 cp -p -- "$dst" "$backup_path"
                 log_info "Backed up: from=$dst to=$backup_path"
             else
-                log_info "[DRY-RUN] would backup: from=$dst to=$backup_path"
+                log_info "[DRY-RUN] Would backup: from=$dst to=$backup_path"
             fi
             backed_up=$((backed_up+1))
         else
             log_warn "Overwriting without backup: dst=$dst"
         fi
     fi
+
     if [[ "$dry_run" -eq 1 ]]; then
-        log_info "[DRY-RUN] would deploy: src=$src dst=$dst mode=$perm"
+        log_info "[DRY-RUN] Would deploy: src=$src dst=$dst mode=$perm"
         deployed=$((deployed+1))
         return 0
     fi
+
     mkdir -p "$(dirname "$dst")"
     if cp -p -- "$src" "$dst" && chmod "$perm" -- "$dst"; then
         log_info "Deployed: src=$src dst=$dst mode=$perm"
         deployed=$((deployed+1))
-        return 0
     else
         log_error "Copy failed: src=$src dst=$dst"
         failed=$((failed+1))
@@ -105,232 +142,116 @@ copy_file() {
     fi
 }
 
-# 配備済み Bash スクリプトの lib import パスを書換え
-# ../../../lib/  →  ../lib/   （任意の 2+ '../' をまとめて 1 つにする）
-rewrite_bash_lib_path() {
-    local f="$1"
-    [[ "$dry_run" -eq 1 ]] && return 0
-    [[ ! -f "$f" ]] && return 0
-    sed -i -E 's|(\.\./){2,}lib/|../lib/|g' "$f"
-}
+# CONF エントリ：config/default/<filename> → <opt_root_dir>/config/<filename>
+# env 指定時は config/<env>/<filename> で上書き
+deploy_conf() {
+    local filepath="$1"
+    local filename; filename=$(basename "$filepath")
+    local dst="$opt_root/config/$filename"
 
-# リスト中のスクリプト名から実体パスを解決
-# 引数: $1=name, $2=明示 Path（省略可）
-# 出力: 実体の絶対パス（見つからなければ空）
-resolve_script_source() {
-    local name="$1" explicit="$2"
-    if [[ -n "$explicit" ]]; then
-        if [[ -f "$REPO_ROOT/$explicit" ]]; then printf '%s\n' "$REPO_ROOT/$explicit"; return 0; fi
-        if [[ -f "$explicit" ]]; then printf '%s\n' "$explicit"; return 0; fi
-        return 1
-    fi
-    local search="$name"
-    if [[ "$search" != *.sh ]]; then search="${name}.sh"; fi
-    local m
-    m=$(find "$REPO_ROOT/scripts" -type f -name "$search" 2>/dev/null)
-    if [[ -z "$m" ]]; then return 1; fi
-    local count
-    count=$(printf '%s\n' "$m" | wc -l)
-    if [[ "$count" -gt 1 ]]; then
-        log_warn "Multiple matches for '$name' (using first): $(echo "$m" | tr '\n' ' ')"
-    fi
-    printf '%s\n' "$(echo "$m" | head -n1)"
-}
-
-# 1 つのスクリプト + 関連 conf / tests を配備
-deploy_entry() {
-    local name="$1" entry_mode="$2" exp_path="$3" exp_conf="$4" exp_tests="$5"
-    local src
-    if ! src=$(resolve_script_source "$name" "$exp_path"); then
-        log_warn "Script not found in repo, skipping: name=$name"
+    local src_default="$REPO_ROOT/config/default/$filepath"
+    if [[ -f "$src_default" ]]; then
+        copy_file "$src_default" "$dst" 644 || true
+    else
+        log_warn "Default config not found: src=$src_default"
         failed=$((failed+1))
-        return 1
-    fi
-    local base stem
-    base=$(basename "$src")
-    stem="${base%.sh}"
-
-    # (1) 本体スクリプト
-    local dst_script="$opt_root/script/$base"
-    if copy_file "$src" "$dst_script" 755; then
-        rewrite_bash_lib_path "$dst_script"
     fi
 
-    # (2) 設定ファイル
-    # conf/ 直下にフラット配置。default を基底に env 指定があれば上書き。
-    # キーレベルのマージではなくファイルレベルの上書き（後者が優先）。
-    if [[ "$entry_mode" == "with-config" || "$entry_mode" == "all" ]]; then
-        local conf_name="${exp_conf:-${stem}.conf}"
-
-        # --- default の conf を先にコピー ---
-        local src_conf="$REPO_ROOT/config/default/$conf_name"
-        if [[ -f "$src_conf" ]]; then
-            copy_file "$src_conf" "$opt_root/conf/$conf_name" 644
-        fi
-        local src_ops="$REPO_ROOT/config/default/ops.conf"
-        if [[ -f "$src_ops" ]]; then
-            copy_file "$src_ops" "$opt_root/conf/ops.conf" 644
-        fi
-
-        # --- env が指定されていれば上書き ---
-        if [[ -n "$env_name" ]]; then
-            src_conf="$REPO_ROOT/config/$env_name/$conf_name"
-            if [[ -f "$src_conf" ]]; then
-                copy_file "$src_conf" "$opt_root/conf/$conf_name" 644
-            fi
-            src_ops="$REPO_ROOT/config/$env_name/ops.conf"
-            if [[ -f "$src_ops" ]]; then
-                copy_file "$src_ops" "$opt_root/conf/ops.conf" 644
-            fi
-        fi
-    fi
-
-    # (3) テスト
-    if [[ "$entry_mode" == "with-tests" || "$entry_mode" == "all" ]]; then
-        local test_name="${exp_tests:-${stem}.bats}"
-        local test_src="$REPO_ROOT/tests/bats/$test_name"
-        if [[ -f "$test_src" ]]; then
-            copy_file "$test_src" "$opt_root/tests/$(basename "$test_src")" 755
+    if [[ -n "$env_name" ]]; then
+        local src_env="$REPO_ROOT/config/$env_name/$filepath"
+        if [[ -f "$src_env" ]]; then
+            copy_file "$src_env" "$dst" 644 || true
         fi
     fi
 }
 
-# lib/bash/ を配備（スクリプトが必須）
-deploy_lib() {
-    log_info "Deploying lib/bash"
-    local libf
-    for libf in "$REPO_ROOT"/lib/bash/*.sh; do
-        [[ -f "$libf" ]] || continue
-        copy_file "$libf" "$opt_root/lib/bash/$(basename "$libf")" 644
-    done
+# SRC エントリ：scripts/<repo_filepath> → <opt_root_dir>/bin/<basename>
+deploy_src() {
+    local filepath="$1"
+    local filename; filename=$(basename "$filepath")
+    local src="$REPO_ROOT/scripts/$filepath"
+    local dst="$opt_root/bin/$filename"
+    copy_file "$src" "$dst" 755 || true
 }
 
-# ----------------------------------------------------------------------------
-# --- フェーズ 1: 引数パース ---
-# ----------------------------------------------------------------------------
-list_file=""
-mode="with-config"
-
-opt_root_set=0
-env_set=0
-mode_set=0
-
-while getopts "L:d:e:m:bnh" opt; do
-    case "$opt" in
-        L) list_file="$OPTARG" ;;
-        d) opt_root="$OPTARG"; opt_root_set=1 ;;
-        e) env_name="$OPTARG"; env_set=1 ;;
-        m) mode="$OPTARG"; mode_set=1 ;;
-        b) backup_existing=1 ;;
-        n) dry_run=1 ;;
-        h|*) usage ;;
-    esac
-done
-
-# ----------------------------------------------------------------------------
-# --- フェーズ 2: 設定ファイル読込み、未指定値へ反映 ---
-# ----------------------------------------------------------------------------
-load_ops_config "deploy_scripts" "$env_name"
-[[ "$opt_root_set" -eq 0 && -n "${OPS_CONFIG[OptRoot]:-}" ]] && opt_root="${OPS_CONFIG[OptRoot]}"
-[[ "$mode_set" -eq 0     && -n "${OPS_CONFIG[Mode]:-}"    ]] && mode="${OPS_CONFIG[Mode]}"
-# -L 未指定なら config の PathList を採用。相対パスは repo root 起点で絶対化。
-if [[ -z "$list_file" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
-    list_file="${OPS_CONFIG[PathList]}"
-    if [[ "$list_file" != /* ]]; then
-        list_file="$(ops_repo_root)/$list_file"
-    fi
-fi
-
-log_info "Config loaded: env=${OPS_CONFIG_ENV} keys=${#OPS_CONFIG[@]}"
-
-# 入力検証
-[[ -z "$list_file" ]] && { log_error "Specify -L or set PathList in config"; status="failed"; exit 1; }
-case "$mode" in script-only|with-config|with-tests|all) ;;
-    *) log_error "Invalid mode: $mode"; status="failed"; exit 1 ;;
-esac
-
-log_info "Args validated: listFile=$list_file optRoot=$opt_root env=${env_name:-default} mode=$mode backup=$backup_existing dryRun=$dry_run"
-
-# ----------------------------------------------------------------------------
-# --- フェーズ 3: プレチェック（リストパース、配備先確認）---
-# ----------------------------------------------------------------------------
+# ---------- プレチェック ----------
 log_info "Pre-check start"
 
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-log_info "Repo root: $REPO_ROOT"
-
+if [[ -z "$list_file" ]]; then
+    log_error "Specify -L <listfile> or set PathList in deploy_scripts.conf"
+    status="failed"; exit 1
+fi
 if [[ ! -f "$list_file" ]]; then
     log_error "List file not found: $list_file"
     status="failed"; exit 2
 fi
 
 if [[ "$dry_run" -eq 0 ]]; then
-    if ! mkdir -p "$opt_root" 2>/dev/null; then
-        log_error "Cannot create or write to opt_root: $opt_root"
+    mkdir -p "$opt_root" 2>/dev/null || true
+    if ! touch "$opt_root/.probe.$$" 2>/dev/null; then
+        log_error "Cannot write to opt_root_dir: $opt_root"
         status="failed"; exit 5
     fi
-    if [[ ! -w "$opt_root" ]]; then
-        log_error "Not writable: $opt_root"
-        status="failed"; exit 5
-    fi
+    rm -f "$opt_root/.probe.$$"
 fi
 
-# リストをパース（タブ区切りレコードに変換して entries に蓄積）
-declare -a entries=()
-while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [[ -z "$line" ]] && continue
-    [[ "$line" =~ ^# ]] && continue
+# リスト解析
+declare -a entry_types=()
+declare -a entry_paths=()
 
-    # shellcheck disable=SC2206
-    tok=( $line )
-    e_name="${tok[0]}"
-    e_mode="$mode"
-    e_path=""
-    e_conf=""
-    e_tests=""
-    for ((i=1; i<${#tok[@]}; i++)); do
-        kv="${tok[$i]}"
-        if [[ "$kv" =~ ^([^=]+)=(.*)$ ]]; then
-            k="${BASH_REMATCH[1]}"
-            v="${BASH_REMATCH[2]}"
-            case "$k" in
-                Mode)
-                    case "$v" in script-only|with-config|with-tests|all) e_mode="$v" ;;
-                        *) log_warn "Invalid Mode: line='$line' value='$v'" ;;
-                    esac ;;
-                Path)  e_path="$v" ;;
-                Conf)  e_conf="$v" ;;
-                Tests) e_tests="$v" ;;
-                *) log_warn "Unknown key: line='$line' key='$k'" ;;
-            esac
-        fi
-    done
-    entries+=( "${e_name}"$'\t'"${e_mode}"$'\t'"${e_path}"$'\t'"${e_conf}"$'\t'"${e_tests}" )
+_trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+    local_line="${raw_line%%#*}"                  # インラインコメント除去
+    local_line="${local_line//$'\r'/}"            # CR 除去
+    local_line=$(_trim "$local_line")
+    [[ -z "$local_line" ]] && continue
+
+    local_type=$(_trim "${local_line%%,*}")
+    local_path=$(_trim "${local_line#*,}")
+
+    # TYPE を大文字化（bash 4+）
+    local_type="${local_type^^}"
+
+    case "$local_type" in
+        CONF|SRC)
+            entry_types+=("$local_type")
+            entry_paths+=("$local_path")
+            ;;
+        *)
+            log_warn "Unknown type, skipping: line='$raw_line'"
+            ;;
+    esac
 done < "$list_file"
 
-if [[ "${#entries[@]}" -eq 0 ]]; then
+entry_count=${#entry_types[@]}
+if [[ "$entry_count" -eq 0 ]]; then
     log_warn "No entries to deploy (skipped)"
     status="skipped"
     exit 0
 fi
 
-log_info "Pre-check passed: entryCount=${#entries[@]}"
+log_info "Pre-check passed: entryCount=$entry_count"
 
-# ----------------------------------------------------------------------------
-# --- フェーズ 4: メイン処理 ---
-# ----------------------------------------------------------------------------
+# ---------- メイン ----------
 log_info "Main start"
 
-for entry in "${entries[@]}"; do
-    IFS=$'\t' read -r e_name e_mode e_path e_conf e_tests <<< "$entry"
-    deploy_entry "$e_name" "$e_mode" "$e_path" "$e_conf" "$e_tests"
+for ((i = 0; i < entry_count; i++)); do
+    t="${entry_types[$i]}"
+    p="${entry_paths[$i]}"
+    case "$t" in
+        CONF) deploy_conf "$p" ;;
+        SRC)  deploy_src  "$p" ;;
+    esac
 done
 
-deploy_lib
-
-if [[ "$failed" -gt 0 && "$deployed" -eq 0 ]]; then
+# ---------- 終了判定 ----------
+if [[ "$failed" -gt 0 && "$deployed" -eq 0 && "$unchanged" -eq 0 ]]; then
     log_error "All entries failed"
     status="failed"; exit 4
 elif [[ "$failed" -gt 0 ]]; then
