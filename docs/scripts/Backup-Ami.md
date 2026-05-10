@@ -14,7 +14,7 @@ scripts/aws/powershell/Backup-Ami.ps1
 
 | 項目 | 値 |
 |---|---|
-| 言語 | PowerShell 7+ |
+| 言語 | PowerShell 5.1+ |
 | OS | Windows |
 | ペア（Linux 版） | [`backup_ami.sh`](backup_ami.md) |
 
@@ -29,7 +29,7 @@ scripts/aws/powershell/Backup-Ami.ps1
 
 | 項目 | 内容 |
 |---|---|
-| ランタイム | PowerShell 7+ |
+| ランタイム | PowerShell 5.1+ |
 | 必須モジュール | `AWS.Tools.EC2`（未インストール時は exit 10） |
 | 認証 | デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール） |
 | 必要 IAM 権限 | `ec2:DescribeInstances`、`ec2:CreateImage`、`ec2:DescribeImages`、`ec2:CreateTags`、（pruning 利用時）`ec2:DeregisterImage`、`ec2:DeleteSnapshot` |

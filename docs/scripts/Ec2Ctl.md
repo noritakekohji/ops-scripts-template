@@ -34,7 +34,7 @@
 
 | 項目 | Windows | Linux |
 |---|---|---|
-| ランタイム | PowerShell 7+ | Bash 4+ |
+| ランタイム | PowerShell 5.1+ | Bash 4+ |
 | 必須 | `AWS.Tools.EC2` | `aws` CLI v2、`timeout` |
 | 認証 | デフォルト AWS credential chain |
 | IAM | `ec2:DescribeInstances` + 操作別（`StartInstances` / `StopInstances` / `RebootInstances`） |

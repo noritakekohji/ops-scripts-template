@@ -92,7 +92,7 @@ scripts/common/Send-Slack.ps1                     # 横串
 ### PowerShell
 
 ```powershell
-#Requires -Version 7
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     1 行で目的を書く（動詞で始める）。
@@ -134,7 +134,7 @@ scripts/common/Send-Slack.ps1                     # 横串
 ### PowerShell：先頭で必須
 
 ```powershell
-#Requires -Version 7
+#Requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
 param(
     # ...
@@ -145,7 +145,7 @@ Set-StrictMode -Version Latest
 
 | 設定 | 効果 |
 |---|---|
-| `#Requires -Version 7` | PowerShell 7+ 必須（古い 5.1 環境を排除） |
+| `#Requires -Version 5.1` | PowerShell 5.1 以上必須 |
 | `[CmdletBinding(SupportsShouldProcess)]` | `-WhatIf` / `-Confirm` を自動サポート |
 | `$ErrorActionPreference = 'Stop'` | 例外を即時停止（暗黙の continue を禁止） |
 | `Set-StrictMode -Version Latest` | 未定義変数・タイポを停止扱い |
@@ -271,7 +271,7 @@ fi
 #### PowerShell（`lib/powershell/Logging.psm1`）
 
 ```powershell
-$libPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'lib' 'powershell' 'Logging.psm1'
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
 Import-Module (Resolve-Path $libPath).Path -Force
 
 Write-OpsLog -Level INFO  -Message "AMI backup start: instanceId=$id retention=$days"
@@ -282,6 +282,7 @@ Write-OpsLog -Level DEBUG -Message "Polling state: amiId=$id state=$state"
 
 - 関数は `Write-OpsLog` のみ
 - `-Level` は `DEBUG` / `INFO`（既定） / `WARN` / `ERROR`
+- ファイル出力を有効にするには `Set-OpsLogConfig -LogFile <path> -LogLevel <level>` を呼ぶ（`global.conf` の `LogFile` / `LogLevel` キーで設定可）
 - **構造化プロパティ引数（`-Properties` 等）はサポートしない**
 - 構造化情報は呼び出し側で `key=value` 形式に整形して `-Message` に埋め込む
 
@@ -384,7 +385,7 @@ per-run の対象を config に書くと、運用スクリプトが「環境ご�
 #### PowerShell（`lib/powershell/Config.psm1`）
 ```powershell
 Import-Module (Resolve-Path "<repo>/lib/powershell/Config.psm1").Path -Force
-$cfg = Get-OpsConfig -Name 'Backup-Ami'
+$cfg = Get-OpsConfig -Name 'backup_ami'
 if (-not $PSBoundParameters.ContainsKey('Region') -and $cfg.ContainsKey('Region')) {
     $Region = [string]$cfg['Region']
 }

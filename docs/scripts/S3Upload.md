@@ -26,7 +26,7 @@
 
 | 項目 | Windows | Linux |
 |---|---|---|
-| ランタイム | PowerShell 7+ | Bash 4+ |
+| ランタイム | PowerShell 5.1+ | Bash 4+ |
 | 必須 | `AWS.Tools.S3` モジュール | `aws` CLI v2 |
 | 認証 | デフォルト AWS credential chain |
 | IAM | `s3:PutObject`、（`aws:kms` 使用時）`kms:GenerateDataKey` 等 |

@@ -14,7 +14,7 @@ scripts/windows/powershell/Rotate-Log.ps1
 
 | 項目 | 値 |
 |---|---|
-| 言語 | PowerShell 7+ |
+| 言語 | PowerShell 5.1+ |
 | OS | Windows |
 | ペア（Linux 版） | [`rotate_log.sh`](rotate_log.md) |
 
@@ -30,7 +30,7 @@ scripts/windows/powershell/Rotate-Log.ps1
 
 | 項目 | 内容 |
 |---|---|
-| ランタイム | PowerShell 7+ |
+| ランタイム | PowerShell 5.1+ |
 | 必須モジュール | なし（標準 .NET の `System.IO.Compression.GZipStream` を使用） |
 | 認証 | 不要（ローカル FS 操作のみ） |
 | 必要権限 | 対象ファイル・ディレクトリの読み書き、削除 |
@@ -137,7 +137,7 @@ D:\logs\nginx Pattern=access*.log MaxAgeDays=1 Compress=true RetentionCount=30
 <original>.YYYYMMDD-HHMMSS.gz     ← -Compress 指定時
 ```
 
-タイムスタンプは **UTC**。命名衝突しないため同一秒内の連続実行も安全。
+タイムスタンプは **JST**（`Get-OpsJstStamp` による）。命名衝突しないため同一秒内の連続実行も安全。
 
 ## 8. 使用例
 
@@ -187,7 +187,7 @@ D:\nginx\logs\error.log
 
 ### タスクスケジューラ（毎日 03:00）
 ```
-schtasks /Create /TN "RotateLogs" /TR "pwsh -NoProfile -ExecutionPolicy Bypass -File C:\ops-scripts\scripts\windows\Rotate-Log.ps1 -PathList C:\ops\logs.txt -MaxAgeDays 1 -Compress -RetentionCount 30" /SC DAILY /ST 03:00 /RU SYSTEM
+schtasks /Create /TN "RotateLogs" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\ops-scripts\scripts\windows\Rotate-Log.ps1 -PathList C:\ops\logs.txt -MaxAgeDays 1 -Compress -RetentionCount 30" /SC DAILY /ST 03:00 /RU SYSTEM
 ```
 
 ## 9. 出力例

@@ -6,8 +6,8 @@
 
 ```
 config/
-├── common/                       # 全環境共通の既定値（基本コメントアウト）
-│   ├── global.conf                  # 全スクリプト共通の既定（Region 等）
+├── default/                      # 全環境共通の既定値（基本コメントアウト）
+│   ├── global.conf               # 全スクリプト共通の既定（Region 等）
 │   ├── backup_ami.conf           # スクリプト別の既定値（PS / Bash 共有）
 │   ├── backup_ebs_snapshot.conf
 │   ├── ec2ctl.conf
@@ -20,9 +20,9 @@ config/
 └── production/                   # 本番：長期 retention、KMS 暗号化、長い待機
 ```
 
-各環境ディレクトリには **差分のみ** 配置すれば良い（CLI / 行内 / `<env>/<script>.conf` / `<env>/global.conf` / `common/<script>.conf` / `common/global.conf` / 既定値、の順で解決）。
+各環境ディレクトリには **差分のみ** 配置すれば良い（CLI / 行内 / `<env>/<script>.conf` / `<env>/global.conf` / `default/<script>.conf` / `default/global.conf` / 既定値、の順で解決）。
 
-`OPS_ENV` で切替：`OPS_ENV=dev` / `staging` / `production`。未設定なら `common/` のみ参照。
+`OPS_ENV` で切替：`OPS_ENV=dev` / `staging` / `production`。OPS_ENV 未指定なら `default/` のみ参照。
 
 ## 解決の優先順位（高優先 → 低優先）
 
@@ -33,11 +33,13 @@ config/
 5. `config/default/global.conf`
 6. **スクリプトのハードコード既定値**
 
+> **注意：** env 指定時は 2・3 のみ参照（`default/` はマージしない）。env 未指定時は 4・5 のみ参照。
+
 CLI で明示されたものは常に勝つ（運用中の緊急上書きが効く）。
 
 ## 環境の選択
 
-`OPS_ENV` 環境変数で切り替え。未設定なら `common` のみ参照されます。
+`OPS_ENV` 環境変数で切り替え。未設定なら `default/` のみ参照されます。
 
 ```bash
 OPS_ENV=production ./scripts/aws/bash/backup_ami.sh -i i-0abc -p prod-web
@@ -110,6 +112,10 @@ Wait               = true
 # どの環境でも有効な既定（リージョンは Tokyo を既定にする）
 
 Region = ap-northeast-1
+
+# ファイルログ（全スクリプト共通）
+# LogFile  = C:\ProgramData\ops-scripts\logs\ops.log
+LogLevel = INFO
 ```
 
 これにより、cron 登録は短く済みます：
@@ -129,7 +135,7 @@ OPS_ENV=production ./backup_ami.sh -i i-0abc -p prod-web
 ```powershell
 Import-Module (Resolve-Path "<repo>/lib/powershell/Config.psm1").Path -Force
 
-$cfg = Get-OpsConfig -Name 'Backup-Ami'
+$cfg = Get-OpsConfig -Name 'backup_ami'
 # $cfg は @{ Region='ap-northeast-1'; RetentionDays='7'; ... } のハッシュテーブル
 ```
 

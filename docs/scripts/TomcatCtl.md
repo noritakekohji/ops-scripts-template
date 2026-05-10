@@ -32,7 +32,7 @@
 
 | 項目 | Windows | Linux |
 |---|---|---|
-| ランタイム | PowerShell 7+ | Bash 4+ |
+| ランタイム | PowerShell 5.1+ | Bash 4+ |
 | 必要な権限 | サービス制御権（管理者推奨） | sudo / root（systemctl のため） |
 | その他 | Tomcat が **Windows サービスとしてインストール済み** | Tomcat の **systemd unit が存在** |
 

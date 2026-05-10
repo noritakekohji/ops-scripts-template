@@ -4,7 +4,7 @@
 
 | ファイル | 用途 |
 |---|---|
-| [`Template-Script.ps1`](Template-Script.ps1) | PowerShell 7+ 用 |
+| [`Template-Script.ps1`](Template-Script.ps1) | PowerShell 5.1+ 用 |
 | [`template_script.sh`](template_script.sh) | Bash 用 |
 
 ## スクリプト構造（5 フェーズ）
@@ -97,10 +97,10 @@
 
 ```powershell
 # 1 回目：成功（status=success exitCode=0）
-pwsh tools/templates/Template-Script.ps1 -ParamName demo
+powershell.exe tools/templates/Template-Script.ps1 -ParamName demo
 
 # 60 秒以内に再実行：冪等スキップ（status=skipped exitCode=0）
-pwsh tools/templates/Template-Script.ps1 -ParamName demo
+powershell.exe tools/templates/Template-Script.ps1 -ParamName demo
 ```
 
 ```bash
@@ -156,7 +156,7 @@ bash tools/templates/template_script.sh -p demo
 `ci/template-check/check_template.sh` が走査して以下を検証します。
 
 ### PowerShell（`scripts/**/*.ps1`）
-- `#Requires -Version 7` の宣言
+- `#Requires -Version 5.1` の宣言（以上）
 - コメントベースヘルプ（`<# ... #>`）の存在
 - `[CmdletBinding(...)]` 属性
 - `$ErrorActionPreference = 'Stop'` の設定
@@ -183,7 +183,7 @@ bash ci/template-check/check_template.sh
 
 | メッセージ例 | 対処 |
 |---|---|
-| `PS: must declare #Requires -Version 7` | スクリプトの 1 行目に `#Requires -Version 7` を追加 |
+| `PS: must declare #Requires -Version 5.1` | スクリプトの 1 行目に `#Requires -Version 5.1` を追加 |
 | `PS: must import lib/powershell/Logging.psm1` | `lib` の Import-Module ブロックをテンプレートからコピー |
 | `Bash: first non-empty line must be the bash shebang` | 1 行目を `#!/usr/bin/env bash` に変更（`#!/bin/sh` や `#!/bin/bash` は NG） |
 | `Bash: must be executable` | `git update-index --chmod=+x <file>` で実行ビット付与 |
