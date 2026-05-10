@@ -147,7 +147,7 @@ function Copy-OpsFile {
 function Invoke-OpsDeployConf {
     param([string]$FilePath)
     $filename = Split-Path -Leaf $FilePath
-    $dst = Join-Path $OptRoot 'config' $filename
+    $dst = [IO.Path]::Combine($OptRoot, 'config', $filename)
 
     $configDir = if ($Env) { [IO.Path]::Combine($repoRoot, 'config', $Env) } else { [IO.Path]::Combine($repoRoot, 'config', 'default') }
     $src = Join-Path $configDir $FilePath
@@ -165,8 +165,8 @@ function Invoke-OpsDeployConf {
 function Invoke-OpsDeploySrc {
     param([string]$FilePath)
     $filename = Split-Path -Leaf $FilePath
-    $src = Join-Path $repoRoot 'scripts' $FilePath
-    $dst = Join-Path $OptRoot 'bin' $filename
+    $src = [IO.Path]::Combine($repoRoot, 'scripts', $FilePath)
+    $dst = [IO.Path]::Combine($OptRoot, 'bin', $filename)
     Copy-OpsFile -Src $src -Dst $dst | Out-Null
 }
 

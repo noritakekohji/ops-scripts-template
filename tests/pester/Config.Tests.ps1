@@ -9,7 +9,7 @@
 
 BeforeAll {
     $repoRoot = (Resolve-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path
-    Import-Module (Join-Path $repoRoot 'lib' 'powershell' 'Config.psm1') -Force
+    Import-Module ([IO.Path]::Combine($repoRoot, 'lib', 'powershell', 'Config.psm1')) -Force
 }
 
 Describe 'Get-OpsConfig' {
