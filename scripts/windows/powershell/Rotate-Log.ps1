@@ -154,7 +154,7 @@ try {
                 Write-OpsLog -Level ERROR -Message "Path list file not found: pathList=$PathList"
                 $exitCode = 2; $status = 'failed'; break
             }
-            $listLines = Get-Content -LiteralPath $PathList |
+            $listLines = Get-Content -LiteralPath $PathList -Encoding UTF8 |
                 ForEach-Object { $_.Trim() } |
                 Where-Object { $_ -and -not $_.StartsWith('#') }
             foreach ($l in $listLines) { $targets.Add((ConvertFrom-OpsListLine -Line $l -Defaults $defaults)) }

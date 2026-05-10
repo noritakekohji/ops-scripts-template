@@ -207,7 +207,7 @@ try {
         $entryTypes = [System.Collections.Generic.List[string]]::new()
         $entryPaths = [System.Collections.Generic.List[string]]::new()
 
-        $lines = Get-Content -LiteralPath $PathList |
+        $lines = Get-Content -LiteralPath $PathList -Encoding UTF8 |
             ForEach-Object { ($_ -replace '#.*$', '').Trim() } |
             Where-Object { $_ }
 

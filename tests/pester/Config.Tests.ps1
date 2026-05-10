@@ -33,7 +33,7 @@ Describe 'Get-OpsConfig' {
     # ------------------------------------------------------------------------
 
     It 'env 未指定: default/global.conf のキーを読み込む' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'global.conf')) `
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'global.conf')) `
             -Value "Region = ap-northeast-1`nWait = true"
         $cfg = Get-OpsConfig -Name 'foo' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'ap-northeast-1'
@@ -41,8 +41,8 @@ Describe 'Get-OpsConfig' {
     }
 
     It 'env 未指定: default/<name>.conf が default/global.conf を上書きする' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'global.conf')) -Value 'Region = ap-northeast-1'
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf'))    -Value 'Region = us-east-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'global.conf')) -Value 'Region = ap-northeast-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf'))    -Value 'Region = us-east-1'
         $cfg = Get-OpsConfig -Name 'foo' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'us-east-1'
     }
@@ -52,34 +52,34 @@ Describe 'Get-OpsConfig' {
     # ------------------------------------------------------------------------
 
     It 'env 指定: config/<env>/ のキーを読み込む' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'foo.conf')) -Value 'Region = eu-west-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'foo.conf')) -Value 'Region = eu-west-1'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'eu-west-1'
     }
 
     It 'env 指定: config/default/ のキーは読まない' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value 'Region = ap-northeast-1'
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'dev',     'foo.conf')) -Value 'Region = eu-west-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value 'Region = ap-northeast-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev',     'foo.conf')) -Value 'Region = eu-west-1'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'eu-west-1'
     }
 
     It 'env 指定: default にしかないキーは取得されない' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value 'Region = ap-northeast-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value 'Region = ap-northeast-1'
         # dev/ には foo.conf なし → 空のハッシュテーブル
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg.Count | Should -Be 0
     }
 
     It 'env 指定: <env>/global.conf のキーを読み込む' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'global.conf')) -Value 'Wait = true'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'global.conf')) -Value 'Wait = true'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Wait'] | Should -Be 'true'
     }
 
     It 'env 指定: <env>/<name>.conf が <env>/global.conf を上書きする' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'global.conf')) -Value 'Region = eu-west-1'
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'foo.conf'))    -Value 'Region = ap-south-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'global.conf')) -Value 'Region = eu-west-1'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'foo.conf'))    -Value 'Region = ap-south-1'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'ap-south-1'
     }
@@ -97,14 +97,14 @@ Region = ap-northeast-1
 # 別のコメント
 Wait = true
 '@
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value $content
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value $content
         $cfg = Get-OpsConfig -Name 'foo' -RepoRoot $script:TestRoot
         $cfg.Count    | Should -Be 2
         $cfg['Region']| Should -Be 'ap-northeast-1'
     }
 
     It '値の前後の引用符を除去する（ダブル / シングル両方）' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value @'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value @'
 Description = "weekly backup"
 Note        = 'with spaces'
 '@
@@ -114,7 +114,7 @@ Note        = 'with spaces'
     }
 
     It '前後空白を trim する' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value '   Region   =   ap-northeast-1   '
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value '   Region   =   ap-northeast-1   '
         $cfg = Get-OpsConfig -Name 'foo' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'ap-northeast-1'
     }
@@ -125,7 +125,7 @@ Note        = 'with spaces'
     }
 
     It '不正な行（= がない）は黙ってスキップする' {
-        Set-Content -Path ([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value @'
+        Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf')) -Value @'
 Region = ap-northeast-1
 this line is malformed
 Wait = true
