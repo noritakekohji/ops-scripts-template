@@ -26,9 +26,9 @@ DEPLOY="$SCRIPT_DIR/scripts/linux/bash/deploy_scripts.sh"
 
 usage() {
     cat >&2 <<'EOF'
-Usage: install.sh <env> [options]
+Usage: install.sh [env] [options]
 
-  <env>  環境名（dev / staging / production など）
+  [env]  環境名（dev / staging / production など、既定: default）
 
 Options（deploy_scripts.sh に透過）:
   -d <path>  配備先 root（既定: /opt/ops-scripts）
@@ -37,6 +37,7 @@ Options（deploy_scripts.sh に透過）:
   -n         Dry-run（実際の操作なし、ログのみ）
 
 Examples:
+  install.sh                 # default 環境に配備
   install.sh dev
   install.sh production -b
   install.sh staging -n
@@ -44,11 +45,11 @@ EOF
     exit 1
 }
 
-if [[ $# -eq 0 ]]; then
-    usage
+# env を指定しない場合は "default" を使う
+env_name="${1:-default}"
+# オプションフラグで始まらない場合は env とみなし、shift する
+if [[ $# -gt 0 && ! "$1" =~ ^- ]]; then
+    shift
 fi
-
-env_name="$1"
-shift
 
 exec "$DEPLOY" -e "$env_name" "$@"
