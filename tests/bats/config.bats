@@ -22,45 +22,61 @@ teardown() {
 }
 
 # ----------------------------------------------------------------------------
-# load_ops_config: 基本動作
+# load_ops_config: env 未指定 → config/default/ のみ
 # ----------------------------------------------------------------------------
 
-@test "common/global.conf からキーを読み込む" {
+@test "env 未指定: default/global.conf のキーを読み込む" {
     cat > "$TEST_REPO/config/default/global.conf" <<'EOF'
 Region = ap-northeast-1
 Wait   = true
 EOF
-    load_ops_config 'foo' 'common' "$TEST_REPO"
+    load_ops_config 'foo' '' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "ap-northeast-1" ]
     [ "${OPS_CONFIG[Wait]}"   = "true" ]
 }
 
-@test "common/<name>.conf が common/global.conf を上書きする" {
+@test "env 未指定: default/<name>.conf が default/global.conf を上書きする" {
     echo "Region = ap-northeast-1" > "$TEST_REPO/config/default/global.conf"
     echo "Region = us-east-1"      > "$TEST_REPO/config/default/foo.conf"
-    load_ops_config 'foo' 'common' "$TEST_REPO"
+    load_ops_config 'foo' '' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "us-east-1" ]
 }
 
-@test "env/<name>.conf が common/<name>.conf を上書きする" {
-    echo "Region = us-east-1" > "$TEST_REPO/config/default/foo.conf"
+# ----------------------------------------------------------------------------
+# load_ops_config: env 指定 → config/<env>/ のみ（default は読まない）
+# ----------------------------------------------------------------------------
+
+@test "env 指定: config/<env>/ のキーを読み込む" {
     echo "Region = eu-west-1" > "$TEST_REPO/config/dev/foo.conf"
     load_ops_config 'foo' 'dev' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "eu-west-1" ]
 }
 
-@test "env/global.conf が common/<name>.conf を上書きする" {
-    echo "Wait = false" > "$TEST_REPO/config/default/foo.conf"
-    echo "Wait = true"  > "$TEST_REPO/config/dev/global.conf"
+@test "env 指定: config/default/ のキーは読まない" {
+    echo "Region = ap-northeast-1" > "$TEST_REPO/config/default/foo.conf"
+    echo "Region = eu-west-1"      > "$TEST_REPO/config/dev/foo.conf"
+    load_ops_config 'foo' 'dev' "$TEST_REPO"
+    [ "${OPS_CONFIG[Region]}" = "eu-west-1" ]
+}
+
+@test "env 指定: default にしかないキーは取得されない" {
+    echo "Region = ap-northeast-1" > "$TEST_REPO/config/default/foo.conf"
+    # dev/ には foo.conf なし → OPS_CONFIG は空になる
+    load_ops_config 'foo' 'dev' "$TEST_REPO"
+    [ "${#OPS_CONFIG[@]}" -eq 0 ]
+}
+
+@test "env 指定: <env>/global.conf のキーを読み込む" {
+    echo "Wait = true" > "$TEST_REPO/config/dev/global.conf"
     load_ops_config 'foo' 'dev' "$TEST_REPO"
     [ "${OPS_CONFIG[Wait]}" = "true" ]
 }
 
-@test "env が common のときは common/ のみ読み込まれる" {
-    echo "Region = us-east-1" > "$TEST_REPO/config/default/foo.conf"
-    echo "Region = eu-west-1" > "$TEST_REPO/config/dev/foo.conf"
-    load_ops_config 'foo' 'common' "$TEST_REPO"
-    [ "${OPS_CONFIG[Region]}" = "us-east-1" ]
+@test "env 指定: <env>/<name>.conf が <env>/global.conf を上書きする" {
+    echo "Region = eu-west-1"  > "$TEST_REPO/config/dev/global.conf"
+    echo "Region = ap-south-1" > "$TEST_REPO/config/dev/foo.conf"
+    load_ops_config 'foo' 'dev' "$TEST_REPO"
+    [ "${OPS_CONFIG[Region]}" = "ap-south-1" ]
 }
 
 # ----------------------------------------------------------------------------
@@ -76,7 +92,7 @@ Region = ap-northeast-1
 # 別のコメント
 Wait = true
 EOF
-    load_ops_config 'foo' 'common' "$TEST_REPO"
+    load_ops_config 'foo' '' "$TEST_REPO"
     [ "${#OPS_CONFIG[@]}" -eq 2 ]
     [ "${OPS_CONFIG[Region]}" = "ap-northeast-1" ]
 }
@@ -86,19 +102,19 @@ EOF
 Description = "weekly backup"
 Note        = 'with spaces'
 EOF
-    load_ops_config 'foo' 'common' "$TEST_REPO"
+    load_ops_config 'foo' '' "$TEST_REPO"
     [ "${OPS_CONFIG[Description]}" = "weekly backup" ]
     [ "${OPS_CONFIG[Note]}"        = "with spaces" ]
 }
 
 @test "前後空白は trim される" {
     echo "   Region   =   ap-northeast-1   " > "$TEST_REPO/config/default/foo.conf"
-    load_ops_config 'foo' 'common' "$TEST_REPO"
+    load_ops_config 'foo' '' "$TEST_REPO"
     [ "${OPS_CONFIG[Region]}" = "ap-northeast-1" ]
 }
 
 @test "ファイルが存在しない場合は空の OPS_CONFIG を返す" {
-    load_ops_config 'no-such-script' 'common' "$TEST_REPO"
+    load_ops_config 'no-such-script' '' "$TEST_REPO"
     [ "${#OPS_CONFIG[@]}" -eq 0 ]
 }
 

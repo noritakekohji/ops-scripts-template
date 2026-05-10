@@ -142,26 +142,27 @@ copy_file() {
     fi
 }
 
-# CONF エントリ：config/default/<filename> → <opt_root_dir>/config/<filename>
-# env 指定時は config/<env>/<filename> で上書き
+# CONF エントリ：
+#   env 未指定 → config/default/<filename> → <opt_root_dir>/config/<filename>
+#   env 指定時 → config/<env>/<filename>   → <opt_root_dir>/config/<filename>
 deploy_conf() {
     local filepath="$1"
     local filename; filename=$(basename "$filepath")
     local dst="$opt_root/config/$filename"
 
-    local src_default="$REPO_ROOT/config/default/$filepath"
-    if [[ -f "$src_default" ]]; then
-        copy_file "$src_default" "$dst" 644 || true
+    local config_dir
+    if [[ -n "$env_name" ]]; then
+        config_dir="$REPO_ROOT/config/$env_name"
     else
-        log_warn "Default config not found: src=$src_default"
-        failed=$((failed+1))
+        config_dir="$REPO_ROOT/config/default"
     fi
 
-    if [[ -n "$env_name" ]]; then
-        local src_env="$REPO_ROOT/config/$env_name/$filepath"
-        if [[ -f "$src_env" ]]; then
-            copy_file "$src_env" "$dst" 644 || true
-        fi
+    local src="$config_dir/$filepath"
+    if [[ -f "$src" ]]; then
+        copy_file "$src" "$dst" 644 || true
+    else
+        log_warn "Config not found: src=$src"
+        failed=$((failed+1))
     fi
 }
 

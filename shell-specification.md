@@ -330,14 +330,15 @@ AMI creation initiated: amiId=ami-0xyz instanceId=i-0abc namePrefix=prod-web
 
 ```
 1. CLI 引数
-2. config/<env>/<script-name>.conf
-3. config/<env>/global.conf
-4. config/default/<script-name>.conf
-5. config/default/global.conf
+2. config/<env>/<script-name>.conf   ─┐ env 指定時のみ（default は読まない）
+3. config/<env>/global.conf          ─┘
+4. config/default/<script-name>.conf ─┐ env 未指定時のみ
+5. config/default/global.conf        ─┘
 6. スクリプトのハードコード既定値
 ```
 
-`<env>` は環境変数 `OPS_ENV` で切り替え（未設定なら `config/default/` のみ参照）。
+`<env>` は環境変数 `OPS_ENV` で切り替え。  
+env 未指定 → `config/default/` のみ参照。env 指定 → `config/<env>/` のみ参照（default との上書きマージは行わない）。
 
 ### フォーマット
 

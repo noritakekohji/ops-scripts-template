@@ -6,14 +6,12 @@
 # 関数を呼び出す：
 #   load_ops_config <script-name> [<env>]
 #
-# 連想配列 OPS_CONFIG に次のファイルをマージした結果を格納する：
+# 連想配列 OPS_CONFIG に次のファイルを格納する：
 #
-#   config/default/global.conf
-#   config/default/<script-name>.conf
-#   config/<env>/global.conf       ← OPS_ENV 指定時のみ
-#   config/<env>/<script-name>.conf ← OPS_ENV 指定時のみ
+#   env 未指定: config/default/global.conf + config/default/<script-name>.conf
+#   env 指定時: config/<env>/global.conf   + config/<env>/<script-name>.conf
 #
-# 後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
+# 存在しないファイルは黙ってスキップ。
 # 1 行 1 設定（key=value）、行頭 '#' 行と空行は無視、前後空白は trim。
 # 値を囲む "..." / '...' は除去される。
 #
@@ -66,16 +64,17 @@ load_ops_config() {
     declare -gA OPS_CONFIG=()
     OPS_CONFIG_ENV="${env:-default}"
 
-    # 読み込み対象ファイルを優先度の低い順に列挙
-    # default/ は常に読む → env が指定された場合はその上に重ね書き
-    local sources=(
-        "$repo_root/config/default/global.conf"
-        "$repo_root/config/default/$name.conf"
-    )
+    # env 指定なし → config/default/、env 指定あり → config/<env>/ のみ読む
+    local config_dir
     if [[ -n "$env" ]]; then
-        sources+=( "$repo_root/config/$env/global.conf" )
-        sources+=( "$repo_root/config/$env/$name.conf" )
+        config_dir="$repo_root/config/$env"
+    else
+        config_dir="$repo_root/config/default"
     fi
+    local sources=(
+        "$config_dir/global.conf"
+        "$config_dir/$name.conf"
+    )
 
     local f line key val
     for f in "${sources[@]}"; do

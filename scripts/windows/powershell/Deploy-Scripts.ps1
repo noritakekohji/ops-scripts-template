@@ -141,26 +141,23 @@ function Copy-OpsFile {
     }
 }
 
-# CONF エントリ: config/default/<filename> を配備し、env があれば上書き
+# CONF エントリ:
+#   Env 未指定 → config/default/<filename> → <OptRoot>/config/<filename>
+#   Env 指定時 → config/<Env>/<filename>   → <OptRoot>/config/<filename>
 function Invoke-OpsDeployConf {
     param([string]$FilePath)
     $filename = Split-Path -Leaf $FilePath
     $dst = Join-Path $OptRoot 'config' $filename
 
-    $srcDefault = Join-Path $repoRoot 'config' 'default' $FilePath
-    if (Test-Path -LiteralPath $srcDefault -PathType Leaf) {
-        Copy-OpsFile -Src $srcDefault -Dst $dst | Out-Null
+    $configDir = if ($Env) { Join-Path $repoRoot 'config' $Env } else { Join-Path $repoRoot 'config' 'default' }
+    $src = Join-Path $configDir $FilePath
+
+    if (Test-Path -LiteralPath $src -PathType Leaf) {
+        Copy-OpsFile -Src $src -Dst $dst | Out-Null
     }
     else {
-        Write-OpsLog -Level WARN -Message "Default config not found: src=$srcDefault"
+        Write-OpsLog -Level WARN -Message "Config not found: src=$src"
         $script:failed++
-    }
-
-    if ($Env) {
-        $srcEnv = Join-Path $repoRoot 'config' $Env $FilePath
-        if (Test-Path -LiteralPath $srcEnv -PathType Leaf) {
-            Copy-OpsFile -Src $srcEnv -Dst $dst | Out-Null
-        }
     }
 }
 

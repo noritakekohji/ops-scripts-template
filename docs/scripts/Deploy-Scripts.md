@@ -28,7 +28,7 @@
     └── backup_ami.conf
 ```
 
-**config のマージ方針**：リストの `CONF` エントリごとに `config/default/<filename>` をコピーした後、`-e <env>`（または `OPS_ENV`）が指定されていれば `config/<env>/<filename>` で上書きします。結果はサブディレクトリなしの `config/<filename>` 1 ファイルになります。
+**CONF の配備元**：env 未指定 → `config/default/<filename>`、env 指定 → `config/<env>/<filename>`。どちらか一方のみをコピーし、マージは行いません。結果はサブディレクトリなしの `config/<filename>` 1 ファイルになります。
 
 ## 3. 前提
 
@@ -54,8 +54,8 @@
 ```
 # 行頭 '#' はコメント、空行は無視、インラインコメントも可
 
-# CONF: config/default/<filename> → <opt_root_dir>/config/<filename>
-#       env 指定時は config/<env>/<filename> で上書き
+# CONF: env 未指定 → config/default/<filename>
+#       env 指定時 → config/<env>/<filename>
 CONF, global.conf
 CONF, ec2ctl.conf
 CONF, backup_ami.conf
@@ -70,7 +70,7 @@ SRC, aws/powershell/Backup-Ami.ps1
 
 | TYPE | コピー元 | コピー先 | パーミッション |
 |---|---|---|---|
-| `CONF` | `config/default/<filename>`（+ env 上書き） | `<opt_root_dir>/config/<filename>` | 0644 |
+| `CONF` | env 未指定: `config/default/<filename>`<br>env 指定時: `config/<env>/<filename>` | `<opt_root_dir>/config/<filename>` | 0644 |
 | `SRC` | `scripts/<repo_filepath>` | `<opt_root_dir>/bin/<basename>` | 0755 |
 
 カンマ前後のスペースは自由。大文字・小文字どちらでも可（内部で大文字化）。

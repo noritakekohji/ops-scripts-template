@@ -5,14 +5,12 @@ Set-StrictMode -Version Latest
     key=value 形式の設定ファイルから挙動パラメータを読み込む。
 
 .DESCRIPTION
-    次の優先順位（低 → 高）でファイルをマージしてハッシュテーブルを返す：
+    次のルールでファイルを読み込みハッシュテーブルを返す：
 
-        config/default/global.conf
-        config/default/<Name>.conf
-        config/<Env>/global.conf   ← OPS_ENV 指定時のみ
-        config/<Env>/<Name>.conf ← OPS_ENV 指定時のみ
+        Env 未指定: config/default/global.conf + config/default/<Name>.conf
+        Env 指定時: config/<Env>/global.conf   + config/<Env>/<Name>.conf
 
-    後のファイルが先のキーを上書きする。存在しないファイルは黙ってスキップ。
+    存在しないファイルは黙ってスキップ。
 
     フォーマット: 1 行 1 設定 (`key=value`)。行頭 `#` の行と空行は無視。
     前後の空白は trim、値を囲む `"..."` / `'...'` は除去される。
@@ -42,17 +40,13 @@ function Get-OpsConfig {
         $RepoRoot = _Find-OpsRepoRoot
     }
 
-    # 読み込み対象ファイルを優先度の低い順に列挙
-    # default/ は常に読む → env が指定された場合はその上に重ね書き
+    # env 指定なし → config/default/、env 指定あり → config/<env>/ のみ読む
     $config = @{}
+    $configDir = if ($Env) { Join-Path $RepoRoot 'config' $Env } else { Join-Path $RepoRoot 'config' 'default' }
     $sources = @(
-        Join-Path $RepoRoot 'config' 'default' 'global.conf'
-        Join-Path $RepoRoot 'config' 'default' "$Name.conf"
+        Join-Path $configDir 'global.conf'
+        Join-Path $configDir "$Name.conf"
     )
-    if ($Env) {
-        $sources += Join-Path $RepoRoot 'config' $Env 'global.conf'
-        $sources += Join-Path $RepoRoot 'config' $Env "$Name.conf"
-    }
 
     foreach ($file in $sources) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
