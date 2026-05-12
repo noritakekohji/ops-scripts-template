@@ -135,19 +135,20 @@ function Compare-List([object[]]$bList, [object[]]$aList, [string]$keyField, [st
     $result = [CategoryResult]::new($catName)
     $bDict = @{}
     $aDict = @{}
-    foreach ($item in $bList) { if ($item.$keyField) { $bDict[$item.$keyField] = $item } }
-    foreach ($item in $aList) { if ($item.$keyField) { $aDict[$item.$keyField] = $item } }
+    # Use bracket notation [$keyField] to avoid StrictMode errors on missing keys
+    foreach ($item in $bList) { $kv = $item[$keyField]; if ($kv) { $bDict["$kv"] = $item } }
+    foreach ($item in $aList) { $kv = $item[$keyField]; if ($kv) { $aDict["$kv"] = $item } }
     $allKeys = @($bDict.Keys) + @($aDict.Keys) | Sort-Object -Unique
     foreach ($k in $allKeys) {
         if (-not $bDict.ContainsKey($k)) {
-            $av = ($valueFields | ForEach-Object { "$_=$($aDict[$k].$_)" }) -join ', '
+            $av = ($valueFields | ForEach-Object { "$_=$(Format-Val $aDict[$k][$_])" }) -join ', '
             $result.Add('added', $k, '', $av)
         } elseif (-not $aDict.ContainsKey($k)) {
-            $bv = ($valueFields | ForEach-Object { "$_=$($bDict[$k].$_)" }) -join ', '
+            $bv = ($valueFields | ForEach-Object { "$_=$(Format-Val $bDict[$k][$_])" }) -join ', '
             $result.Add('removed', $k, $bv, '')
         } else {
-            $bv = ($valueFields | ForEach-Object { "$_=$($bDict[$k].$_)" }) -join ', '
-            $av = ($valueFields | ForEach-Object { "$_=$($aDict[$k].$_)" }) -join ', '
+            $bv = ($valueFields | ForEach-Object { "$_=$(Format-Val $bDict[$k][$_])" }) -join ', '
+            $av = ($valueFields | ForEach-Object { "$_=$(Format-Val $aDict[$k][$_])" }) -join ', '
             if ($bv -eq $av) { $result.Add('same', $k, $bv, $av) }
             else             { $result.Add('changed', $k, $bv, $av) }
         }
