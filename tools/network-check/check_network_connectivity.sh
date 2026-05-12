@@ -203,10 +203,10 @@ while IFS= read -r raw_line; do
 import json
 r = {
     "host":        $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$host"),
-    "port":        $(python3 -c "import json,sys; p=sys.argv[1]; print(json.dumps(int(p)) if p and p!='-' else 'null')" "${port:--}"),
+    "port":        $(python3 -c "import json,sys; p=sys.argv[1]; print(json.dumps(int(p)) if p and p!='-' else 'None')" "${port:--}"),
     "description": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$desc"),
     "dns":  {"status": "$dns_st",  "addresses": $(python3 -c "import json,sys; s=sys.argv[1]; print(json.dumps(s.split(',') if s else []))" "${dns_addrs:-}"), "error": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${dns_err:-}")},
-    "ping": {"status": "$ping_st", "sent": ${ping_sent:-0}, "recv": ${ping_recv:-0}, "avg_rtt": $([ -n "${ping_rtt:-}" ] && [ "${ping_rtt:-0}" != "0" ] && echo "${ping_rtt}" || echo "null")},
+    "ping": {"status": "$ping_st", "sent": ${ping_sent:-0}, "recv": ${ping_recv:-0}, "avg_rtt": $([ -n "${ping_rtt:-}" ] && [ "${ping_rtt:-0}" != "0" ] && echo "${ping_rtt}" || echo "None")},
     "tcp":  {"status": "$tcp_st",  "error": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${tcp_err:-}")},
     "overall": "$overall"
 }
