@@ -1,0 +1,23 @@
+# Network connectivity check target list
+#
+# Format: <host>, <port>, <description>
+#   host        : hostname or IP address
+#   port        : TCP port number, or '-' / empty to skip port check
+#   description : optional label (defaults to host if omitted)
+#
+# Inline comments (after values) are also ignored.
+
+# ---- DNS / NTP servers ----
+8.8.8.8,     53,  Google DNS Primary
+8.8.4.4,     53,  Google DNS Secondary
+
+# ---- Web services ----
+example.com,   80,  HTTP
+example.com,  443,  HTTPS
+
+# ---- Ping only (no port check) ----
+192.168.1.1,   -,  Default Gateway
+
+# ---- Database / application servers ----
+# db.internal,  3306, MySQL
+# app.internal, 8080, Application Server
