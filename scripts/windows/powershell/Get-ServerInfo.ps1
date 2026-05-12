@@ -174,21 +174,27 @@ function Get-PackagesInfo {
     $seen = @{}
     $pkgs = @()
     foreach ($rp in $regPaths) {
-        Safe-Exec -Label 'packages.registry' -Block {
+        try {
             Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue |
-                Where-Object { $_.DisplayName } |
                 ForEach-Object {
-                    $n = $_.DisplayName.Trim()
+                    # Use PSObject.Properties to avoid StrictMode errors on missing properties
+                    $nameProp = $_.PSObject.Properties['DisplayName']
+                    if ($null -eq $nameProp -or -not $nameProp.Value) { return }
+                    $n = $nameProp.Value.Trim()
                     if (-not $seen[$n]) {
                         $seen[$n] = $true
+                        $verProp = $_.PSObject.Properties['DisplayVersion']
+                        $pubProp = $_.PSObject.Properties['Publisher']
                         $pkgs += @{
                             name    = $n
-                            version = if ($_.DisplayVersion) { $_.DisplayVersion } else { '' }
-                            vendor  = if ($_.Publisher) { $_.Publisher } else { '' }
+                            version = if ($verProp) { "$($verProp.Value)" } else { '' }
+                            vendor  = if ($pubProp)  { "$($pubProp.Value)" }  else { '' }
                         }
                     }
                 }
-        } | Out-Null
+        } catch {
+            Write-OpsLog -Level WARN -Message "packages.registry error: $($_.Exception.Message)"
+        }
     }
     @($pkgs | Sort-Object { $_['name'] })
 }
