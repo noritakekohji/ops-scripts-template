@@ -17,6 +17,12 @@
 # List file format:
 #   <host>, <port>, <description>
 #   Use '-' or empty port to skip TCP port check.
+#
+# Investigation output:
+#   When any target is NG/WARN, an investigation file is automatically
+#   generated: network_investigation_<timestamp>.txt
+#   Contents: system network info, traceroute (ping NG), /etc/hosts + dig
+#   (DNS NG), nc port check (port NG).
 # ============================================================================
 set -euo pipefail
 
@@ -128,6 +134,159 @@ except Exception as e:
     print('fail|' + str(e).replace('\n',' '))
 " "$host" "$port" "$timeout" 2>/dev/null || echo "fail|Error")
     echo "$result"
+}
+
+# ============================================================
+# Investigation (called automatically for NG/WARN targets)
+# ============================================================
+
+run_investigation() {
+    local results_file="$1" out_file="$2"
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+
+    # Extract NG/WARN targets as tab-separated lines
+    local ng_info
+    ng_info=$(python3 - "$results_file" << 'PYEOF'
+import json, sys
+
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line:
+        continue
+    r = json.loads(line)
+    if r['overall'] not in ('fail', 'warn'):
+        continue
+    port    = str(r['port']) if r['port'] is not None else '-'
+    addrs   = ','.join(r['dns']['addresses']) if r['dns']['addresses'] else ''
+    pt      = addrs.split(',')[0] if addrs else r['host']
+    dns_err = r['dns'].get('error', '')
+    tcp_st  = r['tcp']['status'] if r['tcp'] else 'na'
+    tcp_err = r['tcp'].get('error', '') if r['tcp'] else ''
+    print('\t'.join([
+        r['host'], r['overall'],
+        r['dns']['status'], r['ping']['status'], tcp_st,
+        port, pt, r['description'], dns_err, tcp_err
+    ]))
+PYEOF
+) || true
+
+    [[ -z "$ng_info" ]] && return
+
+    local ng_count
+    ng_count=$(echo "$ng_info" | grep -c .)
+
+    echo ""
+    echo "=== Collecting Investigation Info (${ng_count} NG target(s)) ==="
+    echo "  Output: $out_file"
+    echo "  (traceroute may take a while per host...)"
+
+    {
+        echo "================================================================"
+        echo "  Network Investigation Report"
+        echo "  Generated : $ts"
+        echo "  Hostname  : $(hostname -f 2>/dev/null || hostname -s 2>/dev/null || echo 'localhost')"
+        echo "================================================================"
+        echo ""
+        echo "## System Network Information"
+        echo ""
+        echo "### Network Interfaces"
+        ip addr show 2>/dev/null || ifconfig 2>/dev/null || echo "(ip/ifconfig not available)"
+        echo ""
+        echo "### Routing Table"
+        ip route show 2>/dev/null || netstat -rn 2>/dev/null || echo "(ip route/netstat not available)"
+        echo ""
+        echo "### DNS Configuration (/etc/resolv.conf)"
+        cat /etc/resolv.conf 2>/dev/null || echo "(not found)"
+        echo ""
+    } > "$out_file"
+
+    local idx=0
+    while IFS=$'\t' read -r host overall dns_st ping_st tcp_st port ping_target desc dns_err tcp_err; do
+        idx=$((idx + 1))
+        local fail_labels=""
+        [[ "$dns_st"  == "fail"    ]] && fail_labels="${fail_labels} DNS"
+        [[ "$ping_st" == "fail"    ]] && fail_labels="${fail_labels} Ping"
+        [[ "$ping_st" == "partial" ]] && fail_labels="${fail_labels} Ping(partial)"
+        [[ "$tcp_st"  == "fail"    ]] && fail_labels="${fail_labels} Port"
+
+        {
+            echo "================================================================"
+            printf "[$idx] HOST: %s  (%s)\n" "$host" "$desc"
+            printf "     Status: %s  NG items:%s\n" "${overall^^}" "$fail_labels"
+            echo "----------------------------------------------------------------"
+            echo ""
+        } >> "$out_file"
+
+        # DNS NG → /etc/hosts + dig/nslookup
+        if [[ "$dns_st" == "fail" ]]; then
+            {
+                echo "### DNS Failure Investigation"
+                echo "  Error: $dns_err"
+                echo ""
+                echo "#### /etc/hosts"
+                cat /etc/hosts 2>/dev/null || echo "(not found)"
+                echo ""
+                echo "#### DNS query: $host"
+                if command -v dig &>/dev/null; then
+                    dig +noall +answer +comments "$host" 2>&1 || true
+                elif command -v nslookup &>/dev/null; then
+                    nslookup "$host" 2>&1 || true
+                elif command -v host &>/dev/null; then
+                    host "$host" 2>&1 || true
+                else
+                    echo "(dig / nslookup / host not available)"
+                fi
+                echo ""
+            } >> "$out_file"
+        fi
+
+        # Ping NG/partial → traceroute/tracepath/mtr
+        if [[ "$ping_st" == "fail" ]] || [[ "$ping_st" == "partial" ]]; then
+            {
+                echo "### Ping NG Investigation"
+                echo ""
+                echo "#### Traceroute: $ping_target"
+                if command -v traceroute &>/dev/null; then
+                    traceroute -m 20 -w "$timeout_sec" "$ping_target" 2>&1 || true
+                elif command -v tracepath &>/dev/null; then
+                    tracepath -m 20 "$ping_target" 2>&1 || true
+                elif command -v mtr &>/dev/null; then
+                    mtr --report --report-cycles 3 --no-dns "$ping_target" 2>&1 || true
+                else
+                    echo "(traceroute / tracepath / mtr not available)"
+                fi
+                echo ""
+            } >> "$out_file"
+        fi
+
+        # Port NG → nc or bash /dev/tcp
+        if [[ "$tcp_st" == "fail" ]] && [[ "$port" != "-" ]] && [[ -n "$port" ]]; then
+            {
+                echo "### Port NG Investigation"
+                echo ""
+                echo "#### Detailed port check: $ping_target:$port"
+                if command -v nc &>/dev/null; then
+                    nc -zv -w "$timeout_sec" "$ping_target" "$port" 2>&1 || true
+                else
+                    (exec 3<>"/dev/tcp/${ping_target}/${port}" \
+                        && echo "  Connected (bash /dev/tcp)" \
+                        && exec 3>&-) 2>/dev/null \
+                        || echo "  Connection failed (bash /dev/tcp)"
+                fi
+                echo ""
+            } >> "$out_file"
+        fi
+
+    done <<< "$ng_info"
+
+    {
+        echo "================================================================"
+        echo "  End of Investigation Report"
+        echo "================================================================"
+    } >> "$out_file"
+
+    echo "  Investigation saved: $out_file"
 }
 
 # ============================================================
@@ -257,6 +416,16 @@ echo "$(printf '─%.0s' {1..50})"
 printf "  Total: %d   \e[32mOK: %d\e[0m   \e[33mWarning: %d\e[0m   \e[31mFailed: %d\e[0m\n" \
     "$cnt_total" "$cnt_ok" "$cnt_warn" "$cnt_fail"
 echo ""
+
+# ============================================================
+# Investigation (auto-run on NG/WARN)
+# ============================================================
+
+if [[ "$cnt_fail" -gt 0 ]] || [[ "$cnt_warn" -gt 0 ]]; then
+    invest_ts=$(date '+%Y%m%d-%H%M%S')
+    invest_file="network_investigation_${invest_ts}.txt"
+    run_investigation "$tmpfile" "$invest_file"
+fi
 
 # ============================================================
 # HTML report

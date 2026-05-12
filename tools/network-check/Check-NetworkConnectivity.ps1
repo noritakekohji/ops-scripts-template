@@ -24,6 +24,12 @@
     .\Check-NetworkConnectivity.ps1 -TargetList targets.lst -HtmlReport report.html
     .\Check-NetworkConnectivity.ps1 -TargetList targets.lst -FailOnly
     .\Check-NetworkConnectivity.ps1 -TargetList targets.lst -PingCount 5 -TimeoutSec 5
+
+.NOTES
+    When any target is NG/WARN, an investigation file is automatically generated:
+      network_investigation_<timestamp>.txt
+    Contents: network config (ipconfig, route), tracert (ping NG),
+    hosts file + nslookup (DNS NG), Test-NetConnection (port NG).
 #>
 [CmdletBinding()]
 param(
@@ -331,6 +337,127 @@ function filter(mode,btn){
 }
 
 # ============================================================
+# Investigation (called automatically for NG/WARN targets)
+# ============================================================
+
+function Invoke-Investigation($results, $outFile, $timeoutSec) {
+    $ts        = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $ngResults = @($results | Where-Object { $_.overall -in @('fail', 'warn') })
+    if ($ngResults.Count -eq 0) { return }
+
+    Write-Host ''
+    Write-Host "=== Collecting Investigation Info ($($ngResults.Count) NG target(s)) ===" -ForegroundColor Cyan
+    Write-Host "  Output: $outFile"
+    Write-Host "  (tracert may take a while per host...)"
+
+    $sep  = '=' * 64
+    $dash = '-' * 64
+    $lines = [System.Collections.Generic.List[string]]::new()
+
+    $lines.Add($sep)
+    $lines.Add('  Network Investigation Report')
+    $lines.Add("  Generated : $ts")
+    $lines.Add("  Hostname  : $env:COMPUTERNAME")
+    $lines.Add($sep)
+    $lines.Add('')
+    $lines.Add('## System Network Information')
+    $lines.Add('')
+
+    $lines.Add('### Network Adapters (ipconfig /all)')
+    try   { $lines.Add((ipconfig /all 2>&1 | Out-String).TrimEnd()) }
+    catch { $lines.Add('(Not available)') }
+    $lines.Add('')
+
+    $lines.Add('### Routing Table (route print)')
+    try   { $lines.Add((route print 2>&1 | Out-String).TrimEnd()) }
+    catch { $lines.Add('(Not available)') }
+    $lines.Add('')
+
+    $lines.Add('### DNS Client Server Addresses')
+    try   { $lines.Add((Get-DnsClientServerAddress | Format-Table InterfaceAlias, ServerAddresses -AutoSize | Out-String).TrimEnd()) }
+    catch { $lines.Add('(Not available)') }
+    $lines.Add('')
+
+    $idx = 0
+    foreach ($r in $ngResults) {
+        $idx++
+        $failLabels = [System.Collections.Generic.List[string]]::new()
+        if ($r.dns.status  -eq 'fail')    { $failLabels.Add('DNS') }
+        if ($r.ping.status -eq 'fail')    { $failLabels.Add('Ping') }
+        if ($r.ping.status -eq 'partial') { $failLabels.Add('Ping(partial)') }
+        if ($null -ne $r.tcp -and $r.tcp.status -eq 'fail') { $failLabels.Add('Port') }
+        $failStr = $failLabels -join ', '
+
+        $lines.Add($sep)
+        $lines.Add("[$idx] HOST: $($r.host)  ($($r.description))")
+        $lines.Add("     Status: $($r.overall.ToUpper())  NG items: $failStr")
+        $lines.Add($dash)
+        $lines.Add('')
+
+        # DNS NG → hosts file + nslookup
+        if ($r.dns.status -eq 'fail') {
+            $lines.Add('### DNS Failure Investigation')
+            $lines.Add("  Error: $($r.dns.error)")
+            $lines.Add('')
+            $hostsPath = [IO.Path]::Combine($env:SystemRoot, 'System32', 'drivers', 'etc', 'hosts')
+            $lines.Add("#### hosts file ($hostsPath)")
+            try   { $lines.Add((Get-Content $hostsPath -Encoding UTF8 -ErrorAction Stop | Out-String).TrimEnd()) }
+            catch { $lines.Add('(Could not read hosts file)') }
+            $lines.Add('')
+            $lines.Add("#### nslookup: $($r.host)")
+            try   { $lines.Add((nslookup $r.host 2>&1 | Out-String).TrimEnd()) }
+            catch { $lines.Add('(nslookup failed)') }
+            $lines.Add('')
+        }
+
+        # Ping NG/partial → tracert
+        if ($r.ping.status -in @('fail', 'partial')) {
+            $pingTarget = if ($r.dns.addresses.Count -gt 0) { $r.dns.addresses[0] } else { $r.host }
+            $waitMs     = $timeoutSec * 1000
+            $lines.Add('### Ping NG Investigation')
+            $lines.Add('')
+            $lines.Add("#### tracert: $pingTarget")
+            try   { $lines.Add((tracert -d -h 20 -w $waitMs $pingTarget 2>&1 | Out-String).TrimEnd()) }
+            catch { $lines.Add('(tracert failed)') }
+            $lines.Add('')
+        }
+
+        # Port NG → Test-NetConnection
+        if ($null -ne $r.tcp -and $r.tcp.status -eq 'fail' -and $null -ne $r.port) {
+            $pingTarget = if ($r.dns.addresses.Count -gt 0) { $r.dns.addresses[0] } else { $r.host }
+            $lines.Add('### Port NG Investigation')
+            $lines.Add('')
+            $lines.Add("#### Test-NetConnection: $pingTarget port $($r.port)")
+            try {
+                $tnc = Test-NetConnection -ComputerName $pingTarget -Port $r.port `
+                    -InformationLevel Detailed `
+                    -ErrorAction SilentlyContinue `
+                    -WarningAction SilentlyContinue
+                $lines.Add(($tnc | Format-List | Out-String).TrimEnd())
+            } catch {
+                $lines.Add("(Test-NetConnection failed: $($_.Exception.Message))")
+            }
+            $lines.Add('')
+        }
+    }
+
+    $lines.Add($sep)
+    $lines.Add('  End of Investigation Report')
+    $lines.Add($sep)
+
+    $outDir = Split-Path -Parent $outFile
+    if ($outDir -and -not (Test-Path $outDir)) {
+        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    }
+    [System.IO.File]::WriteAllText(
+        $outFile,
+        ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
+        [System.Text.Encoding]::UTF8
+    )
+    Write-Host "  Investigation saved: $outFile" -ForegroundColor Green
+}
+
+# ============================================================
 # Main
 # ============================================================
 try {
@@ -404,6 +531,13 @@ try {
         $html = New-HtmlReport $results $meta
         [System.IO.File]::WriteAllText($HtmlReport, $html, [System.Text.Encoding]::UTF8)
         Write-Host "  HTML report: $HtmlReport" -ForegroundColor Green
+    }
+
+    # Investigation (auto-run on NG/WARN)
+    if ($failCount -gt 0 -or $warnCount -gt 0) {
+        $investTs   = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $investFile = "network_investigation_${investTs}.txt"
+        Invoke-Investigation $results $investFile $TimeoutSec
     }
 
     exit $(if ($failCount -gt 0) { 1 } else { 0 })
