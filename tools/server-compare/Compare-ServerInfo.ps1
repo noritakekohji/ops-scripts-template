@@ -375,7 +375,7 @@ try {
     $aMeta = Obj-To-Dict ($aData['meta'])
 
     $allCats     = @('os','network','services','packages','users','filesystem','environment','security')
-    $availCats   = $allCats | Where-Object { $bData.ContainsKey($_) -or $aData.ContainsKey($_) }
+    $availCats   = $allCats | Where-Object { $bData.ContainsKey($_) -and $aData.ContainsKey($_) }
     $compareCats = if ($Category -contains 'all') { $availCats } else { $Category | Where-Object { $availCats -contains $_ } }
 
     $allResults = [System.Collections.Generic.List[CategoryResult]]::new()

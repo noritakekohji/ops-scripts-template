@@ -529,7 +529,7 @@ try {
 
     # Determine categories to compare
     $allCats   = @('os','network','services','packages','users','filesystem','environment','security')
-    $availCats = $allCats | Where-Object { $bData.ContainsKey($_) -or $aData.ContainsKey($_) }
+    $availCats = $allCats | Where-Object { $bData.ContainsKey($_) -and $aData.ContainsKey($_) }
     $compareCats = if ($Category -contains 'all') { $availCats } else { $Category | Where-Object { $availCats -contains $_ } }
 
     Write-OpsLog -Level INFO -Message "Pre-check passed: categories=$($compareCats -join ',') diffOnly=$DiffOnly"
