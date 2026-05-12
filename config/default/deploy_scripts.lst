@@ -34,6 +34,9 @@
 # SRC, tomcat/bash/tomcatctl.sh
 # SRC, sqlserver/bash/sqlserverctl.sh
 
+# --- Linux スクリプト（サーバー情報収集） ---
+# SRC, linux/bash/get_server_info.sh
+
 # --- Windows スクリプト ---
 # SRC, aws/powershell/Ec2Ctl.ps1
 # SRC, aws/powershell/Backup-Ami.ps1
@@ -42,3 +45,7 @@
 # SRC, windows/powershell/Rotate-Log.ps1
 # SRC, tomcat/powershell/TomcatCtl.ps1
 # SRC, sqlserver/powershell/SqlServerCtl.ps1
+
+# --- Windows スクリプト（サーバー情報収集・比較） ---
+# SRC, windows/powershell/Get-ServerInfo.ps1
+# SRC, windows/powershell/Compare-ServerInfo.ps1
