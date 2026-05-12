@@ -28,7 +28,8 @@ echo.
 echo Running...
 echo.
 
-set "OPS_LOG_FILE=%~dpn0.log"
+for /f %%t in ('powershell -NoLogo -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "TIMESTAMP=%%t"
+set "OPS_LOG_FILE=%~dpn0_!TIMESTAMP!.log"
 set "PSARGS=-Before "!BEFORE!" -After "!AFTER!""
 if not "!HTML!"=="" set "PSARGS=!PSARGS! -HtmlReport "!HTML!""
 
