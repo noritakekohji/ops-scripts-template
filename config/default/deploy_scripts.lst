@@ -3,6 +3,7 @@
 # 形式:
 #   CONF, <filename>       config/default/<filename> → <opt_root_dir>/config/<filename>
 #   SRC,  <repo_filepath>  scripts/<repo_filepath>   → <opt_root_dir>/bin/<basename>
+#   LIB,  <repo_filepath>  lib/<repo_filepath>       → <opt_root_dir>/lib/<repo_filepath>
 #
 # env が指定された場合、CONF は default を配備した後 config/<env>/ で上書き。
 # スペースはカンマの前後で自由に入れてよい。行頭 # はコメント。
@@ -19,6 +20,10 @@
 # CONF, s3upload.conf
 # CONF, tomcatctl.conf
 # CONF, sqlserverctl.conf
+
+# --- 共通ライブラリ（Bash スクリプトを使う場合は必須） ---
+# LIB, bash/logging.sh
+# LIB, bash/config.sh
 
 # --- Linux スクリプト ---
 # SRC, aws/bash/ec2ctl.sh

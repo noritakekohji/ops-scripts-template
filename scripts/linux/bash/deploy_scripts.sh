@@ -19,6 +19,7 @@
 #   # コメント（行頭 # またはインラインコメントは無視）
 #   CONF, <filename>       config/default/<filename> → <opt_root_dir>/config/<filename>
 #   SRC,  <repo_filepath>  scripts/<repo_filepath>   → <opt_root_dir>/bin/<basename>
+#   LIB,  <repo_filepath>  lib/<repo_filepath>       → <opt_root_dir>/lib/<repo_filepath>
 #
 #   env が指定された場合、CONF は default を先に配備し、その後
 #   config/<env>/<filename> が存在すれば上書きする。
@@ -175,6 +176,14 @@ deploy_src() {
     copy_file "$src" "$dst" 755 || true
 }
 
+# LIB エントリ：lib/<repo_filepath> → <opt_root_dir>/lib/<repo_filepath>
+deploy_lib() {
+    local filepath="$1"
+    local src="$REPO_ROOT/lib/$filepath"
+    local dst="$opt_root/lib/$filepath"
+    copy_file "$src" "$dst" 644 || true
+}
+
 # ---------- プレチェック ----------
 log_info "Pre-check start"
 
@@ -220,7 +229,7 @@ while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
     local_type="${local_type^^}"
 
     case "$local_type" in
-        CONF|SRC)
+        CONF|SRC|LIB)
             entry_types+=("$local_type")
             entry_paths+=("$local_path")
             ;;
@@ -248,6 +257,7 @@ for ((i = 0; i < entry_count; i++)); do
     case "$t" in
         CONF) deploy_conf "$p" ;;
         SRC)  deploy_src  "$p" ;;
+        LIB)  deploy_lib  "$p" ;;
     esac
 done
 

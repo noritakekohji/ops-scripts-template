@@ -173,6 +173,14 @@ function Invoke-OpsDeploySrc {
     Copy-OpsFile -Src $src -Dst $dst | Out-Null
 }
 
+# LIB エントリ: lib/<repo_filepath> → <OptRoot>/lib/<repo_filepath>
+function Invoke-OpsDeployLib {
+    param([string]$FilePath)
+    $src = [IO.Path]::Combine($repoRoot, 'lib', $FilePath)
+    $dst = [IO.Path]::Combine($OptRoot, 'lib', $FilePath)
+    Copy-OpsFile -Src $src -Dst $dst | Out-Null
+}
+
 # ----------------------------------------------------------------------------
 # メインフロー
 # ----------------------------------------------------------------------------
@@ -223,7 +231,7 @@ try {
             $t = $line.Substring(0, $comma).Trim().ToUpper()
             $p = $line.Substring($comma + 1).Trim()
 
-            if ($t -in 'CONF', 'SRC') {
+            if ($t -in 'CONF', 'SRC', 'LIB') {
                 $entryTypes.Add($t)
                 $entryPaths.Add($p)
             }
@@ -245,6 +253,7 @@ try {
             switch ($entryTypes[$i]) {
                 'CONF' { Invoke-OpsDeployConf -FilePath $entryPaths[$i] }
                 'SRC'  { Invoke-OpsDeploySrc  -FilePath $entryPaths[$i] }
+                'LIB'  { Invoke-OpsDeployLib  -FilePath $entryPaths[$i] }
             }
         }
 

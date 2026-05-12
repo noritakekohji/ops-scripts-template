@@ -21,10 +21,16 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# Locate lib/bash: try deployed location (bin/../lib/bash) then repo location (scripts/xx/bash/../../../lib/bash)
+_ops_lib=""
+for _d in "${SCRIPT_DIR}/../lib/bash" "${SCRIPT_DIR}/../../../lib/bash"; do
+    if [[ -f "${_d}/logging.sh" ]]; then _ops_lib="$(cd "${_d}" && pwd)"; break; fi
+done
+[[ -z "${_ops_lib:-}" ]] && { echo "[ERROR] lib/bash/logging.sh not found" >&2; exit 1; }
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
+source "${_ops_lib}/logging.sh"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../../../lib/bash/config.sh"
+source "${_ops_lib}/config.sh"
 
 usage() { sed -n '2,24p' "$0" >&2; exit 1; }
 
