@@ -31,6 +31,7 @@ echo.
 echo Running...
 echo.
 
+set "OPS_LOG_FILE=%~dpn0.log"
 set "PSARGS=-TargetList "!LIST!""
 if not "!HTML!"=="" set "PSARGS=!PSARGS! -HtmlReport "!HTML!""
 

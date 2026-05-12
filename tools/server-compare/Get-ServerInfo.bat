@@ -20,6 +20,7 @@ echo.
 echo Running...
 echo.
 
+set "OPS_LOG_FILE=%~dpn0.log"
 set "PSARGS=-Category !CATEGORY!"
 if not "!OUTPUT!"=="" set "PSARGS=!PSARGS! -OutputPath "!OUTPUT!""
 

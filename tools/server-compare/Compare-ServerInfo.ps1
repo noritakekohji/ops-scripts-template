@@ -37,6 +37,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Start log transcript if launched from the .bat file (OPS_LOG_FILE env var)
+if ($env:OPS_LOG_FILE) {
+    Start-Transcript -Path $env:OPS_LOG_FILE -Force -Append -ErrorAction SilentlyContinue | Out-Null
+}
+
 # ============================================================
 # Data structures
 # ============================================================
