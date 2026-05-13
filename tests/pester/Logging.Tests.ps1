@@ -9,7 +9,7 @@
 
 BeforeAll {
     $repoRoot = (Resolve-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path
-    Import-Module ([IO.Path]::Combine($repoRoot, 'lib', 'powershell', 'Logging.psm1')) -Force
+    Import-Module ([IO.Path]::Combine($repoRoot, 'scripts_windows', 'lib', 'Logging.psm1')) -Force
 }
 
 Describe 'Get-OpsJstStamp' {

@@ -54,7 +54,7 @@ goto :run_shifted
 :: No shift was done: pass remaining args via %* (all original args).
 :: ---------------------------------------------------------------------------
 :run_noshift
-powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %*
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts_windows\os\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %*
 exit /b %ERRORLEVEL%
 
 :: ---------------------------------------------------------------------------
@@ -62,5 +62,5 @@ exit /b %ERRORLEVEL%
 :: After shift, %1 is the original %2, so the env name is no longer included.
 :: ---------------------------------------------------------------------------
 :run_shifted
-powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\powershell\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %1 %2 %3 %4 %5 %6 %7 %8 %9
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts_windows\os\Deploy-Scripts.ps1" -Env "%ENV_NAME%" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%

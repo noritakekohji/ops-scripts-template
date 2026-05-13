@@ -1,9 +1,9 @@
 # deploy_scripts.sh / Deploy-Scripts.ps1 のサンプルリストファイル
 #
 # 形式:
-#   CONF, <filename>       config/default/<filename> → <opt_root_dir>/config/<filename>
-#   SRC,  <repo_filepath>  scripts/<repo_filepath>   → <opt_root_dir>/bin/<basename>
-#   LIB,  <repo_filepath>  lib/<repo_filepath>       → <opt_root_dir>/lib/<repo_filepath>
+#   CONF, <filename>              config/default/<filename>       → <opt_root_dir>/config/<filename>
+#   SRC,  <repo_filepath>         <repo_filepath>                 → <opt_root_dir>/bin/<basename>
+#   LIB,  linux/<f>|windows/<f>   scripts_<platform>/lib/<file>  → <opt_root_dir>/lib/<platform>/<file>
 #
 # env が指定された場合、CONF は default を配備した後 config/<env>/ で上書き。
 # スペースはカンマの前後で自由に入れてよい。行頭 # はコメント。
@@ -21,31 +21,31 @@
 # CONF, tomcatctl.conf
 # CONF, sqlserverctl.conf
 
-# --- 共通ライブラリ（Bash スクリプトを使う場合は必須） ---
-# LIB, bash/logging.sh
-# LIB, bash/config.sh
+# --- 共通ライブラリ（Linux Bash スクリプトを使う場合は必須） ---
+# LIB, linux/logging.sh
+# LIB, linux/config.sh
 
 # --- Linux スクリプト ---
-# SRC, aws/bash/ec2ctl.sh
-# SRC, aws/bash/backup_ami.sh
-# SRC, aws/bash/backup_ebs_snapshot.sh
-# SRC, aws/bash/s3upload.sh
-# SRC, linux/bash/rotate_log.sh
-# SRC, tomcat/bash/tomcatctl.sh
-# SRC, sqlserver/bash/sqlserverctl.sh
+# SRC, scripts_linux/aws/ec2ctl.sh
+# SRC, scripts_linux/aws/backup_ami.sh
+# SRC, scripts_linux/aws/backup_ebs_snapshot.sh
+# SRC, scripts_linux/aws/s3upload.sh
+# SRC, scripts_linux/os/rotate_log.sh
+# SRC, scripts_linux/tomcat/tomcatctl.sh
+# SRC, scripts_linux/sqlserver/sqlserverctl.sh
 
 # --- Linux スクリプト（サーバー情報収集） ---
-# SRC, linux/bash/get_server_info.sh
+# SRC, scripts_linux/os/get_server_info.sh
 
 # --- Windows スクリプト ---
-# SRC, aws/powershell/Ec2Ctl.ps1
-# SRC, aws/powershell/Backup-Ami.ps1
-# SRC, aws/powershell/Backup-EbsSnapshot.ps1
-# SRC, aws/powershell/S3Upload.ps1
-# SRC, windows/powershell/Rotate-Log.ps1
-# SRC, tomcat/powershell/TomcatCtl.ps1
-# SRC, sqlserver/powershell/SqlServerCtl.ps1
+# SRC, scripts_windows/aws/Ec2Ctl.ps1
+# SRC, scripts_windows/aws/Backup-Ami.ps1
+# SRC, scripts_windows/aws/Backup-EbsSnapshot.ps1
+# SRC, scripts_windows/aws/S3Upload.ps1
+# SRC, scripts_windows/os/Rotate-Log.ps1
+# SRC, scripts_windows/tomcat/TomcatCtl.ps1
+# SRC, scripts_windows/sqlserver/SqlServerCtl.ps1
 
 # --- Windows スクリプト（サーバー情報収集・比較） ---
-# SRC, windows/powershell/Get-ServerInfo.ps1
-# SRC, windows/powershell/Compare-ServerInfo.ps1
+# SRC, scripts_windows/os/Get-ServerInfo.ps1
+# SRC, scripts_windows/os/Compare-ServerInfo.ps1

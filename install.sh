@@ -22,7 +22,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-DEPLOY="$SCRIPT_DIR/scripts/linux/bash/deploy_scripts.sh"
+DEPLOY="$SCRIPT_DIR/scripts_linux/os/deploy_scripts.sh"
 
 usage() {
     cat >&2 <<'EOF'
