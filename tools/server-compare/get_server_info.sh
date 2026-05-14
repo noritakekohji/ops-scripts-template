@@ -75,7 +75,11 @@ def collect_os():
         'hostname': socket.getfqdn(), 'domain': '',
         'os_name': platform.system(), 'os_version': platform.release(),
         'os_build': '', 'architecture': platform.machine(),
-        'timezone': '', 'locale': '', 'last_boot': '', 'total_memory_gb': 0.0,
+        'timezone': '', 'locale': '', 'last_boot': '',
+        'cpu_model': '', 'cpu_sockets': 0, 'cpu_cores': 0,
+        'cpu_logical_procs': 0, 'cpu_speed_mhz': 0,
+        'total_memory_gb': 0.0, 'free_memory_gb': 0.0,
+        'used_memory_gb': 0.0, 'swap_total_gb': 0.0, 'swap_free_gb': 0.0,
     }
     os_release = Path('/etc/os-release')
     if os_release.exists():
@@ -93,11 +97,40 @@ def collect_os():
     info['timezone'] = tz
     info['locale'] = run("locale | grep '^LANG=' | cut -d= -f2 | tr -d '\"'", '')
     info['last_boot'] = run("who -b 2>/dev/null | awk '{print $3, $4}'", run('uptime -s 2>/dev/null', ''))
+    # CPU info via lscpu
+    def _mhz(s):
+        try: return int(float(s))
+        except: return 0
+    cpu_cores_per_socket = 0
+    for line in run('lscpu 2>/dev/null', '').splitlines():
+        if ':' not in line: continue
+        k, _, v = line.partition(':'); k, v = k.strip(), v.strip()
+        if   k == 'Model name':         info['cpu_model'] = v
+        elif k == 'Socket(s)':          info['cpu_sockets'] = int(v) if v.isdigit() else 0
+        elif k == 'Core(s) per socket': cpu_cores_per_socket = int(v) if v.isdigit() else 0
+        elif k == 'CPU(s)':             info['cpu_logical_procs'] = int(v) if v.isdigit() else 0
+        elif k == 'CPU max MHz':        info['cpu_speed_mhz'] = _mhz(v)
+        elif k == 'CPU MHz' and not info['cpu_speed_mhz']: info['cpu_speed_mhz'] = _mhz(v)
+    if info['cpu_sockets'] and cpu_cores_per_socket:
+        info['cpu_cores'] = info['cpu_sockets'] * cpu_cores_per_socket
+    if not info['cpu_logical_procs']:
+        n = run('grep -c "^processor" /proc/cpuinfo 2>/dev/null', '0')
+        info['cpu_logical_procs'] = int(n) if n.isdigit() else 0
+    # Memory from /proc/meminfo
     try:
+        meminfo = {}
         for l in Path('/proc/meminfo').read_text().splitlines():
-            if l.startswith('MemTotal:'):
-                info['total_memory_gb'] = round(int(l.split()[1]) / 1024 / 1024, 2)
-                break
+            if ':' in l:
+                k, _, v = l.partition(':'); meminfo[k.strip()] = v.strip()
+        def to_gb_kb(key):
+            try: return round(int(meminfo[key].split()[0]) / 1048576, 2)
+            except: return 0.0
+        avail_key = 'MemAvailable' if 'MemAvailable' in meminfo else 'MemFree'
+        info['total_memory_gb'] = to_gb_kb('MemTotal')
+        info['free_memory_gb']  = to_gb_kb(avail_key)
+        info['used_memory_gb']  = round(info['total_memory_gb'] - info['free_memory_gb'], 2)
+        info['swap_total_gb']   = to_gb_kb('SwapTotal')
+        info['swap_free_gb']    = to_gb_kb('SwapFree')
     except Exception: pass
     return info
 

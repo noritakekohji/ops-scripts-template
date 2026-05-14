@@ -102,20 +102,36 @@ function Safe-Exec {
 
 function Get-OsInfo {
     Write-OpsLog -Level INFO -Message 'Collecting: os'
-    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-    $cs = Get-CimInstance Win32_ComputerSystem  -ErrorAction SilentlyContinue
+    $os   = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+    $cs   = Get-CimInstance Win32_ComputerSystem  -ErrorAction SilentlyContinue
+    $cpus = @(Get-CimInstance Win32_Processor     -ErrorAction SilentlyContinue)
+
+    $totalMemGb  = if ($cs) { [math]::Round($cs.TotalPhysicalMemory / 1GB, 2) } else { 0.0 }
+    $freeMemGb   = if ($os) { [math]::Round($os.FreePhysicalMemory * 1KB / 1GB, 2) } else { 0.0 }
+    $cpuModel    = if ($cpus) { $cpus[0].Name.Trim() } else { '' }
+    $cpuCores    = if ($cpus) { [int]($cpus | Measure-Object NumberOfCores             -Sum).Sum } else { 0 }
+    $cpuLogical  = if ($cpus) { [int]($cpus | Measure-Object NumberOfLogicalProcessors -Sum).Sum } else { 0 }
+    $cpuSpeedMhz = if ($cpus) { [int]$cpus[0].MaxClockSpeed } else { 0 }
+
     @{
-        hostname        = $env:COMPUTERNAME
-        domain          = if ($cs) { $cs.Domain } else { '' }
-        os_name         = if ($os) { $os.Caption } else { '' }
-        os_version      = if ($os) { $os.Version } else { '' }
-        os_build        = if ($os) { $os.BuildNumber } else { '' }
-        architecture    = if ($os) { $os.OSArchitecture } else { $env:PROCESSOR_ARCHITECTURE }
-        timezone        = (Get-TimeZone -ErrorAction SilentlyContinue).Id
-        locale          = (Get-WinSystemLocale -ErrorAction SilentlyContinue).Name
-        install_date    = if ($os) { $os.InstallDate.ToString('yyyy-MM-dd') } else { '' }
-        last_boot       = if ($os) { $os.LastBootUpTime.ToString('yyyy-MM-dd HH:mm:ss') } else { '' }
-        total_memory_gb = if ($cs) { [math]::Round($cs.TotalPhysicalMemory / 1GB, 2) } else { 0 }
+        hostname          = $env:COMPUTERNAME
+        domain            = if ($cs) { $cs.Domain } else { '' }
+        os_name           = if ($os) { $os.Caption } else { '' }
+        os_version        = if ($os) { $os.Version } else { '' }
+        os_build          = if ($os) { $os.BuildNumber } else { '' }
+        architecture      = if ($os) { $os.OSArchitecture } else { $env:PROCESSOR_ARCHITECTURE }
+        timezone          = (Get-TimeZone -ErrorAction SilentlyContinue).Id
+        locale            = (Get-WinSystemLocale -ErrorAction SilentlyContinue).Name
+        install_date      = if ($os) { $os.InstallDate.ToString('yyyy-MM-dd') } else { '' }
+        last_boot         = if ($os) { $os.LastBootUpTime.ToString('yyyy-MM-dd HH:mm:ss') } else { '' }
+        cpu_model         = $cpuModel
+        cpu_sockets       = $cpus.Count
+        cpu_cores         = $cpuCores
+        cpu_logical_procs = $cpuLogical
+        cpu_speed_mhz     = $cpuSpeedMhz
+        total_memory_gb   = $totalMemGb
+        free_memory_gb    = $freeMemGb
+        used_memory_gb    = [math]::Round($totalMemGb - $freeMemGb, 2)
     }
 }
 
