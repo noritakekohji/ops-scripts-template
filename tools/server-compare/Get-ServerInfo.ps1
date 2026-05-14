@@ -176,14 +176,18 @@ function Get-FilesystemInfo {
         Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
             Where-Object { $null -ne $_.Used } |
             ForEach-Object {
-                $total = $_.Used + $_.Free
+                $drv   = $_
+                $total = $drv.Used + $drv.Free
+                $vol   = Get-Volume -DriveLetter $drv.Name -ErrorAction SilentlyContinue
                 @{
-                    drive    = $_.Name
-                    root     = $_.Root
-                    used_gb  = [math]::Round($_.Used  / 1GB, 2)
-                    free_gb  = [math]::Round($_.Free  / 1GB, 2)
-                    total_gb = [math]::Round($total   / 1GB, 2)
-                    used_pct = if ($total -gt 0) { [math]::Round($_.Used / $total * 100, 1) } else { 0 }
+                    drive    = $drv.Name
+                    root     = $drv.Root
+                    label    = if ($vol) { "$($vol.FileSystemLabel)" } else { '' }
+                    fstype   = if ($vol) { "$($vol.FileSystem)"       } else { '' }
+                    used_gb  = [math]::Round($drv.Used  / 1GB, 2)
+                    free_gb  = [math]::Round($drv.Free  / 1GB, 2)
+                    total_gb = [math]::Round($total      / 1GB, 2)
+                    used_pct = if ($total -gt 0) { [math]::Round($drv.Used / $total * 100, 1) } else { 0 }
                 }
             } | Sort-Object { $_['drive'] }
     })
@@ -193,8 +197,10 @@ function Get-FilesystemInfo {
 function Get-EnvironmentInfo {
     Write-Host "  Collecting: environment ..."
     $machine = @{}
+    $user    = @{}
     try { [System.Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { $machine[$_.Key] = $_.Value } } catch {}
-    @{ machine = $machine }
+    try { [System.Environment]::GetEnvironmentVariables('User').GetEnumerator()    | ForEach-Object { $user[$_.Key]    = $_.Value } } catch {}
+    @{ machine = $machine; user = $user }
 }
 
 function Get-SecurityInfo {

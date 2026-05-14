@@ -194,11 +194,20 @@ function Compare-Users($b, $a) {
 function Compare-Filesystem($b, $a) {
     $bd = @(As-Array (Get-Prop $b 'drives') | ForEach-Object { Obj-To-Dict $_ })
     $ad = @(As-Array (Get-Prop $a 'drives') | ForEach-Object { Obj-To-Dict $_ })
-    Compare-List $bd $ad 'drive' @('total_gb','used_gb','free_gb','used_pct') 'filesystem'
+    Compare-List $bd $ad 'drive' @('total_gb','used_gb','free_gb','used_pct','fstype','label') 'filesystem'
 }
 
 function Compare-Environment($b, $a) {
-    Compare-Dict (Obj-To-Dict (Get-Prop $b 'machine')) (Obj-To-Dict (Get-Prop $a 'machine')) 'environment'
+    $results = [System.Collections.Generic.List[CategoryResult]]::new()
+    $bm = if ($null -ne (Get-Prop $b 'machine')) { Obj-To-Dict (Get-Prop $b 'machine') } else { @{} }
+    $am = if ($null -ne (Get-Prop $a 'machine')) { Obj-To-Dict (Get-Prop $a 'machine') } else { @{} }
+    $results.Add((Compare-Dict $bm $am 'environment/machine'))
+    $bu = if ($null -ne (Get-Prop $b 'user')) { Obj-To-Dict (Get-Prop $b 'user') } else { @{} }
+    $au = if ($null -ne (Get-Prop $a 'user')) { Obj-To-Dict (Get-Prop $a 'user') } else { @{} }
+    if ($bu.Count -gt 0 -or $au.Count -gt 0) {
+        $results.Add((Compare-Dict $bu $au 'environment/user'))
+    }
+    return $results
 }
 
 function Compare-Security($b, $a) {

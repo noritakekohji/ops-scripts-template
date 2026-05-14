@@ -199,6 +199,28 @@ def collect_filesystem():
             'used_gb': to_gb(parts[3]), 'free_gb': to_gb(parts[4]), 'total_gb': to_gb(parts[5]),
             'used_pct': float(parts[6].replace('%','')) if parts[6].replace('%','').replace('.','').isdigit() else 0.0,
         })
+    # Physical disk layout via lsblk
+    disks = []
+    lsblk_raw = run('lsblk -J -b -o NAME,SIZE,TYPE,MODEL,MOUNTPOINT 2>/dev/null', '')
+    if lsblk_raw:
+        try:
+            lsblk_data = json.loads(lsblk_raw)
+            def _add_dev(d):
+                if d.get('type') in ('disk', 'part'):
+                    sz = d.get('size')
+                    size_gb = round(int(sz) / 1073741824, 2) if sz else 0.0
+                    disks.append({
+                        'name':       d.get('name', ''),
+                        'size_gb':    size_gb,
+                        'type':       d.get('type', ''),
+                        'model':      (d.get('model') or '').strip(),
+                        'mountpoint': d.get('mountpoint') or '',
+                    })
+                for child in d.get('children', []):
+                    _add_dev(child)
+            for dev in lsblk_data.get('blockdevices', []):
+                _add_dev(dev)
+        except Exception: pass
     fstab = []
     try:
         for line in Path('/etc/fstab').read_text().splitlines():
@@ -208,7 +230,7 @@ def collect_filesystem():
                 if len(parts) >= 4:
                     fstab.append({'device': parts[0], 'mount_point': parts[1], 'fstype': parts[2], 'options': parts[3]})
     except Exception: pass
-    return {'drives': drives, 'fstab': fstab}
+    return {'drives': drives, 'disks': disks, 'fstab': fstab}
 
 def collect_environment():
     machine = {}
