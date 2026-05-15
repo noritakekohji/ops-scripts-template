@@ -50,7 +50,7 @@ $RunLinux   = -not $PsOnly
 $RunPs      = -not $LinuxOnly
 
 $Sep  = '=' * 60
-$Dash = '─' * 60
+$Dash = '-' * 60
 
 # ============================================================
 # Helper: colored output
@@ -89,8 +89,15 @@ Write-Host ""
 function Build-Image([string]$Tag, [string]$Dockerfile) {
     if ($NoBuild) { return }
 
-    $exists = docker image inspect $Tag 2>$null
-    if ($Build -or -not $exists) {
+    # Check if image exists without triggering PS5.1 ErrorRecord on stderr
+    $imageExists = $false
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    $null = docker image inspect $Tag 2>&1
+    $imageExists = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prev
+
+    if ($Build -or -not $imageExists) {
         Write-Host "  Building $Tag from $Dockerfile ..."
         docker build -t $Tag -f "$ScriptDir\$Dockerfile" $ScriptDir
         if ($LASTEXITCODE -ne 0) { throw "docker build failed for $Tag" }
