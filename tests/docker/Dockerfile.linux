@@ -5,7 +5,7 @@ FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core shells / interpreters
     bash \
     python3 \
@@ -13,14 +13,13 @@ RUN apt-get update && apt-get install -y \
     iputils-ping \
     iproute2 \
     net-tools \
-    dnsutils \
+    bind9-dnsutils \
     traceroute \
     netcat-openbsd \
     curl \
     # System info tools (for get_server_info.sh)
     util-linux \
     procps \
-    lsblk \
     # File tools
     gzip \
     && rm -rf /var/lib/apt/lists/*
