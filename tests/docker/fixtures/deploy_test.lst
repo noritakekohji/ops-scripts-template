@@ -1,0 +1,6 @@
+# deploy_scripts.sh dry-run test list
+# Used with: deploy_scripts.sh -L deploy_test.lst -n -d /tmp/deploy_dest
+CONF, global.conf
+SRC,  scripts_linux/os/rotate_log.sh
+LIB,  linux/logging.sh
+LIB,  linux/config.sh

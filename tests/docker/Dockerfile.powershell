@@ -1,0 +1,21 @@
+# ============================================================================
+# Dockerfile.powershell  -  PowerShell 7 on Ubuntu for PS script testing
+#
+# NOTE: Windows-specific cmdlets (Get-Service, Get-CimInstance, etc.)
+#       are not available on Linux. Tests verify:
+#         - Module import (Logging.psm1, Config.psm1)
+#         - Syntax parsing (all .ps1/.psm1 files)
+#         - Logic not requiring Windows cmdlets
+#         - Graceful error handling when Windows cmdlets are absent
+# ============================================================================
+FROM mcr.microsoft.com/powershell:7.4-ubuntu-22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+WORKDIR /repo

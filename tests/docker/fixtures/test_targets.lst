@@ -1,0 +1,13 @@
+# Network check test targets (Docker environment)
+# Docker has outbound internet access. --cap-add=NET_RAW enables ICMP ping.
+
+# ---- TCP reachable ----
+google.com,   443, ok, Google HTTPS
+google.com,    80, ok, Google HTTP
+
+# ---- TCP blocked ----
+google.com,    22, ng, SSH (should be blocked)
+google.com,  9999, ng, Unknown port (should fail)
+
+# ---- Ping only ----
+8.8.8.8,        -, ok, Google DNS (ICMP)

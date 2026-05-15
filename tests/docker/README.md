@@ -1,126 +1,127 @@
-# Docker-based Tool Tests
+# Docker-based Test Suite
 
-Docker コンテナ（Ubuntu 22.04）を使って bash ツールを実機相当の Linux 環境でテストします。
+Docker コンテナを使って **Linux bash** と **PowerShell** のスクリプト・ツールを
+実機相当の環境でテストします。
 
 ## 前提
 
 - Docker Desktop が **Linux コンテナモード** で起動していること
-- インターネット接続があること（DNS・TCP チェックで使用）
+- インターネット接続があること（ネットワークチェックのテストに使用）
 
-## 実行方法
+## コンテナ構成
+
+| イメージ | ベース | 用途 |
+|---|---|---|
+| `ops-test-linux` | Ubuntu 22.04 | bash スクリプト全般 |
+| `ops-test-powershell` | PS 7.4 / Ubuntu | PowerShell スクリプト全般 |
+
+## 実行
 
 ```bash
 cd tests/docker
 
-# 初回（イメージビルド + テスト実行）
+# 全スイート実行（初回はイメージビルドあり）
 bash run_tests.sh
+
+# Linux bash のみ
+bash run_tests.sh --linux-only
+
+# PowerShell のみ
+bash run_tests.sh --ps-only
 
 # イメージ強制再ビルド
 bash run_tests.sh --build
 
-# イメージ再ビルドなし（高速）
-bash run_tests.sh --no-build
-
-# コンテナ内のシェルに入る（デバッグ用）
-bash run_tests.sh --shell
+# デバッグ: コンテナ内シェルに入る
+bash run_tests.sh --shell-linux
+bash run_tests.sh --shell-ps
 ```
 
-## テスト内容
+## テストスイート一覧
 
-```
-=== Prerequisites ===
-  python3, ping, ip, df, lsblk の存在確認
+### Linux bash (`linux_tests.sh`)
 
-=== get_server_info.sh ===
-  os + network + filesystem カテゴリの収集
-  JSON 構造の検証（meta, os, network, filesystem）
-  全カテゴリの収集（services, packages, environment）
-
-=== check_network_connectivity.sh ===
-  Python エラーなし（スクリプト動作確認）
-  HTML レポート生成確認
-  DNS 解決（google.com）
-  TCP 疎通（google.com:443 OK）
-  TCP 疎通（google.com:22 NG）
-
-=== change_detect.sh ===
-  before スナップショット取得
-  after  スナップショット取得
-  compare モードで差分レポート生成
-  HTML レポート生成確認
-  変化なし（0 changes）の検証
-```
-
-## コンテナ内の環境
-
-| ツール | バージョン |
+| スイート | 内容 |
 |---|---|
-| OS | Ubuntu 22.04 |
-| bash | 5.x |
-| python3 | 3.10 |
-| ping | iputils-ping |
-| ip | iproute2 |
+| Prerequisites | bash 4+, python3, ping, ip, df, lsblk, traceroute |
+| scripts_linux/lib — logging.sh | source, log_info, log_error, ops_jst_stamp |
+| scripts_linux/lib — config.sh | source, load_ops_config, ops_repo_root |
+| scripts_linux/os — get_server_info.sh | 収集 + JSON 構造検証 |
+| scripts_linux/os — rotate_log.sh | dry-run（サイズ・日数基準） |
+| scripts_linux/os — deploy_scripts.sh | dry-run（-n フラグ） |
+| scripts_linux/aws | 構文チェック（AWS 認証不要） |
+| scripts_linux/sqlserver + tomcat | 構文チェック |
+| tools/server-compare | get_server_info 収集・JSON 検証 |
+| tools/network-check | DNS・TCP チェック・HTML 生成 |
+| tools/change-detect | before/after/compare・HTML 生成 |
 
-## Ping について
+### PowerShell (`powershell_tests.ps1`)
 
-`--cap-add=NET_RAW` を付けて実行するため ICMP ping が使えます。  
-Ping が NG になる場合は Docker のネットワーク設定を確認してください。
+| スイート | 内容 |
+|---|---|
+| Prerequisites | PS バージョン, python3 |
+| scripts_windows/lib — Logging.psm1 | Import, Write-OpsLog, ログファイル書き込み |
+| scripts_windows/lib — Config.psm1 | Import, Get-OpsConfig, Get-OpsRepoRoot |
+| scripts_windows/os — Get-ServerInfo.ps1 | 構文 + 部分実行（PS7/Linux 対応分） |
+| scripts_windows/os — Compare-ServerInfo.ps1 | テスト JSON で比較・HTML 生成 |
+| scripts_windows/os — Rotate-Log.ps1 | 構文 + -WhatIf dry-run |
+| scripts_windows/os — Deploy-Scripts.ps1 | 構文 + -WhatIf dry-run |
+| scripts_windows/aws | 構文チェック |
+| scripts_windows/sqlserver + tomcat | 構文チェック |
+| tools/server-compare (PS) | 構文 + Compare-ServerInfo 実行 |
+| tools/network-check (PS) | 構文 + 実行・HTML 生成 |
+| tools/change-detect (PS) | 構文チェック |
 
-## デバッグ
+## 注意事項
 
-```bash
-# コンテナ内シェルに入る
-bash run_tests.sh --shell
+### PowerShell テストについて
 
-# コンテナ内でテスト手動実行
-bash /ops/tests/container_tests.sh
+PowerShell 7 は Linux 上で動作するため、以下の Windows 専用コマンドレットは使用不可です：
+`Get-CimInstance`, `Get-Service`, `Get-LocalUser`, `Get-NetIPAddress`, など。
 
-# ツールを直接実行
-bash /ops/tools/server-compare/get_server_info.sh
-bash /ops/tools/network-check/check_network_connectivity.sh -l /ops/tests/test_targets.lst
+テストでは以下を検証します：
+- **全スクリプト**: 構文解析エラーなし
+- **lib モジュール**: Import + 関数の動作確認
+- **PS7/Linux で動く部分**: 実行確認
+- **Windows 専用部分**: -WhatIf / -ErrorAction SilentlyContinue で安全実行
+
+### Ping について
+
+`--cap-add=NET_RAW` を付けて実行するため ICMP ping が使えます。
+
+## 出力例
+
 ```
+════════════════════════════════════════════════════════════
+  Docker Test Runner
+  Repo : /path/to/ops-scripts-template
+════════════════════════════════════════════════════════════
+  Docker  : 29.4.2 [linux containers]
 
-## テスト結果例
+── Building Docker images ──────────────────────────────────
+  Building ops-test-linux:latest from Dockerfile.linux ...
+  Building ops-test-powershell:latest from Dockerfile.powershell ...
 
-```
-=== Prerequisites ===
-[PASS] python3 available
-[PASS] ping available
-[PASS] ip available
-[PASS] df available
-[PASS] lsblk available
+── Linux bash tests ────────────────────────────────────────
 
-=== get_server_info.sh ===
-[PASS] os,network,filesystem collection
-[PASS] JSON meta.hostname present
-[PASS] JSON os category collected
-[PASS] JSON os.architecture present
-[PASS] JSON network collected
-[PASS] JSON filesystem collected
-[PASS] all categories collection
-[PASS] all: services collected
-[PASS] all: packages collected
-[PASS] all: environment collected
+══════════════════════════════════════════════════════════
+  SUITE: Prerequisites
+══════════════════════════════════════════════════════════
+  [PASS] bash 4+
+  [PASS] python3
+  [PASS] ping
+  ...
 
-=== check_network_connectivity.sh ===
-[PASS] script runs without Python errors
-[PASS] HTML report created
-[PASS] HTML contains google.com
-[PASS] DNS: google.com resolves
-[PASS] TCP: google.com:443 reachable
-[PASS] TCP: google.com:22 not reachable (SSH blocked)
+  [PASS] ALL TESTS PASSED
+  Total: 45   PASS: 45   FAIL: 0
 
-=== change_detect.sh ===
-[PASS] before snapshot
-[PASS] before JSON created
-[PASS] after snapshot + comparison
-[PASS] after JSON created
-[PASS] HTML report from compare
-[PASS] HTML report created
-[PASS] HTML content valid
-[PASS] 0 changes (no change between snapshots)
+── PowerShell tests ────────────────────────────────────────
 
-──────────────────────────────────────────────────────────
-  ALL TESTS PASSED
-  Total: 23   PASS: 23   FAIL: 0
+  [PASS] ALL TESTS PASSED
+  Total: 38   PASS: 38   FAIL: 0
+
+════════════════════════════════════════════════════════════
+  ✓ ALL SUITES PASSED
+  Total time: 142s
+════════════════════════════════════════════════════════════
 ```

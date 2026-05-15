@@ -1,0 +1,30 @@
+# ============================================================================
+# Dockerfile.linux  -  Ubuntu 22.04 image for bash tool/script testing
+# ============================================================================
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    # Core shells / interpreters
+    bash \
+    python3 \
+    # Network tools (for check_network_connectivity.sh)
+    iputils-ping \
+    iproute2 \
+    net-tools \
+    dnsutils \
+    traceroute \
+    netcat-openbsd \
+    curl \
+    # System info tools (for get_server_info.sh)
+    util-linux \
+    procps \
+    lsblk \
+    # File tools
+    gzip \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+WORKDIR /repo
