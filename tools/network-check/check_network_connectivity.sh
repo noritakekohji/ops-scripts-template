@@ -371,15 +371,15 @@ hostname_str=$(hostname -s 2>/dev/null || echo "localhost")
 generated=$(date '+%Y-%m-%d %H:%M:%S')
 
 # Associative array: host -> index in unique_hosts (bash 4+)
-declare -A host_index
-declare -a unique_hosts
+declare -A host_index=()
+declare -a unique_hosts=()
 
 # Temp dir for per-host service files
 svc_tmpdir=$(mktemp -d)
 trap 'rm -rf "$svc_tmpdir"' EXIT
 
 # Also collect results into this JSON-lines file
-tmpfile=$(mktemp --tmpdir="$svc_tmpdir" results.XXXXXX)
+tmpfile=$(mktemp "$svc_tmpdir/results.XXXXXX")
 
 while IFS= read -r raw_line; do
     # Strip inline comments and whitespace
@@ -504,8 +504,8 @@ for host in "${unique_hosts[@]}"; do
         skip)    printf "       Ping : \e[90m─\e[0m  Skip (DNS failed)\n" ;;
     esac
 
-    # Build JSON services array for this host
-    host_services_json=""
+    # Services JSON is written line-by-line to a temp file (avoids embedding JSON null in Python code)
+    host_svcs_file="$svc_tmpdir/svcs_${idx}"
 
     # ---- Per-service checks ----
     while IFS=$'\t' read -r svc_port svc_expected svc_desc; do
@@ -591,57 +591,62 @@ for host in "${unique_hosts[@]}"; do
             fi
 
             if [[ "$svc_port" == "-" ]] || [[ -z "$svc_port" ]]; then
-                printf "       Ping-only           %s %s  %-22s%b   %s\n" \
+                printf "       Ping-only           %b %s  %-22s%b   %s\n" \
                     "$tcp_badge" "$tcp_sym" "$tcp_msg" "$eval_suffix" "$svc_desc"
             else
-                printf "       Port %5s/TCP %s %s  %-22s%b   %s\n" \
+                printf "       Port %5s/TCP %b %s  %-22s%b   %s\n" \
                     "$svc_port" "$tcp_badge" "$tcp_sym" "$tcp_msg" "$eval_suffix" "$svc_desc"
             fi
         fi
 
-        # Build JSON fragment for this service
-        svc_port_json="null"
-        if [[ "$svc_port" != "-" ]] && [[ -n "$svc_port" ]]; then
-            svc_port_json="$svc_port"
-        fi
-
-        svc_json=$(python3 - << PYEOF
-import json
+        # Write service JSON as a single line to temp file (parsed by Python later)
+        python3 -c "
+import json, sys
+port = int(sys.argv[1]) if sys.argv[1] not in ('-','') else None
 svc = {
-    "port":        $(python3 -c "import json,sys; p=sys.argv[1]; print(json.dumps(int(p)) if p not in ('-','') else 'None')" "${svc_port:--}"),
-    "description": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${svc_desc}"),
-    "expected":    $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${svc_expected}"),
-    "tcp":         {"status": "$tcp_st", "error": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${tcp_err:-}")},
-    "overall":     "$overall",
-    "eval_result": "$eval_result"
+    'port':        port,
+    'description': sys.argv[2],
+    'expected':    sys.argv[3],
+    'tcp':         {'status': sys.argv[4], 'error': sys.argv[5]},
+    'overall':     sys.argv[6],
+    'eval_result': sys.argv[7],
 }
 print(json.dumps(svc))
-PYEOF
-)
-        if [[ -n "$host_services_json" ]]; then
-            host_services_json="${host_services_json},"
-        fi
-        host_services_json="${host_services_json}${svc_json}"
+" "${svc_port:--}" "${svc_desc}" "${svc_expected}" \
+  "$tcp_st" "${tcp_err:-}" "$overall" "$eval_result" \
+  >> "$host_svcs_file"
 
     done < "$svc_file"
 
-    # Emit host-level JSON record
-    python3 - << PYEOF >> "$tmpfile"
-import json
+    # Emit host-level JSON record (services read from file to avoid null/None issue)
+    export _HOST="$host" _DNS_ST="$dns_st" _DNS_ADDRS="${dns_addrs:-}" _DNS_ERR="${dns_err:-}"
+    export _PING_ST="$ping_st" _PING_SENT="${ping_sent:-0}" _PING_RECV="${ping_recv:-0}" _PING_RTT="${ping_rtt:-0}"
+    export _SVCS_FILE="$host_svcs_file"
+    python3 - << 'PYEOF' >> "$tmpfile"
+import json, os
+from pathlib import Path
+svcs = []
+sf = os.environ.get('_SVCS_FILE', '')
+if sf and Path(sf).exists():
+    for line in Path(sf).read_text().splitlines():
+        line = line.strip()
+        if line:
+            svcs.append(json.loads(line))
+rtt = os.environ['_PING_RTT']
 r = {
-    "host":     $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$host"),
+    "host": os.environ['_HOST'],
     "dns":  {
-        "status":    "$dns_st",
-        "addresses": $(python3 -c "import json,sys; s=sys.argv[1]; print(json.dumps(s.split(',') if s else []))" "${dns_addrs:-}"),
-        "error":     $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${dns_err:-}")
+        "status":    os.environ['_DNS_ST'],
+        "addresses": [x for x in os.environ['_DNS_ADDRS'].split(',') if x],
+        "error":     os.environ['_DNS_ERR'],
     },
     "ping": {
-        "status":   "$ping_st",
-        "sent":      ${ping_sent:-0},
-        "recv":      ${ping_recv:-0},
-        "avg_rtt":  $([ -n "${ping_rtt:-}" ] && [ "${ping_rtt:-0}" != "0" ] && echo "${ping_rtt}" || echo "null")
+        "status":  os.environ['_PING_ST'],
+        "sent":    int(os.environ['_PING_SENT']),
+        "recv":    int(os.environ['_PING_RECV']),
+        "avg_rtt": int(rtt) if rtt and rtt != '0' else None,
     },
-    "services": [${host_services_json}]
+    "services": svcs,
 }
 print(json.dumps(r))
 PYEOF
