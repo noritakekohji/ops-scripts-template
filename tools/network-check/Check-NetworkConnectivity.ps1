@@ -3,12 +3,23 @@
 .SYNOPSIS
     Check network connectivity (DNS / Ping / TCP port) for multiple targets.
 
+.DESCRIPTION
+    Lines in the target list are grouped by host.
+    DNS and Ping run ONCE per unique host.
+    TCP port checks run once per service (line).
+
 .PARAMETER TargetList
     Path to the target list file.
-    Format: <host>, <port>, <description>
+
+    4-field format (with evaluation):
+      <host>, <port>, <expected>, <description>
+      <expected>: ok (expect reachable) / ng (expect unreachable) / - (no eval)
+
+    3-field format (backward compatible, no evaluation):
+      <host>, <port>, <description>
 
 .PARAMETER PingCount
-    Number of ping attempts per target. Default: 3
+    Number of ping attempts per host. Default: 3
 
 .PARAMETER TimeoutSec
     Timeout in seconds for ping and TCP checks. Default: 3
@@ -17,7 +28,7 @@
     Path for the HTML report file. If omitted, console output only.
 
 .PARAMETER FailOnly
-    Show only targets that have at least one failure or warning.
+    Show only services with failure/warning, or evaluation FAIL.
 
 .EXAMPLE
     .\Check-NetworkConnectivity.ps1 -TargetList targets.lst
@@ -26,10 +37,11 @@
     .\Check-NetworkConnectivity.ps1 -TargetList targets.lst -PingCount 5 -TimeoutSec 5
 
 .NOTES
-    When any target is NG/WARN, an investigation file is automatically generated:
+    DNS fail -> Ping SKIP, TCP SKIP for all services under that host.
+    Evaluation when DNS failed: expected=ok -> FAIL, expected=ng -> SKIP.
+
+    When any service is NG/WARN, an investigation file is automatically generated:
       network_investigation_<timestamp>.txt
-    Contents: network config (ipconfig, route), tracert (ping NG),
-    hosts file + nslookup (DNS NG), Test-NetConnection (port NG).
 #>
 [CmdletBinding()]
 param(
@@ -49,27 +61,68 @@ if ($env:OPS_LOG_FILE) {
 }
 
 # ============================================================
-# List file parser
+# List file parser — returns ordered list of host entries
 # ============================================================
 
 function Read-TargetList([string]$Path) {
-    $targets = @()
+    $hostMap   = [ordered]@{}
+    $hostOrder = [System.Collections.Generic.List[string]]::new()
+
     Get-Content $Path -Encoding UTF8 | ForEach-Object {
-        $line = ($_ -replace '#.*$', '').Trim()   # strip inline comments
+        $line = ($_ -replace '#.*$', '').Trim()
         if (-not $line) { return }
-        $parts = $line -split ',', 3
-        $h     = $parts[0].Trim()
-        $p     = if ($parts.Count -ge 2) { $parts[1].Trim() } else { '' }
-        $d     = if ($parts.Count -ge 3) { $parts[2].Trim() } else { $h }
+
+        $parts = $line -split ',', 4
+        $h = $parts[0].Trim()
         if (-not $h) { return }
+
+        $p = if ($parts.Count -ge 2) { $parts[1].Trim() } else { '' }
+
+        # Detect 3-field vs 4-field
+        $expected = '-'
+        $d        = $h
+
+        if ($parts.Count -ge 4) {
+            # 4-field: host, port, expected, description
+            $rawExp  = $parts[2].Trim().ToLower()
+            $expected = if ($rawExp -in @('ok','ng','-')) { $rawExp } else { '-' }
+            $d = $parts[3].Trim()
+        } elseif ($parts.Count -ge 3) {
+            $rawF3 = $parts[2].Trim().ToLower()
+            if ($rawF3 -in @('ok','ng','-')) {
+                # keyword only, description omitted
+                $expected = $rawF3
+                $d = ''
+            } else {
+                # 3-field: description
+                $d = $parts[2].Trim()
+            }
+        }
+        if (-not $d) { $d = $h }
+
+        # Parse port
         $portNum = $null
         if ($p -and $p -ne '-') {
             $n = 0
             if ([int]::TryParse($p, [ref]$n) -and $n -gt 0 -and $n -le 65535) { $portNum = $n }
         }
-        $targets += @{ host = $h; port = $portNum; description = if ($d) { $d } else { $h } }
+
+        # Register host if new
+        if (-not $hostMap.Contains($h)) {
+            $hostMap[$h] = @{
+                host     = $h
+                services = [System.Collections.Generic.List[hashtable]]::new()
+            }
+            $hostOrder.Add($h)
+        }
+        $hostMap[$h].services.Add(@{
+            port        = $portNum
+            expected    = $expected
+            description = $d
+        })
     }
-    return $targets
+
+    return @($hostOrder | ForEach-Object { $hostMap[$_] })
 }
 
 # ============================================================
@@ -77,7 +130,6 @@ function Read-TargetList([string]$Path) {
 # ============================================================
 
 function Test-DnsHost([string]$Target) {
-    # Skip if IP address
     $ipObj = $null
     if ([System.Net.IPAddress]::TryParse($Target, [ref]$ipObj)) {
         return @{ status = 'na'; addresses = @($Target); error = '' }
@@ -93,9 +145,9 @@ function Test-DnsHost([string]$Target) {
 }
 
 function Test-PingHost([string]$Target, [int]$Count, [int]$TimeoutMs) {
-    $sent  = $Count
-    $recv  = 0
-    $rtts  = @()
+    $sent   = $Count
+    $recv   = 0
+    $rtts   = @()
     $pinger = New-Object System.Net.NetworkInformation.Ping
     for ($i = 0; $i -lt $Count; $i++) {
         try {
@@ -133,61 +185,40 @@ function Test-TcpHost([string]$Target, [int]$Port, [int]$TimeoutMs) {
 }
 
 # ============================================================
-# Overall status
+# Per-service overall status and evaluation
 # ============================================================
 
-function Get-OverallStatus($dns, $ping, $tcp) {
-    $statuses = @($dns.status, $ping.status)
-    if ($null -ne $tcp) { $statuses += $tcp.status }
-    $statuses = $statuses | Where-Object { $_ -ne 'na' }
+function Get-ServiceOverall([string]$DnsSt, $Ping, $Tcp) {
+    if ($DnsSt -eq 'fail') { return 'fail' }
+    $statuses = @($Ping.status)
+    if ($null -ne $Tcp) { $statuses += $Tcp.status }
+    $statuses = $statuses | Where-Object { $_ -notin @('na','skip') }
     if ($statuses -contains 'fail')    { return 'fail' }
     if ($statuses -contains 'partial') { return 'warn' }
     return 'ok'
 }
 
-# ============================================================
-# Console output
-# ============================================================
+# Evaluation truth table — see .NOTES
+function Get-EvalResult([string]$DnsSt, [string]$Expected, $Tcp, $Ping, $Port) {
+    if (-not $Expected -or $Expected -eq '-') { return '-' }
 
-function Write-ResultConsole($r) {
-    $overall = $r.overall
-    $badge   = switch ($overall) { 'ok' { 'OK  ' } 'warn' { 'WARN' } 'fail' { 'FAIL' } }
-    $color   = switch ($overall) { 'ok' { 'Green' } 'warn' { 'Yellow' } 'fail' { 'Red' } }
-
-    Write-Host ("[{0}] {1,-25} {2}" -f $badge, $r.host, $r.description) -ForegroundColor $color
-
-    # DNS
-    $dns = $r.dns
-    $dnsLine = switch ($dns.status) {
-        'ok'   { "✓  $($dns.addresses -join ', ')" }
-        'fail' { "✗  $($dns.error)" }
-        'na'   { "─  N/A (IP address)" }
+    # DNS failed
+    if ($DnsSt -eq 'fail') {
+        return if ($Expected -eq 'ok') { 'FAIL' } else { 'SKIP' }
     }
-    $dnsColor = switch ($dns.status) { 'ok' { 'Green' } 'fail' { 'Red' } default { 'DarkGray' } }
-    Write-Host "       DNS  : $dnsLine" -ForegroundColor $dnsColor
 
-    # Ping
-    $ping = $r.ping
-    $pingRtt = if ($null -ne $ping.avg_rtt) { "$($ping.avg_rtt)ms avg " } else { '' }
-    $pingLine = switch ($ping.status) {
-        'ok'      { "✓  $($pingRtt)($($ping.recv)/$($ping.sent))" }
-        'partial' { "⚠  $($pingRtt)($($ping.recv)/$($ping.sent))" }
-        'fail'    { "✗  ($($ping.recv)/$($ping.sent))" }
-    }
-    $pingColor = switch ($ping.status) { 'ok' { 'Green' } 'partial' { 'Yellow' } 'fail' { 'Red' } }
-    Write-Host "       Ping : $pingLine" -ForegroundColor $pingColor
-
-    # TCP
-    if ($null -ne $r.tcp) {
-        $tcp = $r.tcp
-        $tcpLine = switch ($tcp.status) {
-            'ok'   { "✓  $($r.port)/TCP connected" }
-            'fail' { "✗  $($r.port)/TCP - $($tcp.error)" }
-        }
-        $tcpColor = if ($tcp.status -eq 'ok') { 'Green' } else { 'Red' }
-        Write-Host "       Port : $tcpLine" -ForegroundColor $tcpColor
+    # For ping-only lines (no port), evaluate against ping; otherwise TCP
+    $checkSt = if ($null -ne $Port) {
+        if ($null -ne $Tcp) { $Tcp.status } else { 'skip' }
     } else {
-        Write-Host "       Port : ─  N/A" -ForegroundColor DarkGray
+        $Ping.status
+    }
+
+    if ($Expected -eq 'ok') {
+        return if ($checkSt -eq 'ok') { 'PASS' } else { 'FAIL' }
+    } else {
+        # ng: PASS when NOT reachable
+        return if ($checkSt -ne 'ok') { 'PASS' } else { 'FAIL' }
     }
 }
 
@@ -195,63 +226,99 @@ function Write-ResultConsole($r) {
 # HTML report
 # ============================================================
 
-function New-HtmlReport($results, $meta) {
-    $ok      = @($results | Where-Object { $_.overall -eq 'ok'   }).Count
-    $warn    = @($results | Where-Object { $_.overall -eq 'warn' }).Count
-    $fail    = @($results | Where-Object { $_.overall -eq 'fail' }).Count
-    $total   = $results.Count
-    $genTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+function New-HtmlReport($hostResults, $meta, [bool]$HasEval) {
+    $allSvcs = @(
+        foreach ($h in $hostResults) {
+            foreach ($svc in $h.services) { @{ h = $h; svc = $svc } }
+        }
+    )
 
-    function Status-Badge([string]$st) {
+    $ok            = @($allSvcs | Where-Object { $_.svc.overall -eq 'ok'   }).Count
+    $warn          = @($allSvcs | Where-Object { $_.svc.overall -eq 'warn' }).Count
+    $fail          = @($allSvcs | Where-Object { $_.svc.overall -eq 'fail' }).Count
+    $total         = $allSvcs.Count
+    $passCount     = @($allSvcs | Where-Object { $_.svc.eval_result -eq 'PASS' }).Count
+    $evalFailCount = @($allSvcs | Where-Object { $_.svc.eval_result -eq 'FAIL' }).Count
+    $evalSkipCount = @($allSvcs | Where-Object { $_.svc.eval_result -eq 'SKIP' }).Count
+    $genTime       = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+    function SB([string]$st) {
         switch ($st) {
             'ok'      { "<span class='badge ok'>OK</span>" }
             'partial' { "<span class='badge warn'>PARTIAL</span>" }
             'fail'    { "<span class='badge fail'>FAIL</span>" }
-            'na'      { "<span class='badge na'>N/A</span>" }
-            default   { "<span class='badge na'>$st</span>" }
+            'skip'    { "<span class='badge na'>SKIP</span>" }
+            default   { "<span class='badge na'>N/A</span>" }
         }
     }
-
+    function EB([string]$er) {
+        switch ($er) {
+            'PASS' { "<span class='badge eval-pass'>PASS ✓</span>" }
+            'FAIL' { "<span class='badge eval-fail'>FAIL ✗</span>" }
+            'SKIP' { "<span class='badge eval-skip'>SKIP</span>" }
+            default { "<span class='badge na'>—</span>" }
+        }
+    }
     function HE([string]$s) {
         try { [System.Net.WebUtility]::HtmlEncode($s) }
         catch { $s -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;' }
     }
 
-    $rows = foreach ($r in $results) {
-        $overallBadge = switch ($r.overall) {
+    $rows = foreach ($pair in $allSvcs) {
+        $h   = $pair.h
+        $svc = $pair.svc
+        $dns  = $h.dns
+        $ping = $h.ping
+        $rc   = switch ($svc.overall) { 'ok' {'row-ok'} 'warn' {'row-warn'} 'fail' {'row-fail'} default {''} }
+
+        # DNS cell (host-level, shared for all services of this host)
+        $dnsCell = switch ($dns.status) {
+            'ok'   { (SB 'ok')   + ' ' + (HE ($dns.addresses -join ', ')) }
+            'fail' { (SB 'fail') + ' ' + (HE $dns.error) }
+            default { (SB 'na') + ' IP address' }
+        }
+
+        # Ping cell (host-level)
+        $pRtt  = if ($null -ne $ping.avg_rtt) { "$($ping.avg_rtt)ms " } else { '' }
+        $pingCell = switch ($ping.status) {
+            'ok'      { (SB 'ok')      + " $($pRtt)($($ping.recv)/$($ping.sent))" }
+            'partial' { (SB 'partial') + " $($pRtt)($($ping.recv)/$($ping.sent))" }
+            'fail'    { (SB 'fail')    + " ($($ping.recv)/$($ping.sent))" }
+            default   { SB 'skip' }
+        }
+
+        # TCP cell (service-level)
+        $tcpCell = if ($null -ne $svc.tcp) {
+            switch ($svc.tcp.status) {
+                'ok'   { (SB 'ok')   + " port $($svc.port)/TCP" }
+                'fail' { (SB 'fail') + " port $($svc.port)/TCP &nbsp;$(HE $svc.tcp.error)" }
+                default { (SB 'skip') + ' DNS failed' }
+            }
+        } else { SB 'na' }
+
+        $obadge = switch ($svc.overall) {
             'ok'   { "<span class='badge ok'>OK</span>" }
             'warn' { "<span class='badge warn'>WARN</span>" }
             'fail' { "<span class='badge fail'>FAIL</span>" }
-        }
-        $rowClass = switch ($r.overall) { 'ok' { 'row-ok' } 'warn' { 'row-warn' } 'fail' { 'row-fail' } }
-
-        # DNS cell
-        $dnsCell = switch ($r.dns.status) {
-            'ok'   { (Status-Badge 'ok')   + " " + (HE ($r.dns.addresses -join ', ')) }
-            'fail' { (Status-Badge 'fail') + " " + (HE $r.dns.error) }
-            'na'   { (Status-Badge 'na')   + " IP address" }
+            default { "<span class='badge na'>$($svc.overall)</span>" }
         }
 
-        # Ping cell
-        $pingRtt = if ($null -ne $r.ping.avg_rtt) { "$($r.ping.avg_rtt)ms " } else { '' }
-        $pingCell = switch ($r.ping.status) {
-            'ok'      { (Status-Badge 'ok')      + " $($pingRtt)($($r.ping.recv)/$($r.ping.sent))" }
-            'partial' { (Status-Badge 'partial') + " $($pingRtt)($($r.ping.recv)/$($r.ping.sent))" }
-            'fail'    { (Status-Badge 'fail')    + " ($($r.ping.recv)/$($r.ping.sent))" }
-        }
+        $evalCols = if ($HasEval) {
+            $expHtml = if ($svc.expected -and $svc.expected -ne '-') { HE $svc.expected.ToUpper() } else { '—' }
+            "<td>$expHtml</td><td>$(EB $svc.eval_result)</td>"
+        } else { '' }
 
-        # TCP cell
-        $tcpCell = if ($null -ne $r.tcp) {
-            switch ($r.tcp.status) {
-                'ok'   { (Status-Badge 'ok')   + " $($r.port)/TCP" }
-                'fail' { (Status-Badge 'fail') + " $($r.port)/TCP $(HE $r.tcp.error)" }
-            }
-        } else {
-            Status-Badge 'na'
-        }
-
-        "<tr class='$rowClass'><td>$(HE $r.host)</td><td>$(HE $r.description)</td><td>$dnsCell</td><td>$pingCell</td><td>$tcpCell</td><td>$overallBadge</td></tr>"
+        "<tr class='$rc'><td>$(HE $h.host)</td><td>$(HE $svc.description)</td>" +
+        "<td>$dnsCell</td><td>$pingCell</td><td>$tcpCell</td><td>$obadge</td>$evalCols</tr>"
     }
+
+    $evalHeaders = if ($HasEval) { '<th>Expected</th><th>Evaluation</th>' } else { '' }
+    $evalCards   = if ($HasEval) {
+        "  <div class='card eval-pass'><div class='num'>$passCount</div><div class='lbl'>PASS</div></div>`n" +
+        "  <div class='card eval-fail'><div class='num'>$evalFailCount</div><div class='lbl'>Eval FAIL</div></div>`n" +
+        "  <div class='card eval-skip'><div class='num'>$evalSkipCount</div><div class='lbl'>Eval SKIP</div></div>"
+    } else { '' }
+    $evalFilterBtn = if ($HasEval) { '<button onclick="filterEvalFail(this)">Eval FAIL</button>' } else { '' }
 
     return @"
 <!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
@@ -269,7 +336,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;background:#f0f2f5;c
 .card{background:#fff;border-radius:8px;padding:16px 20px;text-align:center;flex:1;min-width:100px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .card .num{font-size:28px;font-weight:700}.card .lbl{font-size:11px;color:#64748b;margin-top:2px}
 .card.total .num{color:#1e293b}.card.ok .num{color:#16a34a}.card.warn .num{color:#d97706}.card.fail .num{color:#dc2626}
-.filter-bar{padding:8px 24px;display:flex;gap:8px;align-items:center}
+.card.eval-pass .num{color:#16a34a}.card.eval-fail .num{color:#dc2626}.card.eval-skip .num{color:#94a3b8}
+.filter-bar{padding:8px 24px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .filter-bar label{font-size:12px;color:#64748b;margin-right:4px}
 .filter-bar button{font-size:12px;padding:4px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer}
 .filter-bar button.active{background:#1e293b;color:#fff;border-color:#1e293b}
@@ -278,17 +346,15 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 th{background:#f1f5f9;padding:8px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0}
 td{padding:7px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
 tr:last-child td{border-bottom:none}
-tr.row-ok{background:#fff}
-tr.row-warn{background:#fffbeb}
-tr.row-fail{background:#fff1f2}
+tr.row-ok{background:#fff}tr.row-warn{background:#fffbeb}tr.row-fail{background:#fff1f2}
 .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap}
-.badge.ok{background:#dcfce7;color:#15803d}
-.badge.warn{background:#fef3c7;color:#92400e}
-.badge.fail{background:#fee2e2;color:#b91c1c}
-.badge.na{background:#f1f5f9;color:#64748b}
+.badge.ok{background:#dcfce7;color:#15803d}.badge.warn{background:#fef3c7;color:#92400e}
+.badge.fail{background:#fee2e2;color:#b91c1c}.badge.na{background:#f1f5f9;color:#64748b}
+.badge.eval-pass{background:#dcfce7;color:#15803d}
+.badge.eval-fail{background:#fee2e2;color:#b91c1c}
+.badge.eval-skip{background:#f1f5f9;color:#64748b}
 td:first-child{font-family:monospace;font-weight:600}
-.footer{text-align:center;padding:16px;font-size:11px;color:#94a3b8}
-.hidden{display:none}
+.footer{text-align:center;padding:16px;font-size:11px;color:#94a3b8}.hidden{display:none}
 </style></head><body>
 <div class="header">
   <h1>&#127760; Network Connectivity Check</h1>
@@ -305,53 +371,69 @@ td:first-child{font-family:monospace;font-weight:600}
   <div class="card ok">   <div class="num">$ok</div><div class="lbl">OK</div></div>
   <div class="card warn"> <div class="num">$warn</div><div class="lbl">Warning</div></div>
   <div class="card fail"> <div class="num">$fail</div><div class="lbl">Failed</div></div>
+$evalCards
 </div>
 <div class="filter-bar">
   <label>Show:</label>
-  <button class="active" onclick="filter('all',this)">All</button>
-  <button onclick="filter('ok',this)">OK</button>
-  <button onclick="filter('warn',this)">Warning</button>
-  <button onclick="filter('fail',this)">Failed</button>
+  <button class="active" onclick="filterAll(this)">All</button>
+  <button onclick="filterStatus('row-ok',this)">OK</button>
+  <button onclick="filterStatus('row-warn',this)">Warning</button>
+  <button onclick="filterStatus('row-fail',this)">Failed</button>
+  $evalFilterBtn
 </div>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Host</th><th>Description</th><th>DNS</th><th>Ping</th><th>Port (TCP)</th><th>Status</th></tr></thead>
+  <thead><tr><th>Host</th><th>Description</th><th>DNS</th><th>Ping</th><th>Port (TCP)</th><th>Status</th>$evalHeaders</tr></thead>
   <tbody>$($rows -join "`n")</tbody>
 </table>
 </div>
 <div class="footer">Check-NetworkConnectivity.ps1 &bull; $genTime</div>
 <script>
-function filter(mode,btn){
+function filterAll(btn){
   document.querySelectorAll('.filter-bar button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  document.querySelectorAll('tbody tr').forEach(row=>{
-    var show = mode==='all'
-      || (mode==='ok'   && row.classList.contains('row-ok'))
-      || (mode==='warn' && row.classList.contains('row-warn'))
-      || (mode==='fail' && row.classList.contains('row-fail'));
-    row.classList.toggle('hidden',!show);
-  });
+  document.querySelectorAll('tbody tr').forEach(r=>r.classList.remove('hidden'));
+}
+function filterStatus(cls,btn){
+  document.querySelectorAll('.filter-bar button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('tbody tr').forEach(r=>r.classList.toggle('hidden',!r.classList.contains(cls)));
+}
+function filterEvalFail(btn){
+  document.querySelectorAll('.filter-bar button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('tbody tr').forEach(r=>r.classList.toggle('hidden',!r.querySelector('.badge.eval-fail')));
 }
 </script></body></html>
 "@
 }
 
 # ============================================================
-# Investigation (called automatically for NG/WARN targets)
+# Investigation (called automatically for NG/WARN services)
 # ============================================================
 
-function Invoke-Investigation($results, $outFile, $timeoutSec) {
-    $ts        = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $ngResults = @($results | Where-Object { $_.overall -in @('fail', 'warn') })
-    if ($ngResults.Count -eq 0) { return }
+function Invoke-Investigation($hostResults, $outFile, $timeoutSec) {
+    # Flatten NG/WARN services across all hosts
+    $ngEntries = @(
+        foreach ($h in $hostResults) {
+            $pt = if ($h.dns.addresses.Count -gt 0) { $h.dns.addresses[0] } else { $h.host }
+            foreach ($svc in $h.services) {
+                if ($svc.overall -in @('fail','warn')) {
+                    @{ host = $h.host; dns = $h.dns; ping = $h.ping; pt = $pt; svc = $svc }
+                }
+            }
+        }
+    )
+    if ($ngEntries.Count -eq 0) { return }
 
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Write-Host ''
-    Write-Host "=== Collecting Investigation Info ($($ngResults.Count) NG target(s)) ===" -ForegroundColor Cyan
+    Write-Host "=== Collecting Investigation Info ($($ngEntries.Count) NG service(s)) ===" -ForegroundColor Cyan
     Write-Host "  Output: $outFile"
     Write-Host "  (tracert may take a while per host...)"
 
-    $sep  = '=' * 64
-    $dash = '-' * 64
+    $sep   = '=' * 64
+    $dash  = '-' * 64
     $lines = [System.Collections.Generic.List[string]]::new()
 
     $lines.Add($sep)
@@ -362,77 +444,74 @@ function Invoke-Investigation($results, $outFile, $timeoutSec) {
     $lines.Add('')
     $lines.Add('## System Network Information')
     $lines.Add('')
-
     $lines.Add('### Network Adapters (ipconfig /all)')
     try   { $lines.Add((ipconfig /all 2>&1 | Out-String).TrimEnd()) }
     catch { $lines.Add('(Not available)') }
     $lines.Add('')
-
     $lines.Add('### Routing Table (route print)')
     try   { $lines.Add((route print 2>&1 | Out-String).TrimEnd()) }
     catch { $lines.Add('(Not available)') }
     $lines.Add('')
-
     $lines.Add('### DNS Client Server Addresses')
     try   { $lines.Add((Get-DnsClientServerAddress | Format-Table InterfaceAlias, ServerAddresses -AutoSize | Out-String).TrimEnd()) }
     catch { $lines.Add('(Not available)') }
     $lines.Add('')
 
     $idx = 0
-    foreach ($r in $ngResults) {
+    foreach ($entry in $ngEntries) {
         $idx++
+        $dns  = $entry.dns
+        $ping = $entry.ping
+        $pt   = $entry.pt
+        $svc  = $entry.svc
+
         $failLabels = [System.Collections.Generic.List[string]]::new()
-        if ($r.dns.status  -eq 'fail')    { $failLabels.Add('DNS') }
-        if ($r.ping.status -eq 'fail')    { $failLabels.Add('Ping') }
-        if ($r.ping.status -eq 'partial') { $failLabels.Add('Ping(partial)') }
-        if ($null -ne $r.tcp -and $r.tcp.status -eq 'fail') { $failLabels.Add('Port') }
-        $failStr = $failLabels -join ', '
+        if ($dns.status  -eq 'fail')    { $failLabels.Add('DNS') }
+        if ($ping.status -eq 'fail')    { $failLabels.Add('Ping') }
+        if ($ping.status -eq 'partial') { $failLabels.Add('Ping(partial)') }
+        if ($null -ne $svc.tcp -and $svc.tcp.status -eq 'fail') { $failLabels.Add('Port') }
 
         $lines.Add($sep)
-        $lines.Add("[$idx] HOST: $($r.host)  ($($r.description))")
-        $lines.Add("     Status: $($r.overall.ToUpper())  NG items: $failStr")
+        $lines.Add("[$idx] HOST: $($entry.host)  ($($svc.description))")
+        $lines.Add("     Status: $($svc.overall.ToUpper())  NG items: $($failLabels -join ', ')")
         $lines.Add($dash)
         $lines.Add('')
 
-        # DNS NG → hosts file + nslookup
-        if ($r.dns.status -eq 'fail') {
+        # DNS NG
+        if ($dns.status -eq 'fail') {
             $lines.Add('### DNS Failure Investigation')
-            $lines.Add("  Error: $($r.dns.error)")
+            $lines.Add("  Error: $($dns.error)")
             $lines.Add('')
             $hostsPath = [IO.Path]::Combine($env:SystemRoot, 'System32', 'drivers', 'etc', 'hosts')
             $lines.Add("#### hosts file ($hostsPath)")
             try   { $lines.Add((Get-Content $hostsPath -Encoding UTF8 -ErrorAction Stop | Out-String).TrimEnd()) }
             catch { $lines.Add('(Could not read hosts file)') }
             $lines.Add('')
-            $lines.Add("#### nslookup: $($r.host)")
-            try   { $lines.Add((nslookup $r.host 2>&1 | Out-String).TrimEnd()) }
+            $lines.Add("#### nslookup: $($entry.host)")
+            try   { $lines.Add((nslookup $entry.host 2>&1 | Out-String).TrimEnd()) }
             catch { $lines.Add('(nslookup failed)') }
             $lines.Add('')
         }
 
-        # Ping NG/partial → tracert
-        if ($r.ping.status -in @('fail', 'partial')) {
-            $pingTarget = if ($r.dns.addresses.Count -gt 0) { $r.dns.addresses[0] } else { $r.host }
-            $waitMs     = $timeoutSec * 1000
+        # Ping NG
+        if ($ping.status -in @('fail','partial')) {
+            $waitMs = $timeoutSec * 1000
             $lines.Add('### Ping NG Investigation')
             $lines.Add('')
-            $lines.Add("#### tracert: $pingTarget")
-            try   { $lines.Add((tracert -d -h 20 -w $waitMs $pingTarget 2>&1 | Out-String).TrimEnd()) }
+            $lines.Add("#### tracert: $pt")
+            try   { $lines.Add((tracert -d -h 20 -w $waitMs $pt 2>&1 | Out-String).TrimEnd()) }
             catch { $lines.Add('(tracert failed)') }
             $lines.Add('')
         }
 
-        # Port NG → Test-NetConnection
-        if ($null -ne $r.tcp -and $r.tcp.status -eq 'fail' -and $null -ne $r.port) {
-            $pingTarget = if ($r.dns.addresses.Count -gt 0) { $r.dns.addresses[0] } else { $r.host }
+        # Port NG
+        if ($null -ne $svc.tcp -and $svc.tcp.status -eq 'fail' -and $null -ne $svc.port) {
             $lines.Add('### Port NG Investigation')
             $lines.Add('')
-            $lines.Add("#### Test-NetConnection: $pingTarget port $($r.port)")
+            $lines.Add("#### Test-NetConnection: $pt port $($svc.port)")
             try {
-                $tnc = Test-NetConnection -ComputerName $pingTarget -Port $r.port `
-                    -InformationLevel Detailed `
-                    -ErrorAction SilentlyContinue `
-                    -WarningAction SilentlyContinue
+                $tnc = Test-NetConnection -ComputerName $pt -Port $svc.port `
+                    -InformationLevel Detailed -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
                 $lines.Add(($tnc | Format-List | Out-String).TrimEnd())
             } catch {
                 $lines.Add("(Test-NetConnection failed: $($_.Exception.Message))")
@@ -446,9 +525,7 @@ function Invoke-Investigation($results, $outFile, $timeoutSec) {
     $lines.Add($sep)
 
     $outDir = Split-Path -Parent $outFile
-    if ($outDir -and -not (Test-Path $outDir)) {
-        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    }
+    if ($outDir -and -not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
     [System.IO.File]::WriteAllText(
         $outFile,
         ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
@@ -461,83 +538,156 @@ function Invoke-Investigation($results, $outFile, $timeoutSec) {
 # Main
 # ============================================================
 try {
-    if (-not (Test-Path -LiteralPath $TargetList)) {
-        Write-Error "Target list not found: $TargetList"
-        exit 2
-    }
+    if (-not (Test-Path -LiteralPath $TargetList)) { Write-Error "Target list not found: $TargetList"; exit 2 }
 
-    $targets = Read-TargetList $TargetList
-    if ($targets.Count -eq 0) {
-        Write-Warning "No targets found in $TargetList"
-        exit 0
-    }
+    $hostEntries = Read-TargetList $TargetList
+    if ($hostEntries.Count -eq 0) { Write-Warning "No targets found in $TargetList"; exit 0 }
 
-    $timeoutMs = $TimeoutSec * 1000
+    $timeoutMs     = $TimeoutSec * 1000
+    $okCount       = 0; $warnCount  = 0; $failCount     = 0; $totalCount = 0
+    $passCount     = 0; $evalFailCount = 0; $evalSkipCount = 0
+    $hasEval       = $false
 
     Write-Host ''
     Write-Host '=== Network Connectivity Check ===' -ForegroundColor Cyan
     Write-Host "  List    : $TargetList"
-    Write-Host "  Targets : $($targets.Count)"
+    Write-Host "  Hosts   : $($hostEntries.Count)"
     Write-Host "  Ping    : $PingCount packets / ${TimeoutSec}s timeout"
     Write-Host ''
 
-    $results = @()
-    foreach ($t in $targets) {
-        $dns  = Test-DnsHost $t.host
-        # Use resolved IP for ping/TCP if DNS succeeded and original is hostname
-        $pingTarget = if ($dns.status -eq 'ok' -and $dns.addresses.Count -gt 0) { $dns.addresses[0] } else { $t.host }
-        $ping = Test-PingHost $pingTarget $PingCount $timeoutMs
-        $tcp  = if ($null -ne $t.port) { Test-TcpHost $pingTarget $t.port $timeoutMs } else { $null }
+    $hostResults = [System.Collections.Generic.List[hashtable]]::new()
 
-        $r = @{
-            host        = $t.host
-            port        = $t.port
-            description = $t.description
-            dns         = $dns
-            ping        = $ping
-            tcp         = $tcp
-            overall     = (Get-OverallStatus $dns $ping $tcp)
-        }
-        $results += $r
+    foreach ($hEntry in $hostEntries) {
+        $host = $hEntry.host
 
-        if (-not $FailOnly -or $r.overall -ne 'ok') {
-            Write-ResultConsole $r
+        # DNS — once per host
+        $dns = Test-DnsHost $host
+        $pingTarget = if ($dns.status -eq 'ok' -and $dns.addresses.Count -gt 0) { $dns.addresses[0] } else { $host }
+
+        # Ping — once per host (skip if DNS failed)
+        $ping = if ($dns.status -ne 'fail') {
+            Test-PingHost $pingTarget $PingCount $timeoutMs
+        } else {
+            @{ status = 'skip'; sent = $PingCount; recv = 0; avg_rtt = $null }
         }
+
+        # Console: HOST header
+        Write-Host ''
+        Write-Host "[HOST] $host" -ForegroundColor White
+
+        # DNS line
+        switch ($dns.status) {
+            'ok'   { Write-Host "       DNS  : $($dns.addresses -join ', ')" -ForegroundColor Green }
+            'fail' { Write-Host "       DNS  : $($dns.error)" -ForegroundColor Red }
+            'na'   { Write-Host "       DNS  : N/A (IP address)" -ForegroundColor DarkGray }
+        }
+
+        # Ping line
+        $pRtt = if ($null -ne $ping.avg_rtt) { "$($ping.avg_rtt)ms avg " } else { '' }
+        switch ($ping.status) {
+            'ok'      { Write-Host "       Ping : $($pRtt)($($ping.recv)/$($ping.sent))" -ForegroundColor Green }
+            'partial' { Write-Host "       Ping : $($pRtt)($($ping.recv)/$($ping.sent))" -ForegroundColor Yellow }
+            'fail'    { Write-Host "       Ping : ($($ping.recv)/$($ping.sent))" -ForegroundColor Red }
+            'skip'    { Write-Host "       Ping : Skip (DNS failed)" -ForegroundColor DarkGray }
+        }
+
+        $svcResults = [System.Collections.Generic.List[hashtable]]::new()
+
+        foreach ($svc in $hEntry.services) {
+            $totalCount++
+
+            # TCP — per service (skip if DNS failed, null if ping-only)
+            $tcp = if ($dns.status -eq 'fail') {
+                @{ status = 'skip'; error = 'DNS failed' }
+            } elseif ($null -ne $svc.port) {
+                Test-TcpHost $pingTarget $svc.port $timeoutMs
+            } else {
+                $null
+            }
+
+            $overall    = Get-ServiceOverall $dns.status $ping $tcp
+            $evalResult = Get-EvalResult $dns.status $svc.expected $tcp $ping $svc.port
+
+            switch ($overall) { 'ok' { $okCount++ } 'warn' { $warnCount++ } 'fail' { $failCount++ } }
+            if ($evalResult -ne '-') {
+                $hasEval = $true
+                switch ($evalResult) { 'PASS' { $passCount++ } 'FAIL' { $evalFailCount++ } 'SKIP' { $evalSkipCount++ } }
+            }
+
+            # Console service line
+            $showLine = -not ($FailOnly -and $overall -eq 'ok' -and $evalResult -ne 'FAIL')
+            if ($showLine) {
+                $tcpText  = if ($null -eq $tcp)               { '[N/A ] Ping only' }
+                            elseif ($tcp.status -eq 'ok')     { '[OK  ] Connected' }
+                            elseif ($tcp.status -eq 'skip')   { '[SKIP] DNS failed' }
+                            else                               { "[FAIL] $($tcp.error)" }
+                $tcpColor = if ($null -eq $tcp -or $tcp.status -eq 'skip') { 'DarkGray' }
+                            elseif ($tcp.status -eq 'ok')     { 'Green' }
+                            else                               { 'Red' }
+
+                $portLabel = if ($null -ne $svc.port) { "Port $($svc.port)/TCP " } else { 'Ping-only   ' }
+                $lineText  = "       $portLabel $tcpText"
+
+                if ($svc.expected -and $svc.expected -ne '-') {
+                    $evalColor = switch ($evalResult) { 'PASS' { 'Green' } 'FAIL' { 'Red' } default { 'DarkGray' } }
+                    Write-Host $lineText -ForegroundColor $tcpColor -NoNewline
+                    Write-Host "    Expected $($svc.expected.ToUpper()) -> $evalResult" -ForegroundColor $evalColor -NoNewline
+                    Write-Host "   $($svc.description)"
+                } else {
+                    Write-Host "$lineText   $($svc.description)" -ForegroundColor $tcpColor
+                }
+            }
+
+            $svcResults.Add(@{
+                port        = $svc.port
+                description = $svc.description
+                expected    = $svc.expected
+                tcp         = $tcp
+                overall     = $overall
+                eval_result = $evalResult
+            })
+        }
+
+        $hostResults.Add(@{
+            host     = $host
+            dns      = $dns
+            ping     = $ping
+            services = $svcResults
+        })
     }
 
     # Summary
-    $okCount   = @($results | Where-Object { $_.overall -eq 'ok'   }).Count
-    $warnCount = @($results | Where-Object { $_.overall -eq 'warn' }).Count
-    $failCount = @($results | Where-Object { $_.overall -eq 'fail' }).Count
-
     Write-Host ''
     Write-Host ('─' * 50)
-    Write-Host "  Total: $($results.Count)   " -NoNewline
-    Write-Host "OK: $okCount   " -ForegroundColor Green -NoNewline
+    Write-Host "  Total: $totalCount   " -NoNewline
+    Write-Host "OK: $okCount   "      -ForegroundColor Green  -NoNewline
     Write-Host "Warning: $warnCount   " -ForegroundColor Yellow -NoNewline
-    Write-Host "Failed: $failCount" -ForegroundColor Red
+    Write-Host "Failed: $failCount"    -ForegroundColor Red
+    if ($hasEval) {
+        Write-Host '  Evaluation: ' -NoNewline
+        Write-Host "PASS: $passCount"      -ForegroundColor Green   -NoNewline
+        Write-Host ' / '                   -NoNewline
+        Write-Host "FAIL: $evalFailCount"  -ForegroundColor Red     -NoNewline
+        Write-Host ' / '                   -NoNewline
+        Write-Host "SKIP: $evalSkipCount"  -ForegroundColor DarkGray
+    }
     Write-Host ''
 
     # HTML
     if ($HtmlReport) {
         $htmlDir = Split-Path -Parent $HtmlReport
         if ($htmlDir -and -not (Test-Path $htmlDir)) { New-Item -ItemType Directory -Path $htmlDir -Force | Out-Null }
-        $meta = @{
-            listFile  = $TargetList
-            pingCount = $PingCount
-            timeout   = $TimeoutSec
-            hostname  = $env:COMPUTERNAME
-        }
-        $html = New-HtmlReport $results $meta
+        $meta = @{ listFile = $TargetList; pingCount = $PingCount; timeout = $TimeoutSec; hostname = $env:COMPUTERNAME }
+        $html = New-HtmlReport $hostResults $meta $hasEval
         [System.IO.File]::WriteAllText($HtmlReport, $html, [System.Text.Encoding]::UTF8)
         Write-Host "  HTML report: $HtmlReport" -ForegroundColor Green
     }
 
-    # Investigation (auto-run on NG/WARN)
+    # Investigation
     if ($failCount -gt 0 -or $warnCount -gt 0) {
         $investTs   = Get-Date -Format 'yyyyMMdd-HHmmss'
         $investFile = "network_investigation_${investTs}.txt"
-        Invoke-Investigation $results $investFile $TimeoutSec
+        Invoke-Investigation $hostResults $investFile $TimeoutSec
     }
 
     exit $(if ($failCount -gt 0) { 1 } else { 0 })

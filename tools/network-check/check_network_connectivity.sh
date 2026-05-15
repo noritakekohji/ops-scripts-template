@@ -14,9 +14,25 @@
 #   -f          Show failed/warning targets only
 #   -h          Show this help
 #
-# List file format:
+# List file format (4-field, preferred):
+#   <host>, <port>, <expected>, <description>
+#
+#   <port>     : TCP port number, or '-' for ping-only check
+#   <expected> : 'ok' (expect reachable), 'ng' (expect unreachable), '-' (no eval)
+#
+# List file format (3-field, backward compatible — no evaluation):
 #   <host>, <port>, <description>
-#   Use '-' or empty port to skip TCP port check.
+#
+# Examples:
+#   google.com,   443, ok, HTTPS web
+#   google.com,    22, ng, SSH (should be blocked)
+#   8.8.8.8,        -, ok, Google DNS ping only
+#   192.168.1.1,    -,   , Default Gateway (no eval, 3-field style)
+#
+# Architecture:
+#   Lines are grouped by host. Per unique host: DNS + Ping run ONCE.
+#   Per service under each host: TCP check runs (skipped if DNS failed).
+#   Ping is skipped entirely when DNS fails.
 #
 # Investigation output:
 #   When any target is NG/WARN, an investigation file is automatically
@@ -26,7 +42,7 @@
 # ============================================================================
 set -euo pipefail
 
-usage() { sed -n '2,17p' "$0" >&2; exit 1; }
+usage() { sed -n '2,32p' "$0" >&2; exit 1; }
 
 list_file=""
 ping_count=3
@@ -137,6 +153,56 @@ except Exception as e:
 }
 
 # ============================================================
+# Evaluation logic
+# ============================================================
+
+# compute_eval <dns_status> <expected> <check_status>
+# check_status: tcp status, or ping status for ping-only lines
+# Prints: PASS | FAIL | SKIP | -
+compute_eval() {
+    local dns_st="$1"
+    local expected="$2"
+    local check_st="$3"
+
+    # No evaluation requested
+    if [[ "$expected" == "-" ]] || [[ -z "$expected" ]]; then
+        echo "-"
+        return
+    fi
+
+    # DNS failed
+    if [[ "$dns_st" == "fail" ]]; then
+        case "$expected" in
+            ok) echo "FAIL" ;;
+            ng) echo "SKIP" ;;
+            *)  echo "-" ;;
+        esac
+        return
+    fi
+
+    # DNS ok or na
+    case "$expected" in
+        ok)
+            if [[ "$check_st" == "ok" ]]; then
+                echo "PASS"
+            else
+                echo "FAIL"
+            fi
+            ;;
+        ng)
+            if [[ "$check_st" == "ok" ]]; then
+                echo "FAIL"
+            else
+                echo "PASS"
+            fi
+            ;;
+        *)
+            echo "-"
+            ;;
+    esac
+}
+
+# ============================================================
 # Investigation (called automatically for NG/WARN targets)
 # ============================================================
 
@@ -145,7 +211,7 @@ run_investigation() {
     local ts
     ts=$(date '+%Y-%m-%d %H:%M:%S')
 
-    # Extract NG/WARN targets as tab-separated lines
+    # Extract NG/WARN services as tab-separated lines
     local ng_info
     ng_info=$(python3 - "$results_file" << 'PYEOF'
 import json, sys
@@ -155,19 +221,27 @@ for line in open(sys.argv[1]):
     if not line:
         continue
     r = json.loads(line)
-    if r['overall'] not in ('fail', 'warn'):
-        continue
-    port    = str(r['port']) if r['port'] is not None else '-'
-    addrs   = ','.join(r['dns']['addresses']) if r['dns']['addresses'] else ''
-    pt      = addrs.split(',')[0] if addrs else r['host']
-    dns_err = r['dns'].get('error', '')
-    tcp_st  = r['tcp']['status'] if r['tcp'] else 'na'
-    tcp_err = r['tcp'].get('error', '') if r['tcp'] else ''
-    print('\t'.join([
-        r['host'], r['overall'],
-        r['dns']['status'], r['ping']['status'], tcp_st,
-        port, pt, r['description'], dns_err, tcp_err
-    ]))
+    host    = r['host']
+    dns     = r['dns']
+    ping    = r['ping']
+    dns_st  = dns['status']
+    ping_st = ping['status']
+    addrs   = dns.get('addresses', [])
+    dns_err = dns.get('error', '')
+    ping_target = addrs[0] if addrs else host
+
+    for svc in r['services']:
+        port    = str(svc['port']) if svc['port'] is not None else '-'
+        tcp_st  = svc['tcp']['status']
+        tcp_err = svc['tcp'].get('error', '')
+        overall = svc['overall']
+        if overall not in ('fail', 'warn'):
+            continue
+        print('\t'.join([
+            host, overall,
+            dns_st, ping_st, tcp_st,
+            port, ping_target, svc['description'], dns_err, tcp_err
+        ]))
 PYEOF
 ) || true
 
@@ -290,23 +364,22 @@ PYEOF
 }
 
 # ============================================================
-# Main check loop
+# Phase 1: Parse list file — group services by host
 # ============================================================
 
 hostname_str=$(hostname -s 2>/dev/null || echo "localhost")
 generated=$(date '+%Y-%m-%d %H:%M:%S')
 
-echo ""
-echo "=== Network Connectivity Check ==="
-echo "  List    : $list_file"
-echo "  Timeout : ${timeout_sec}s / Ping: ${ping_count} packets"
-echo ""
+# Associative array: host -> index in unique_hosts (bash 4+)
+declare -A host_index
+declare -a unique_hosts
 
-# Collect results as JSON lines to a temp file
-tmpfile=$(mktemp)
-trap 'rm -f "$tmpfile"' EXIT
+# Temp dir for per-host service files
+svc_tmpdir=$(mktemp -d)
+trap 'rm -rf "$svc_tmpdir"' EXIT
 
-cnt_ok=0; cnt_warn=0; cnt_fail=0; cnt_total=0
+# Also collect results into this JSON-lines file
+tmpfile=$(mktemp --tmpdir="$svc_tmpdir" results.XXXXXX)
 
 while IFS= read -r raw_line; do
     # Strip inline comments and whitespace
@@ -316,105 +389,277 @@ while IFS= read -r raw_line; do
     line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" ]] && continue
 
-    IFS=',' read -r host port desc <<< "$line"
-    host="${host//[[:space:]]}"
-    port="${port//[[:space:]]}"
-    desc="${desc#"${desc%%[![:space:]]*}"}"
-    desc="${desc%"${desc##*[![:space:]]}"}"
+    # Split by comma — up to 4 fields
+    IFS=',' read -r f1 f2 f3 f4 <<< "$line"
+
+    host="${f1//[[:space:]]}"
     [[ -z "$host" ]] && continue
-    [[ -z "$desc" ]] && desc="$host"
 
-    cnt_total=$((cnt_total+1))
+    port="${f2//[[:space:]]}"
+    [[ -z "$port" ]] && port="-"
 
-    # DNS
+    # Detect 3-field vs 4-field by checking if f4 is set
+    local_expected="-"
+    local_desc=""
+    if [[ -n "${f4+x}" ]] && [[ -n "${f4}" || -n "${f3//[[:space:]]}" ]]; then
+        # Could be 4-field: host, port, expected, description
+        # Or 3-field: host, port, description  (f4 empty/absent)
+        trimmed_f3="${f3#"${f3%%[![:space:]]*}"}"
+        trimmed_f3="${trimmed_f3%"${trimmed_f3##*[![:space:]]}"}"
+        trimmed_f4="${f4#"${f4%%[![:space:]]*}"}"
+        trimmed_f4="${trimmed_f4%"${trimmed_f4##*[![:space:]]}"}"
+
+        # If f4 is non-empty, treat as 4-field format
+        if [[ -n "$trimmed_f4" ]]; then
+            local_expected="${trimmed_f3,,}"
+            [[ -z "$local_expected" ]] && local_expected="-"
+            local_desc="$trimmed_f4"
+        else
+            # f4 empty: could still be 4-field with empty description, or 3-field
+            # Check if f3 looks like an expected value keyword
+            case "${trimmed_f3,,}" in
+                ok|ng|-)
+                    local_expected="${trimmed_f3,,}"
+                    local_desc=""
+                    ;;
+                *)
+                    # 3-field: f3 is the description
+                    local_desc="$trimmed_f3"
+                    ;;
+            esac
+        fi
+    else
+        # 3-field: f3 is the description
+        trimmed_f3="${f3#"${f3%%[![:space:]]*}"}"
+        trimmed_f3="${trimmed_f3%"${trimmed_f3##*[![:space:]]}"}"
+        local_desc="$trimmed_f3"
+    fi
+
+    [[ -z "$local_desc" ]] && local_desc="$host"
+
+    # Register host if new
+    if [[ -z "${host_index[$host]+x}" ]]; then
+        host_index[$host]="${#unique_hosts[@]}"
+        unique_hosts+=("$host")
+    fi
+
+    # Append service record to host's service file
+    # Format: port <TAB> expected <TAB> desc
+    svc_file="${svc_tmpdir}/svc_${host_index[$host]}"
+    printf '%s\t%s\t%s\n' "$port" "$local_expected" "$local_desc" >> "$svc_file"
+
+done < "$list_file"
+
+# ============================================================
+# Phase 2: Check phase — per unique host
+# ============================================================
+
+echo ""
+echo "=== Network Connectivity Check ==="
+echo "  List    : $list_file"
+echo "  Timeout : ${timeout_sec}s / Ping: ${ping_count} packets"
+echo ""
+
+cnt_ok=0; cnt_warn=0; cnt_fail=0; cnt_total=0
+cnt_pass=0; cnt_eval_fail=0; cnt_eval_skip=0
+has_eval=0
+
+for host in "${unique_hosts[@]}"; do
+    idx="${host_index[$host]}"
+    svc_file="${svc_tmpdir}/svc_${idx}"
+    [[ ! -f "$svc_file" ]] && continue
+
+    # ---- DNS (once per host) ----
     IFS='|' read -r dns_st dns_addrs dns_err <<< "$(check_dns "$host")"
+
     # Use resolved IP for ping/TCP if possible
     ping_target="$host"
     if [[ "$dns_st" == "ok" ]] && [[ -n "$dns_addrs" ]]; then
         ping_target="${dns_addrs%%,*}"
     fi
 
-    # Ping
-    IFS='|' read -r ping_st ping_sent ping_recv ping_rtt <<< "$(check_ping "$ping_target" "$ping_count" "$timeout_sec")"
-
-    # TCP
-    tcp_st="na"; tcp_err=""
-    if [[ -n "$port" ]] && [[ "$port" != "-" ]]; then
-        IFS='|' read -r tcp_st tcp_err <<< "$(check_tcp "$ping_target" "$port" "$timeout_sec")"
+    # ---- Ping (once per host, skip if DNS failed) ----
+    ping_st="skip"; ping_sent=0; ping_recv=0; ping_rtt="0"
+    if [[ "$dns_st" != "fail" ]]; then
+        IFS='|' read -r ping_st ping_sent ping_recv ping_rtt <<< "$(check_ping "$ping_target" "$ping_count" "$timeout_sec")"
     fi
 
-    # Overall status
-    overall="ok"
-    for st in "$dns_st" "$ping_st" "$tcp_st"; do
-        [[ "$st" == "na" ]] && continue
-        [[ "$st" == "fail"    ]] && { overall="fail"; break; }
-        [[ "$st" == "partial" ]] && overall="warn"
-    done
+    # ---- Console: HOST header ----
+    printf "\n\e[1m[HOST] %s\e[0m\n" "$host"
 
-    case "$overall" in
-        ok)   cnt_ok=$((cnt_ok+1)) ;;
-        warn) cnt_warn=$((cnt_warn+1)) ;;
-        fail) cnt_fail=$((cnt_fail+1)) ;;
+    # DNS line
+    case "$dns_st" in
+        ok)   printf "       DNS  : \e[32m✓\e[0m  %s\n" "$dns_addrs" ;;
+        fail) printf "       DNS  : \e[31m✗\e[0m  %s\n" "$dns_err" ;;
+        na)   printf "       DNS  : \e[90m─\e[0m  N/A (IP address)\n" ;;
     esac
 
-    # Store as JSON
+    # Ping line
+    rtt_label=""
+    [[ -n "${ping_rtt:-}" ]] && [[ "${ping_rtt:-0}" != "0" ]] && rtt_label="${ping_rtt}ms avg "
+    case "$ping_st" in
+        ok)      printf "       Ping : \e[32m✓\e[0m  %s(%s/%s)\n" "$rtt_label" "$ping_recv" "$ping_sent" ;;
+        partial) printf "       Ping : \e[33m⚠\e[0m  %s(%s/%s)\n" "$rtt_label" "$ping_recv" "$ping_sent" ;;
+        fail)    printf "       Ping : \e[31m✗\e[0m  (%s/%s)\n"   "$ping_recv" "$ping_sent" ;;
+        skip)    printf "       Ping : \e[90m─\e[0m  Skip (DNS failed)\n" ;;
+    esac
+
+    # Build JSON services array for this host
+    host_services_json=""
+
+    # ---- Per-service checks ----
+    while IFS=$'\t' read -r svc_port svc_expected svc_desc; do
+        cnt_total=$((cnt_total + 1))
+
+        # TCP check
+        tcp_st="na"; tcp_err=""; overall="ok"
+
+        if [[ "$dns_st" == "fail" ]]; then
+            # DNS failed: skip TCP
+            tcp_st="skip"
+            tcp_err="DNS failed"
+        elif [[ "$svc_port" == "-" ]] || [[ -z "$svc_port" ]]; then
+            # Ping-only line
+            tcp_st="na"
+            tcp_err=""
+        else
+            IFS='|' read -r tcp_st tcp_err <<< "$(check_tcp "$ping_target" "$svc_port" "$timeout_sec")"
+        fi
+
+        # Overall service status
+        if [[ "$dns_st" == "fail" ]]; then
+            overall="fail"
+        else
+            overall="ok"
+            for st in "$ping_st" "$tcp_st"; do
+                [[ "$st" == "na" || "$st" == "skip" ]] && continue
+                [[ "$st" == "fail" ]]    && { overall="fail"; break; }
+                [[ "$st" == "partial" ]] && overall="warn"
+            done
+        fi
+
+        # Evaluation
+        # For ping-only lines (port='-'), evaluate against ping status
+        if [[ "$svc_port" == "-" ]] || [[ -z "$svc_port" ]]; then
+            eval_check_st="$ping_st"
+            [[ "$eval_check_st" == "partial" ]] && eval_check_st="fail"
+        else
+            eval_check_st="$tcp_st"
+            [[ "$eval_check_st" == "skip" ]] && eval_check_st="fail"
+        fi
+        eval_result=$(compute_eval "$dns_st" "$svc_expected" "$eval_check_st")
+
+        # Update summary counters
+        case "$overall" in
+            ok)   cnt_ok=$((cnt_ok+1)) ;;
+            warn) cnt_warn=$((cnt_warn+1)) ;;
+            fail) cnt_fail=$((cnt_fail+1)) ;;
+        esac
+
+        if [[ "$eval_result" != "-" ]]; then
+            has_eval=1
+            case "$eval_result" in
+                PASS) cnt_pass=$((cnt_pass+1)) ;;
+                FAIL) cnt_eval_fail=$((cnt_eval_fail+1)) ;;
+                SKIP) cnt_eval_skip=$((cnt_eval_skip+1)) ;;
+            esac
+        fi
+
+        # ---- Console: service line ----
+        # Skip if fail_only and this service is ok and eval is not FAIL
+        if [[ "$fail_only" -eq 1 ]] && [[ "$overall" == "ok" ]] && [[ "$eval_result" != "FAIL" ]]; then
+            :
+        else
+            # TCP badge
+            case "$tcp_st" in
+                ok)   tcp_badge="\e[32m[OK  ]\e[0m"; tcp_sym="✓"; tcp_msg="Connected" ;;
+                fail) tcp_badge="\e[31m[FAIL]\e[0m"; tcp_sym="✗"; tcp_msg="${tcp_err:-Connection failed}" ;;
+                skip) tcp_badge="\e[90m[SKIP]\e[0m"; tcp_sym="─"; tcp_msg="DNS failed" ;;
+                na)   tcp_badge="\e[90m[N/A ]\e[0m"; tcp_sym="─"; tcp_msg="Ping only" ;;
+                *)    tcp_badge="\e[90m[----]\e[0m"; tcp_sym="─"; tcp_msg="$tcp_st" ;;
+            esac
+
+            # Eval suffix
+            eval_suffix=""
+            if [[ "$svc_expected" != "-" ]] && [[ -n "$svc_expected" ]]; then
+                case "$eval_result" in
+                    PASS) eval_suffix=" Expected ${svc_expected^^} → \e[32mPASS\e[0m" ;;
+                    FAIL) eval_suffix=" Expected ${svc_expected^^} → \e[31mFAIL\e[0m" ;;
+                    SKIP) eval_suffix=" Expected ${svc_expected^^} → \e[90mSKIP\e[0m" ;;
+                    *)    eval_suffix="" ;;
+                esac
+            fi
+
+            if [[ "$svc_port" == "-" ]] || [[ -z "$svc_port" ]]; then
+                printf "       Ping-only           %s %s  %-22s%b   %s\n" \
+                    "$tcp_badge" "$tcp_sym" "$tcp_msg" "$eval_suffix" "$svc_desc"
+            else
+                printf "       Port %5s/TCP %s %s  %-22s%b   %s\n" \
+                    "$svc_port" "$tcp_badge" "$tcp_sym" "$tcp_msg" "$eval_suffix" "$svc_desc"
+            fi
+        fi
+
+        # Build JSON fragment for this service
+        svc_port_json="null"
+        if [[ "$svc_port" != "-" ]] && [[ -n "$svc_port" ]]; then
+            svc_port_json="$svc_port"
+        fi
+
+        svc_json=$(python3 - << PYEOF
+import json
+svc = {
+    "port":        $(python3 -c "import json,sys; p=sys.argv[1]; print(json.dumps(int(p)) if p not in ('-','') else 'None')" "${svc_port:--}"),
+    "description": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${svc_desc}"),
+    "expected":    $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${svc_expected}"),
+    "tcp":         {"status": "$tcp_st", "error": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${tcp_err:-}")},
+    "overall":     "$overall",
+    "eval_result": "$eval_result"
+}
+print(json.dumps(svc))
+PYEOF
+)
+        if [[ -n "$host_services_json" ]]; then
+            host_services_json="${host_services_json},"
+        fi
+        host_services_json="${host_services_json}${svc_json}"
+
+    done < "$svc_file"
+
+    # Emit host-level JSON record
     python3 - << PYEOF >> "$tmpfile"
 import json
 r = {
-    "host":        $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$host"),
-    "port":        $(python3 -c "import json,sys; p=sys.argv[1]; print(json.dumps(int(p)) if p and p!='-' else 'None')" "${port:--}"),
-    "description": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$desc"),
-    "dns":  {"status": "$dns_st",  "addresses": $(python3 -c "import json,sys; s=sys.argv[1]; print(json.dumps(s.split(',') if s else []))" "${dns_addrs:-}"), "error": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${dns_err:-}")},
-    "ping": {"status": "$ping_st", "sent": ${ping_sent:-0}, "recv": ${ping_recv:-0}, "avg_rtt": $([ -n "${ping_rtt:-}" ] && [ "${ping_rtt:-0}" != "0" ] && echo "${ping_rtt}" || echo "None")},
-    "tcp":  {"status": "$tcp_st",  "error": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${tcp_err:-}")},
-    "overall": "$overall"
+    "host":     $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$host"),
+    "dns":  {
+        "status":    "$dns_st",
+        "addresses": $(python3 -c "import json,sys; s=sys.argv[1]; print(json.dumps(s.split(',') if s else []))" "${dns_addrs:-}"),
+        "error":     $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "${dns_err:-}")
+    },
+    "ping": {
+        "status":   "$ping_st",
+        "sent":      ${ping_sent:-0},
+        "recv":      ${ping_recv:-0},
+        "avg_rtt":  $([ -n "${ping_rtt:-}" ] && [ "${ping_rtt:-0}" != "0" ] && echo "${ping_rtt}" || echo "null")
+    },
+    "services": [${host_services_json}]
 }
 print(json.dumps(r))
 PYEOF
 
-    # Console output
-    if [[ "$fail_only" -eq 1 ]] && [[ "$overall" == "ok" ]]; then continue; fi
+done
 
-    badge="    "; color_start=""; color_end=$'\e[0m'
-    case "$overall" in
-        ok)   badge="OK  "; color_start=$'\e[32m' ;;
-        warn) badge="WARN"; color_start=$'\e[33m' ;;
-        fail) badge="FAIL"; color_start=$'\e[31m' ;;
-    esac
-
-    printf "%s[%s] %-25s %s%s\n" "$color_start" "$badge" "$host" "$desc" "$color_end"
-
-    # DNS line
-    case "$dns_st" in
-        ok)   printf "  \e[32m  DNS  : ✓  %s\e[0m\n" "$dns_addrs" ;;
-        fail) printf "  \e[31m  DNS  : ✗  %s\e[0m\n" "$dns_err" ;;
-        na)   printf "  \e[90m  DNS  : ─  N/A (IP address)\e[0m\n" ;;
-    esac
-
-    # Ping line
-    rtt_label=""; [[ -n "${ping_rtt:-}" ]] && [[ "${ping_rtt:-0}" != "0" ]] && rtt_label="${ping_rtt}ms avg "
-    case "$ping_st" in
-        ok)      printf "  \e[32m  Ping : ✓  %s(%s/%s)\e[0m\n" "$rtt_label" "$ping_recv" "$ping_sent" ;;
-        partial) printf "  \e[33m  Ping : ⚠  %s(%s/%s)\e[0m\n" "$rtt_label" "$ping_recv" "$ping_sent" ;;
-        fail)    printf "  \e[31m  Ping : ✗  (%s/%s)\e[0m\n"   "$ping_recv" "$ping_sent" ;;
-    esac
-
-    # TCP line
-    if [[ "$tcp_st" == "na" ]]; then
-        printf "  \e[90m  Port : ─  N/A\e[0m\n"
-    elif [[ "$tcp_st" == "ok" ]]; then
-        printf "  \e[32m  Port : ✓  %s/TCP connected\e[0m\n" "$port"
-    else
-        printf "  \e[31m  Port : ✗  %s/TCP - %s\e[0m\n" "$port" "$tcp_err"
-    fi
-
-done < "$list_file"
-
+# ============================================================
 # Summary
+# ============================================================
+
 echo ""
-echo "$(printf '─%.0s' {1..50})"
+printf '%.0s─' {1..50}; echo ""
 printf "  Total: %d   \e[32mOK: %d\e[0m   \e[33mWarning: %d\e[0m   \e[31mFailed: %d\e[0m\n" \
     "$cnt_total" "$cnt_ok" "$cnt_warn" "$cnt_fail"
+if [[ "$has_eval" -eq 1 ]]; then
+    printf "  Evaluation: \e[32mPASS: %d\e[0m / \e[31mFAIL: %d\e[0m / \e[90mSKIP: %d\e[0m\n" \
+        "$cnt_pass" "$cnt_eval_fail" "$cnt_eval_skip"
+fi
 echo ""
 
 # ============================================================
@@ -438,17 +683,18 @@ if [[ -n "$html_report" ]]; then
     export _HTML_TIMEOUT="$timeout_sec"
     export _HTML_HOSTNAME="$hostname_str"
     export _HTML_GENERATED="$generated"
+    export _HTML_HAS_EVAL="$has_eval"
 
     python3 - "$tmpfile" << 'PYEOF'
 import sys, json, os
 from pathlib import Path
 
 results_file = sys.argv[1]
-results = []
+hosts = []
 for line in Path(results_file).read_text().splitlines():
     line = line.strip()
     if line:
-        results.append(json.loads(line))
+        hosts.append(json.loads(line))
 
 html_output  = os.environ['_HTML_OUTPUT']
 list_file    = os.environ['_HTML_LISTFILE']
@@ -456,49 +702,101 @@ ping_count   = os.environ['_HTML_PINGCOUNT']
 timeout_sec  = os.environ['_HTML_TIMEOUT']
 hostname_str = os.environ['_HTML_HOSTNAME']
 generated    = os.environ['_HTML_GENERATED']
+has_eval     = os.environ['_HTML_HAS_EVAL'] == '1'
 
-ok_count   = sum(1 for r in results if r['overall'] == 'ok')
-warn_count = sum(1 for r in results if r['overall'] == 'warn')
-fail_count = sum(1 for r in results if r['overall'] == 'fail')
-total      = len(results)
+# Flatten all services for summary counting
+all_services = []
+for h in hosts:
+    for svc in h['services']:
+        all_services.append((h, svc))
+
+ok_count   = sum(1 for _, s in all_services if s['overall'] == 'ok')
+warn_count = sum(1 for _, s in all_services if s['overall'] == 'warn')
+fail_count = sum(1 for _, s in all_services if s['overall'] == 'fail')
+total      = len(all_services)
+
+pass_count      = sum(1 for _, s in all_services if s['eval_result'] == 'PASS')
+eval_fail_count = sum(1 for _, s in all_services if s['eval_result'] == 'FAIL')
+eval_skip_count = sum(1 for _, s in all_services if s['eval_result'] == 'SKIP')
 
 def he(s):
     return str(s).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
 
-def badge(st):
-    classes = {'ok':'ok','partial':'warn','fail':'fail','na':'na','warn':'warn'}
-    labels  = {'ok':'OK','partial':'PARTIAL','fail':'FAIL','na':'N/A','warn':'WARN'}
+def badge(st, label=None):
+    classes = {'ok':'ok','partial':'warn','fail':'fail','na':'na','warn':'warn','skip':'na'}
+    labels  = {'ok':'OK','partial':'PARTIAL','fail':'FAIL','na':'N/A','warn':'WARN','skip':'SKIP'}
     c = classes.get(st, 'na')
-    l = labels.get(st, st.upper())
+    l = label if label else labels.get(st, st.upper())
     return f"<span class='badge {c}'>{l}</span>"
 
-rows = []
-for r in results:
-    rc = {'ok':'row-ok','warn':'row-warn','fail':'row-fail'}.get(r['overall'],'')
-    ob = badge(r['overall'])
+def eval_badge(er):
+    if er == 'PASS':
+        return "<span class='badge eval-pass'>PASS</span>"
+    elif er == 'FAIL':
+        return "<span class='badge eval-fail'>FAIL</span>"
+    elif er == 'SKIP':
+        return "<span class='badge eval-skip'>SKIP</span>"
+    else:
+        return "<span class='badge na'>—</span>"
 
-    # DNS
-    dns = r['dns']
+rows = []
+for h, svc in all_services:
+    dns  = h['dns']
+    ping = h['ping']
+    overall = svc['overall']
+    rc = {'ok':'row-ok','warn':'row-warn','fail':'row-fail'}.get(overall,'')
+
+    # DNS cell
     if   dns['status'] == 'ok':   dns_cell = badge('ok')   + ' ' + he(','.join(dns['addresses']))
     elif dns['status'] == 'fail': dns_cell = badge('fail') + ' ' + he(dns['error'])
     else:                          dns_cell = badge('na')   + ' IP address'
 
-    # Ping
-    p = r['ping']
+    # Ping cell
+    p = ping
     rtt = f"{p['avg_rtt']}ms " if p.get('avg_rtt') else ''
     cnt = f"({p['recv']}/{p['sent']})"
     if   p['status'] == 'ok':      ping_cell = badge('ok')      + f' {rtt}{cnt}'
     elif p['status'] == 'partial': ping_cell = badge('partial') + f' {rtt}{cnt}'
+    elif p['status'] == 'skip':    ping_cell = badge('skip')
     else:                           ping_cell = badge('fail')    + f' {cnt}'
 
-    # TCP
-    t = r['tcp']
-    if   t['status'] == 'na':   tcp_cell = badge('na')
-    elif t['status'] == 'ok':   tcp_cell = badge('ok')   + f" {r['port']}/TCP"
-    else:                        tcp_cell = badge('fail') + f" {r['port']}/TCP " + he(t['error'])
+    # Port/TCP cell
+    t = svc['tcp']
+    port_val = svc['port']
+    if   t['status'] == 'na':   tcp_cell = badge('na') + ' Ping only'
+    elif t['status'] == 'skip': tcp_cell = badge('skip') + ' DNS failed'
+    elif t['status'] == 'ok':   tcp_cell = badge('ok')   + f" {port_val}/TCP"
+    else:                        tcp_cell = badge('fail') + f" {port_val}/TCP " + he(t.get('error',''))
 
-    rows.append(f"<tr class='{rc}'><td>{he(r['host'])}</td><td>{he(r['description'])}</td>"
-                f"<td>{dns_cell}</td><td>{ping_cell}</td><td>{tcp_cell}</td><td>{ob}</td></tr>")
+    # Overall badge
+    ob = badge(overall)
+
+    # Expected cell
+    exp = svc.get('expected', '-')
+    exp_cell = he(exp.upper()) if exp and exp != '-' else '—'
+
+    # Eval badge
+    eb = eval_badge(svc.get('eval_result', '-'))
+
+    rows.append(
+        f"<tr class='{rc}'>"
+        f"<td>{he(h['host'])}</td>"
+        f"<td>{he(svc['description'])}</td>"
+        f"<td>{dns_cell}</td>"
+        f"<td>{ping_cell}</td>"
+        f"<td>{tcp_cell}</td>"
+        f"<td>{ob}</td>"
+        f"<td>{exp_cell}</td>"
+        f"<td>{eb}</td>"
+        f"</tr>"
+    )
+
+eval_cards = ""
+if has_eval:
+    eval_cards = f"""
+  <div class="card eval-pass-card"><div class="num">{pass_count}</div><div class="lbl">PASS</div></div>
+  <div class="card eval-fail-card"><div class="num">{eval_fail_count}</div><div class="lbl">Eval FAIL</div></div>
+  <div class="card eval-skip-card"><div class="num">{eval_skip_count}</div><div class="lbl">Eval SKIP</div></div>"""
 
 html = f"""<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
 <title>Network Connectivity Check</title>
@@ -515,6 +813,7 @@ body{{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;background:#f0f2f5;
 .card{{background:#fff;border-radius:8px;padding:16px 20px;text-align:center;flex:1;min-width:100px;box-shadow:0 1px 3px rgba(0,0,0,.1)}}
 .card .num{{font-size:28px;font-weight:700}}.card .lbl{{font-size:11px;color:#64748b;margin-top:2px}}
 .card.total .num{{color:#1e293b}}.card.ok .num{{color:#16a34a}}.card.warn .num{{color:#d97706}}.card.fail .num{{color:#dc2626}}
+.card.eval-pass-card .num{{color:#16a34a}}.card.eval-fail-card .num{{color:#dc2626}}.card.eval-skip-card .num{{color:#64748b}}
 .filter-bar{{padding:8px 24px;display:flex;gap:8px;align-items:center}}
 .filter-bar label{{font-size:12px;color:#64748b;margin-right:4px}}
 .filter-bar button{{font-size:12px;padding:4px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer}}
@@ -528,6 +827,8 @@ tr.row-ok{{background:#fff}}tr.row-warn{{background:#fffbeb}}tr.row-fail{{backgr
 .badge{{display:inline-block;font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap}}
 .badge.ok{{background:#dcfce7;color:#15803d}}.badge.warn{{background:#fef3c7;color:#92400e}}
 .badge.fail{{background:#fee2e2;color:#b91c1c}}.badge.na{{background:#f1f5f9;color:#64748b}}
+.badge.eval-pass{{background:#dcfce7;color:#15803d}}.badge.eval-fail{{background:#fee2e2;color:#b91c1c}}
+.badge.eval-skip{{background:#e2e8f0;color:#64748b}}
 td:first-child{{font-family:monospace;font-weight:600}}
 .footer{{text-align:center;padding:16px;font-size:11px;color:#94a3b8}}.hidden{{display:none}}
 </style></head><body>
@@ -542,7 +843,7 @@ td:first-child{{font-family:monospace;font-weight:600}}
   <div class="card total"><div class="num">{total}</div><div class="lbl">Total</div></div>
   <div class="card ok">   <div class="num">{ok_count}</div><div class="lbl">OK</div></div>
   <div class="card warn"> <div class="num">{warn_count}</div><div class="lbl">Warning</div></div>
-  <div class="card fail"> <div class="num">{fail_count}</div><div class="lbl">Failed</div></div>
+  <div class="card fail"> <div class="num">{fail_count}</div><div class="lbl">Failed</div></div>{eval_cards}
 </div>
 <div class="filter-bar">
   <label>Show:</label>
@@ -552,7 +853,10 @@ td:first-child{{font-family:monospace;font-weight:600}}
   <button onclick="filter('fail',this)">Failed</button>
 </div>
 <div class="table-wrap">
-<table><thead><tr><th>Host</th><th>Description</th><th>DNS</th><th>Ping</th><th>Port (TCP)</th><th>Status</th></tr></thead>
+<table><thead><tr>
+  <th>Host</th><th>Description</th><th>DNS</th><th>Ping</th><th>Port (TCP)</th>
+  <th>Status</th><th>Expected</th><th>Evaluation</th>
+</tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 <div class="footer">check_network_connectivity.sh &bull; {generated}</div>
 <script>

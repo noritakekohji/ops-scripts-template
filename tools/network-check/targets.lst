@@ -1,23 +1,24 @@
 # Network connectivity check target list
 #
-# Format: <host>, <port>, <description>
-#   host        : hostname or IP address
-#   port        : TCP port number, or '-' / empty to skip port check
-#   description : optional label (defaults to host if omitted)
+# 4-field format (with evaluation):
+#   <host>, <port>, <expected>, <description>
+#   expected: ok (expect reachable) / ng (expect unreachable) / - (no eval)
 #
-# Inline comments (after values) are also ignored.
-
-# ---- DNS / NTP servers ----
-8.8.8.8,     53,  Google DNS Primary
-8.8.4.4,     53,  Google DNS Secondary
+# 3-field format (backward compatible, no evaluation):
+#   <host>, <port>, <description>
+#
+# <port>: TCP port number, or '-' for ping-only (no TCP check)
+# Lines sharing the same host share one DNS + Ping check.
+#
+# ---- Public DNS servers (ping only) ----
+8.8.8.8,      -, ok, Google DNS Primary (ping)
+8.8.4.4,      -, ok, Google DNS Secondary (ping)
 
 # ---- Web services ----
-example.com,   80,  HTTP
-example.com,  443,  HTTPS
+google.com,  443, ok, HTTPS
+google.com,   80, ok, HTTP
+google.com,   22, ng, SSH (should be blocked)
 
-# ---- Ping only (no port check) ----
-192.168.1.1,   -,  Default Gateway
-
-# ---- Database / application servers ----
-# db.internal,  3306, MySQL
-# app.internal, 8080, Application Server
+# ---- No evaluation (3-field style) ----
+# example.com,  443, HTTPS check
+# 192.168.1.1,    -, Default Gateway
