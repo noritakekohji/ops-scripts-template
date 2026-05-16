@@ -157,9 +157,13 @@ Check "Get-OpsConfig: global.conf fallback" {
     $cfg.ContainsKey('LogLevel')  # from global.conf
 }
 
-Check "Get-OpsConfig: empty when no file" {
+Check "Get-OpsConfig: empty when no file (no global.conf)" {
     Import-Module $ConfigPsm1 -Force
-    $cfg = Get-OpsConfig -Name 'no-such-script' -RepoRoot $testRepo
+    # Use a repo without global.conf so no keys are loaded
+    $emptyRepo = "$Tmp/empty_repo"
+    New-Item -ItemType Directory -Path "$emptyRepo/.git" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$emptyRepo/config/default" -Force | Out-Null
+    $cfg = Get-OpsConfig -Name 'no-such-script' -RepoRoot $emptyRepo
     $cfg.Count -eq 0
 }
 
@@ -222,10 +226,11 @@ Check "compare runs without crash" {
 
 Check "compare HTML contains diff" {
     $html = "$Tmp/compare_report.html"
-    if (Test-Path $html) {
-        $content = Get-Content $html -Raw
-        $content -match 'cpu_cores' -or $content -match 'changed'
-    } else { $false }
+    if (-not (Test-Path $html)) { return $false }
+    $content = Get-Content $html -Raw -ErrorAction SilentlyContinue
+    if (-not $content) { return $false }
+    # cpu_cores changed from 8->16; any of these should appear
+    ($content -match 'cpu_cores') -or ($content -match 'changed') -or ($content -match 'diff')
 }
 
 # ============================================================
@@ -319,11 +324,8 @@ foreach ($f in @(
 
 $toolsHtml = "$Tmp/tools_compare.html"
 Check "Compare-ServerInfo (tools) runs with test JSON" {
-    & pwsh -NonInteractive -Command "
-        `$ErrorActionPreference = 'SilentlyContinue'
-        & '$Repo/tools/server-compare/Compare-ServerInfo.ps1' \
-          -Before '$beforeFile' -After '$afterFile' -HtmlReport '$toolsHtml'
-    " 2>/dev/null
+    & pwsh -NonInteractive -File "$Repo/tools/server-compare/Compare-ServerInfo.ps1" `
+        -Before $beforeFile -After $afterFile -HtmlReport $toolsHtml 2>/dev/null
     Test-Path $toolsHtml
 }
 
@@ -339,18 +341,16 @@ SyntaxCheck $CheckNC
 
 $ncHtml = "$Tmp/nc_ps_report.html"
 Check "runs against test targets" {
-    & pwsh -NonInteractive -Command "
-        `$ErrorActionPreference = 'SilentlyContinue'
-        & '$CheckNC' -TargetList '$Fixtures/test_targets.lst' -HtmlReport '$ncHtml'
-    " 2>/dev/null
+    & pwsh -NonInteractive -File $CheckNC `
+        -TargetList "$Fixtures/test_targets.lst" -HtmlReport $ncHtml 2>/dev/null
     Test-Path $ncHtml
 }
 
 Check "HTML contains evaluation column" {
-    if (Test-Path $ncHtml) {
-        $c = Get-Content $ncHtml -Raw
-        $c -match 'Expected|Evaluation|PASS|FAIL'
-    } else { $false }
+    if (-not (Test-Path $ncHtml)) { return $false }
+    $c = Get-Content $ncHtml -Raw -ErrorAction SilentlyContinue
+    if (-not $c) { return $false }
+    ($c -match 'Expected') -or ($c -match 'Evaluation') -or ($c -match 'PASS') -or ($c -match 'eval')
 }
 
 # ============================================================

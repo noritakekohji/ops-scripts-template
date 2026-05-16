@@ -87,7 +87,8 @@ fi
 if [[ "$copy_truncate_set" -eq 0 && -n "${OPS_CONFIG[CopyTruncate]:-}" ]]; then
     case "${OPS_CONFIG[CopyTruncate]}" in true|TRUE|True|1) copy_truncate=1 ;; *) copy_truncate=0 ;; esac
 fi
-# -L 譛ｪ謖・ｮ壹↑繧・config 縺ｮ PathList 繧呈治逕ｨ縲ら嶌蟇ｾ繝代せ縺ｯ repo root 襍ｷ轤ｹ縺ｧ邨ｶ蟇ｾ蛹悶・if [[ -z "$path_list" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
+# -L 未指定なら config の PathList を使用、相対パスは repo root 起点で絶対化
+if [[ -z "$path_list" && -n "${OPS_CONFIG[PathList]:-}" ]]; then
     path_list="${OPS_CONFIG[PathList]}"
     if [[ "$path_list" != /* ]]; then
         path_list="$(ops_repo_root)/$path_list"
@@ -291,7 +292,8 @@ while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_c
         fi
     done
 
-    # 蟇ｾ雎｡縺斐→縺ｮ荳紋ｻ｣菫晄戟・亥商縺・ｂ縺ｮ縺九ｉ蜑企勁・・    if [[ "$t_retention" -gt 0 && "$dry_run" -eq 0 ]]; then
+    # リテンション: ローテーション済みファイルの保持数超過分を削除
+    if [[ "$t_retention" -gt 0 && "$dry_run" -eq 0 ]]; then
         for f in "${files[@]}"; do
             shopt -s nullglob
             peers=( "${f}".[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]* )

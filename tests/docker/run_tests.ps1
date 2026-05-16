@@ -156,7 +156,7 @@ if ($ShellPs) {
 # ============================================================
 $LinuxExit = 0
 $PsExit    = 0
-$TsTotal   = [int](Get-Date -UFormat '%s' 2>$null)
+$TsTotal   = [int]([DateTimeOffset]::Now.ToUnixTimeSeconds())
 if (-not $TsTotal) { $TsTotal = [int]([DateTimeOffset]::Now.ToUnixTimeSeconds()) }
 
 if ($RunLinux) {

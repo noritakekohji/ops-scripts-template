@@ -103,7 +103,8 @@ if ! command -v systemctl >/dev/null 2>&1; then
     status="failed"; exit 10
 fi
 
-# unit 縺悟ｭ伜惠縺吶ｋ縺薙→・・oaded 繧ゅ＠縺上・ systemd 縺瑚ｪ崎ｭ假ｼ・if ! systemctl list-unit-files --no-legend "${service_name}.service" 2>/dev/null | grep -q . \
+# unit が存在すること（loaded もしくは systemd が認識）
+if ! systemctl list-unit-files --no-legend "${service_name}.service" 2>/dev/null | grep -q . \
    && ! systemctl status "${service_name}" >/dev/null 2>&1; then
     log_error "Service not found: service=$service_name"
     status="failed"; exit 2
@@ -143,7 +144,8 @@ if [[ "$wait_for_completion" -eq 1 ]]; then
         status="failed"; exit 3
     fi
 else
-    # -w 縺ｪ縺励〒繧・systemd 縺ｯ蜷梧悄螳溯｡後Ｕimeout 縺ｧ縺上ｋ縺ｾ縺ｪ縺・□縺・    if ! systemctl "${sysctl_args[@]}"; then
+    # -w 未指定の場合: systemd の即時応答を確認
+    if ! systemctl "${sysctl_args[@]}"; then
         after_state=$(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")
         log_error "systemctl $action failed: service=$service_name actual=$after_state"
         status="failed"; exit 4

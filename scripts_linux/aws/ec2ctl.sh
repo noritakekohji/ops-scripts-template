@@ -141,7 +141,8 @@ fi
 states_raw=$(aws ec2 describe-instances --instance-ids "${instance_ids[@]}" "${region_arg[@]}" \
     --query 'Reservations[].Instances[].[InstanceId, State.Name, Placement.AvailabilityZone, LaunchTime]' --output text)
 
-# status: 迥ｶ諷九ｒ蜃ｺ蜉帙＠縺ｦ邨ゆｺ・if [[ "$action" == "status" ]]; then
+# status: 状況を出力して終了
+if [[ "$action" == "status" ]]; then
     while IFS=$'\t' read -r iid st az lt; do
         [[ -z "$iid" ]] && continue
         log_info "Status: instanceId=$iid state=$st az=$az launchTime=$lt"
@@ -223,7 +224,8 @@ case "$action" in
         ;;
 esac
 
-# 螳御ｺ・ｾ・■・・tart / stop 縺ｮ縺ｿ・・if [[ "$wait_for_completion" -eq 1 && "${#acted[@]}" -gt 0 && "$action" != "restart" ]]; then
+# start/stop の完了待機処理
+if [[ "$wait_for_completion" -eq 1 && "${#acted[@]}" -gt 0 && "$action" != "restart" ]]; then
     target_state=$([[ "$action" == "start" ]] && echo "running" || echo "stopped")
     waiter=$([[ "$action" == "start" ]] && echo "instance-running" || echo "instance-stopped")
     log_info "Waiting for '$target_state': count=${#acted[@]} timeoutSec=$wait_timeout"

@@ -9,11 +9,17 @@ $script:_LevelOrder  = @{ DEBUG = 0; INFO = 1; WARN = 2; ERROR = 3 }
 
 function _Get-OpsJstTz {
     # JST (Asia/Tokyo) のタイムゾーン情報を取得して返す。
-    # PowerShell 7+ は全プラットフォームで IANA 名を受け付けるが、
-    # 古い Windows-only PS では `Tokyo Standard Time` にフォールバック。
+    # 優先順: IANA 'Asia/Tokyo' → Windows 'Tokyo Standard Time' → UTC+9 固定オフセット
     if ($null -eq $script:_OpsJstTz) {
         try { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Asia/Tokyo') }
-        catch { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time') }
+        catch {
+            try { $script:_OpsJstTz = [TimeZoneInfo]::FindSystemTimeZoneById('Tokyo Standard Time') }
+            catch {
+                # tzdata 未インストール環境向け: UTC+9 固定オフセット（DST なし）
+                $script:_OpsJstTz = [TimeZoneInfo]::CreateCustomTimeZone(
+                    'JST', [TimeSpan]::FromHours(9), 'Japan Standard Time', 'Japan Standard Time')
+            }
+        }
     }
     return $script:_OpsJstTz
 }
