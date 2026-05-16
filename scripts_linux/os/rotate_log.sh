@@ -115,7 +115,8 @@ log_info "Pre-check start"
 # $targets_text 縺ｫ 1 陦後★縺､闢・ｩ搾ｼ域隼陦悟玄蛻・ｊ・・targets_text=""
 
 parse_list_line() {
-    # 蜈･蜉・ $1 = 陦鯉ｼ・rim 貂医∩縲∫ｩｺ繝ｻ繧ｳ繝｡繝ｳ繝医・髯､螟匁ｸ医∩・・    # 蜃ｺ蜉・ $targets_text 縺ｫ繧ｿ繝悶Ξ繧ｳ繝ｼ繝峨ｒ霑ｽ險・    local line="$1"
+    # 入力: $1 = 行
+    local line="$1"
     # shellcheck disable=SC2206
     local -a tok=( $line )    # 遨ｺ逋ｽ縺ｧ split
     local p_path="${tok[0]}"
