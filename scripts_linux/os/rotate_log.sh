@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # ============================================================================
 # rotate_log.sh
-
-
+#   ログファイルをサイズまたは経過時間でローテート（任意で gzip 圧縮）
+#   （Linux / Bash 版）
+#
+# 使い方:
 #   rotate_log.sh [-p <path>] [-L <list-file>] [-P <pattern>]
 #                 [-s <max-size-mb>] [-a <max-age-days>]
 #                 [-c] [-k <retention>] [-T] [-n]
 #
-
+# -L のリスト各行で対象ごとの上書きが可能:
 #     <path> [Key=Value ...]
-
+# 受け付けるキー（case-sensitive）:
 #   Pattern, MaxSizeMB, MaxAgeDays, Compress, RetentionCount, CopyTruncate
-
-
-
-
+# 解決順位: 行内 > CLI > config > 既定値
+# 不正キー / 不正値は WARN を出してそのキーだけスキップ（エントリは既定値で実行）
+# MaxSizeMB と MaxAgeDays の両方が effective=0 のエントリは
+# WARN を出してそのエントリのみスキップ。他には影響しない
+#
+# 出力名: <name>.YYYYMMDD-HHMMSS [.gz]（JST）
+# 終了コード: 0 成功/スキップ, 1 usage, 2 リストファイル不在, 4 ローテート失敗数
+# ============================================================================
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)

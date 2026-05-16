@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
 # ============================================================================
 # sqlserverctl.sh
-
-
+#   SQL Server ライフサイクル統合制御: start / stop / restart / status（1本で）
+#
+# 使い方:
 #   sqlserverctl.sh <action> <service_name> [-w] [-t <sec>]
 #
-
-
+# Linux のサービス名は通常 'mssql-server'。SQL Server Agent は
+# 別 unit（例: 'mssql-server@<instance>'）。本スクリプトの対象外。
+# 必要なら別呼び出しで制御すること
 #
-
-
-
-
-
+# アクション:
+#   start    既に active ならスキップ。それ以外は systemctl start
+#   stop     既に inactive ならスキップ。それ以外は systemctl stop
+#   restart  systemctl restart（直に実行）
+#   status   状態のみ表示（read-only）
+#
+# オプション:
 #   -w  Wait until target state
 #   -t  Wait timeout seconds (default 120, range 5..600)
-
+#   -h  usage 表示
 #
-
-
+# 終了コード: 0 成功/スキップ, 1 usage, 2 サービス不在,
+#             3 待機タイムアウト, 4 systemctl 失敗数, 10 systemctl 不在
 # ============================================================================
 set -euo pipefail
 

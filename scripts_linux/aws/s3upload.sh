@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 # ============================================================================
 # s3upload.sh
-
-
+#   ローカルファイルを Amazon S3 にアップロード（複数対象対応）
+#
+# 使い方:
 #   s3upload.sh [-p <local>] [-L <list-file>] [-b <bucket>] [-x <prefix>]
 #               [-r <region>] [-c <storage-class>] [-e <sse>] [-k <kms-key>]
 #               [-m archive|mirror]
 #
-
+# -L のリスト各行（-p 単独と同形式）:
 #     <local_path> [Bucket=... Prefix=... Region=... StorageClass=...
 #                   ServerSideEncryption=... KmsKeyId=... Mode=...]
 #
-
-
-
-
-
-
+# 解決順位: 行内 > CLI > config/<env>/s3upload.conf > 既定値
+# モード:
+#   archive  s3://<bucket>/<prefix>/<filename>.<JST yyyyMMdd-HHmmss>（既定）
+#   mirror   s3://<bucket>/<prefix>/<filename>（上書き）
+#
+# 認証: デフォルト AWS credential chain
+# 空のローカルファイルはスキップ（正常）
+# 終了コード: 0 成功/スキップ, 1 usage, 2 リストファイル不在,
+#             4 全件アップロード失敗数, 10 aws CLI 不在
 # ============================================================================
 set -euo pipefail
 

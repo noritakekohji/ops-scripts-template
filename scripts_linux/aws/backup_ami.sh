@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # ============================================================================
 # backup_ami.sh
-
+#   EC2 インスタンスから AMI を作成し、世代を超えた古い AMI を自動削除する
+#   （Linux / Bash 版）
 #
-
+# 使い方:
 #   backup_ami.sh -i <instance-id> -p <name-prefix> [-r <region>]
 #                 [-d <retention-days>] [-m <min-interval-min>] [-R] [-w]
 #
-
-
+# 挙動パラメータは CLI、config ファイル (config/<env>/backup_ami.conf)
+# もしくはスクリプト既定値で指定可能。優先順位: CLI > config > 既定値。
+# 実行ごとの対象 (-i / -p) は CLI 専用
 #
-
-
+# 認証: デフォルト AWS credential chain（環境変数 / プロファイル / IAM ロール）
+# 終了コード: 0 成功/スキップ, 1 usage, 2 インスタンス不在,
+#             3 待機タイムアウト, 4 作成失敗数, 10 aws CLI 不在, 20 認証
 # ============================================================================
 set -euo pipefail
 

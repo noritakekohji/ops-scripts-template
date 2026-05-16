@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
 # ============================================================================
 # tomcatctl.sh
-
-
+#   Tomcat ライフサイクル統合制御: start / stop / restart / status（1本で）
+#
+# 使い方:
 #   tomcatctl.sh <action> <service_name> [-w] [-t <sec>]
 #
-
-
-
-
-
+# アクション:
+#   start    既に active ならスキップ。それ以外は systemctl start
+#   stop     既に inactive ならスキップ。それ以外は systemctl stop
+#   restart  systemctl restart（直に実行。停止スキップなし）
+#   status   状態のみ表示（read-only）
+#
+# オプション:
 #   -w  Wait until target state (start->active, stop->inactive)
 #   -t  Wait timeout seconds (default 60, range 5..600)
-
+#   -h  usage 表示
 #
-
-
+# 挙動オプションは config/<env>/tomcatctl.conf に設定可能。
+# 認証: systemctl のため sudo / root 権限が必要
+# 終了コード: 0 成功/スキップ, 1 usage, 2 サービス不在,
+#             3 待機タイムアウト, 4 systemctl 失敗数, 10 systemctl 不在
 # ============================================================================
 set -euo pipefail
 

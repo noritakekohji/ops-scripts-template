@@ -1,22 +1,29 @@
 #!/usr/bin/env bash
 # ============================================================================
 # ec2ctl.sh
-
-
+#   EC2 ライフサイクル統合制御: start / stop / restart / status（1本で）
+#
+# 使い方:
 #   ec2ctl.sh <action> <instance_id[,instance_id,...]> [-r <region>]
 #             [-w] [-t <sec>] [-F]
 #
-
-
-
-
-
-
-
+# アクション:
+#   start    インスタンス起動。既に running のものはスキップ
+#   stop     インスタンス停止。既に stopped のものはスキップ
+#   restart  AWS Reboot API で再起動（running 必須）
+#   status   状態のみ表示（read-only）
 #
-
-
-
+# オプション:
+#   -r  AWS リージョン（既定: 環境変数 / プロファイル / config）
+#   -w  目的状態到達まで待機（start->running、stop->stopped）。restart/status では無視
+#   -t  待機タイムアウト秒（既定: 600、許容範囲 30..3600）
+#   -F  強制停止（stop のみ）。データ消失の可能性あり
+#   -h  usage 表示
+#
+# 挙動オプションは config/<env>/ec2ctl.conf に設定可能。
+# 認証: デフォルト AWS credential chain
+# 終了コード: 0 成功/スキップ, 1 usage, 2 不在, 3 待機・状態不正,
+#             4 API 失敗数, 10 aws CLI 不在, 20 認証
 # ============================================================================
 set -euo pipefail
 
