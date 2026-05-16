@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 # JST タイムゾーン情報のキャッシュ（モジュール初回利用時に解決）
 $script:_OpsJstTz = $null

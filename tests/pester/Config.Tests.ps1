@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     lib/powershell/Config.psm1 のユニットテスト（Pester 5+）。

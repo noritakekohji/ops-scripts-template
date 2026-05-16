@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     EC2 繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ縺九ｉ AMI 繧剃ｽ懈・縺励∝ｿ・ｦ√↓蠢懊§縺ｦ蜿､縺・AMI 繧剃ｸ紋ｻ｣蜑企勁縺吶ｋ縲・

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     lib/powershell/Logging.psm1 のユニットテスト（Pester 5+）。
