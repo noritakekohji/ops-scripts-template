@@ -210,8 +210,11 @@ function Obj-To-Dict([object]$obj) {
 # ============================================================
 
 function Compare-Os($b, $a) {
-    $bd = As-Dict (Obj-To-Dict $b)
-    $ad = As-Dict (Obj-To-Dict $a)
+    # Exclude instantaneous/volatile metrics — they fluctuate between any two
+    # snapshots and do not indicate a meaningful configuration change.
+    $volatile = @('free_memory_gb','used_memory_gb','swap_free_gb')
+    $bd = As-Dict (Obj-To-Dict $b); $ad = As-Dict (Obj-To-Dict $a)
+    foreach ($k in $volatile) { $bd.Remove($k) | Out-Null; $ad.Remove($k) | Out-Null }
     Compare-Dict $bd $ad 'os'
 }
 
@@ -266,9 +269,12 @@ function Compare-Users($b, $a) {
 }
 
 function Compare-Filesystem($b, $a) {
+    # Compare only stable drive attributes (total size, filesystem type, label).
+    # used_gb / free_gb / used_pct fluctuate continuously and are not meaningful
+    # indicators of a configuration change.
     $bd = @(As-Array (Get-Prop $b 'drives') | ForEach-Object { Obj-To-Dict $_ })
     $ad = @(As-Array (Get-Prop $a 'drives') | ForEach-Object { Obj-To-Dict $_ })
-    Compare-List $bd $ad 'drive' @('total_gb','used_gb','free_gb','used_pct','fstype','label') 'filesystem'
+    Compare-List $bd $ad 'drive' @('total_gb','fstype','label') 'filesystem'
 }
 
 function Compare-Environment($b, $a) {

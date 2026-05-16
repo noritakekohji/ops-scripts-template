@@ -118,7 +118,7 @@ function Find-LatestBefore {
     $found = Get-ChildItem -Filter $pattern -ErrorAction SilentlyContinue |
              Sort-Object Name -Descending |
              Select-Object -First 1
-    return if ($found) { $found.FullName } else { '' }
+    if ($found) { return $found.FullName } else { return '' }
 }
 
 # ============================================================

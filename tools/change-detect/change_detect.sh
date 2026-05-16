@@ -204,8 +204,11 @@ def compare_list(bl, al, key_field, val_fields):
 CAT_RESULTS = []  # [(cat_name, changes_list)]
 
 def cat_os():
-    bd = {k:v for k,v in b.get('os',{}).items()}
-    ad = {k:v for k,v in a.get('os',{}).items()}
+    # Exclude instantaneous/volatile metrics — they fluctuate between any two snapshots
+    # and do not indicate a meaningful configuration change.
+    _VOLATILE = {'free_memory_gb', 'used_memory_gb', 'swap_free_gb'}
+    bd = {k:v for k,v in b.get('os',{}).items() if k not in _VOLATILE}
+    ad = {k:v for k,v in a.get('os',{}).items() if k not in _VOLATILE}
     return compare_dicts(bd, ad)
 
 def cat_services():
@@ -228,10 +231,13 @@ def cat_users():
     return changes
 
 def cat_filesystem():
+    # Compare only stable drive attributes (total size, filesystem type).
+    # used_gb / free_gb / used_pct fluctuate continuously and are not
+    # meaningful indicators of a configuration change.
     changes = compare_list(
         b.get('filesystem',{}).get('drives',[]),
         a.get('filesystem',{}).get('drives',[]),
-        'drive', ['total_gb','used_gb','free_gb','used_pct','fstype'])
+        'drive', ['total_gb','fstype'])
     # Physical disks (Linux lsblk)
     changes += compare_list(
         b.get('filesystem',{}).get('disks',[]),

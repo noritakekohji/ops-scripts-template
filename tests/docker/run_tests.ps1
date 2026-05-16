@@ -129,6 +129,7 @@ $LinuxRunArgs = @(
 )
 $PsRunArgs = @(
     '--rm',
+    '--cap-add=NET_RAW',
     '-v', "${RepoRoot}:/repo:ro",
     '-e', 'TERM=xterm-256color'
 )

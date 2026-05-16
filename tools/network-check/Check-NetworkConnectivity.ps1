@@ -204,7 +204,7 @@ function Get-EvalResult([string]$DnsSt, [string]$Expected, $Tcp, $Ping, $Port) {
 
     # DNS failed
     if ($DnsSt -eq 'fail') {
-        return if ($Expected -eq 'ok') { 'FAIL' } else { 'SKIP' }
+        if ($Expected -eq 'ok') { return 'FAIL' } else { return 'SKIP' }
     }
 
     # For ping-only lines (no port), evaluate against ping; otherwise TCP
@@ -215,10 +215,10 @@ function Get-EvalResult([string]$DnsSt, [string]$Expected, $Tcp, $Ping, $Port) {
     }
 
     if ($Expected -eq 'ok') {
-        return if ($checkSt -eq 'ok') { 'PASS' } else { 'FAIL' }
+        if ($checkSt -eq 'ok') { return 'PASS' } else { return 'FAIL' }
     } else {
         # ng: PASS when NOT reachable
-        return if ($checkSt -ne 'ok') { 'PASS' } else { 'FAIL' }
+        if ($checkSt -ne 'ok') { return 'PASS' } else { return 'FAIL' }
     }
 }
 
@@ -558,11 +558,11 @@ try {
     $hostResults = [System.Collections.Generic.List[hashtable]]::new()
 
     foreach ($hEntry in $hostEntries) {
-        $host = $hEntry.host
+        $hName = $hEntry.host   # NOTE: $Host is a PS automatic variable (read-only); use $hName
 
         # DNS — once per host
-        $dns = Test-DnsHost $host
-        $pingTarget = if ($dns.status -eq 'ok' -and $dns.addresses.Count -gt 0) { $dns.addresses[0] } else { $host }
+        $dns = Test-DnsHost $hName
+        $pingTarget = if ($dns.status -eq 'ok' -and $dns.addresses.Count -gt 0) { $dns.addresses[0] } else { $hName }
 
         # Ping — once per host (skip if DNS failed)
         $ping = if ($dns.status -ne 'fail') {
@@ -573,7 +573,7 @@ try {
 
         # Console: HOST header
         Write-Host ''
-        Write-Host "[HOST] $host" -ForegroundColor White
+        Write-Host "[HOST] $hName" -ForegroundColor White
 
         # DNS line
         switch ($dns.status) {
@@ -649,7 +649,7 @@ try {
         }
 
         $hostResults.Add(@{
-            host     = $host
+            host     = $hName
             dns      = $dns
             ping     = $ping
             services = $svcResults
@@ -685,9 +685,11 @@ try {
 
     # Investigation
     if ($failCount -gt 0 -or $warnCount -gt 0) {
-        $investTs   = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $investFile = "network_investigation_${investTs}.txt"
-        Invoke-Investigation $hostResults $investFile $TimeoutSec
+        $investTs  = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $investDir = if ($env:TEMP) { $env:TEMP } elseif ($env:TMPDIR) { $env:TMPDIR } else { '/tmp' }
+        $investFile = Join-Path $investDir "network_investigation_${investTs}.txt"
+        try { Invoke-Investigation $hostResults $investFile $TimeoutSec }
+        catch { Write-Warning "Investigation collection failed: $($_.Exception.Message)" }
     }
 
     exit $(if ($failCount -gt 0) { 1 } else { 0 })

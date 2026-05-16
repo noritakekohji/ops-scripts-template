@@ -673,8 +673,9 @@ echo ""
 
 if [[ "$cnt_fail" -gt 0 ]] || [[ "$cnt_warn" -gt 0 ]]; then
     invest_ts=$(date '+%Y%m%d-%H%M%S')
-    invest_file="network_investigation_${invest_ts}.txt"
-    run_investigation "$tmpfile" "$invest_file"
+    invest_dir="${TMPDIR:-/tmp}"
+    invest_file="${invest_dir}/network_investigation_${invest_ts}.txt"
+    run_investigation "$tmpfile" "$invest_file" || true
 fi
 
 # ============================================================
