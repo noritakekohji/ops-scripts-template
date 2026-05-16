@@ -217,16 +217,18 @@ collect_sample() {
     fi
 
     # JSON Lines 出力
+    # 空文字は JSON の "null" にフォールバック
+    _j() { [[ -z "$1" ]] && echo "null" || echo "$1"; }
     printf '{"ts":"%s","hostname":"%s","os":"linux","cpu_pct":%s,"mem_used_pct":%s,"mem_used_gb":%s,"mem_free_gb":%s,"mem_total_gb":%s,"swap_used_pct":%s,"swap_used_gb":%s,"disk_read_mbps":%s,"disk_write_mbps":%s,"net_rx_mbps":%s,"net_tx_mbps":%s,"load_avg_1":%s,"load_avg_5":%s,"load_avg_15":%s,"proc_count":%s}\n' \
         "$ts" "$hostname" \
-        "$cpu_pct" "$mem_used_pct" "$mem_used_gb" "$mem_free_gb" "$mem_total_gb" \
-        "$swap_used_pct" "$swap_used_gb" \
-        "$disk_read_mbps" "$disk_write_mbps" \
-        "$net_rx_mbps" "$net_tx_mbps" \
-        "$load1" "$load5" "$load15" "$proc_count"
+        "$(_j "$cpu_pct")" "$(_j "$mem_used_pct")" "$(_j "$mem_used_gb")" "$(_j "$mem_free_gb")" "$(_j "$mem_total_gb")" \
+        "$(_j "$swap_used_pct")" "$(_j "$swap_used_gb")" \
+        "$(_j "$disk_read_mbps")" "$(_j "$disk_write_mbps")" \
+        "$(_j "$net_rx_mbps")" "$(_j "$net_tx_mbps")" \
+        "$(_j "$load1")" "$(_j "$load5")" "$(_j "$load15")" "$(_j "$proc_count")"
 
-    # 前回値を標準エラーで返す（呼び出し側で参照）
-    echo "${curr_cpu}|||${curr_disk}|||${curr_net}" >&3
+    # 前回値をファイルに保存（1行ごとに1値、区切り文字なしで安全に読み戻せる）
+    printf '%s\n%s\n%s\n' "$curr_cpu" "$curr_disk" "$curr_net" >&3
 }
 
 # ════════════════════════════════════════════════════════════
@@ -264,9 +266,12 @@ _run_collector() {
         local sample
         sample=$(collect_sample "$interval" "$prev_cpu" "$prev_disk" "$prev_net" \
                     3>"$prev_vals_file")
-        local prev_vals
-        prev_vals=$(cat "$prev_vals_file")
-        IFS='|||' read -r prev_cpu prev_disk prev_net <<< "$prev_vals"
+        # 前回値を1行ずつ読み戻す（IFS区切りを使わず安全に）
+        {
+            IFS= read -r prev_cpu
+            IFS= read -r prev_disk
+            IFS= read -r prev_net
+        } < "$prev_vals_file"
 
         echo "$sample" >> "$data_file"
         sample_count=$(( sample_count + 1 ))
