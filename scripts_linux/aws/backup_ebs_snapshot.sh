@@ -3,7 +3,7 @@
 # backup_ebs_snapshot.sh
 
 #
-# 菴ｿ縺・婿:
+
 #   backup_ebs_snapshot.sh (-v <volume-id> | -i <instance-id>) -p <name-prefix>
 #                          [-r <region>] [-d <retention-days>]
 #                          [-m <min-interval-min>] [-w]

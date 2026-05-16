@@ -3,7 +3,7 @@
 # backup_ami.sh
 
 #
-# 菴ｿ縺・婿:
+
 #   backup_ami.sh -i <instance-id> -p <name-prefix> [-r <region>]
 #                 [-d <retention-days>] [-m <min-interval-min>] [-R] [-w]
 #

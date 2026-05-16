@@ -2,7 +2,7 @@
 # ============================================================================
 # rotate_log.sh
 
-# 菴ｿ縺・婿:
+
 #   rotate_log.sh [-p <path>] [-L <list-file>] [-P <pattern>]
 #                 [-s <max-size-mb>] [-a <max-age-days>]
 #                 [-c] [-k <retention>] [-T] [-n]

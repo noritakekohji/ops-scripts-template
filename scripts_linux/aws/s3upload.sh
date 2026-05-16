@@ -2,7 +2,7 @@
 # ============================================================================
 # s3upload.sh
 
-# 菴ｿ縺・婿:
+
 #   s3upload.sh [-p <local>] [-L <list-file>] [-b <bucket>] [-x <prefix>]
 #               [-r <region>] [-c <storage-class>] [-e <sse>] [-k <kms-key>]
 #               [-m archive|mirror]
