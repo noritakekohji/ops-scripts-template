@@ -34,7 +34,9 @@ param(
     [string]$OutputDir  = '',
     [string]$Prefix     = '',
 
-    # --- stop / report / status ---
+    # --- stop / report / status (2番目の位置引数として渡せるようにする) ---
+    # 例: .\PerfMonitor.ps1 report .\results\perf_20260517-100000
+    [Parameter(Position = 1)]
     [string]$SessionDir = '',
 
     # --- _collect (internal: called by Start-Process) ---
