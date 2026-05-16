@@ -28,3 +28,8 @@ Thumbs.db
 
 # Microsoft Office 一時ロックファイル
 ~$*
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+*.pyo
