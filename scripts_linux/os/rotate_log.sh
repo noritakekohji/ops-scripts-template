@@ -124,7 +124,7 @@ parse_list_line() {
     # 入力: $1 = 行
     local line="$1"
     # shellcheck disable=SC2206
-
+    local -a tok=( $line )
     local p_path="${tok[0]}"
     local p_pattern="$pattern"
     local p_size="$max_size_mb"
