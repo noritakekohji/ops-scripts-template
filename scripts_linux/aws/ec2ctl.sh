@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # ============================================================================
 # ec2ctl.sh
-#   EC2 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ・#
+
 # 菴ｿ縺・婿:
 #   ec2ctl.sh <action> <instance_id[,instance_id,...]> [-r <region>]
 #             [-w] [-t <sec>] [-F]
 #
-# 繧｢繧ｯ繧ｷ繝ｧ繝ｳ:
-#   start    繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ襍ｷ蜍輔よ里縺ｫ running 縺ｮ繧ゅ・縺ｯ繧ｹ繧ｭ繝・・
-#   stop     繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ蛛懈ｭ｢縲よ里縺ｫ stopped 縺ｮ繧ゅ・縺ｯ繧ｹ繧ｭ繝・・
-#   restart  AWS Reboot API 縺ｧ蜀崎ｵｷ蜍包ｼ・unning 蠢・茨ｼ・#   status   迥ｶ諷九・縺ｿ陦ｨ遉ｺ・・ead-only・・#
-# 繧ｪ繝励す繝ｧ繝ｳ:
-#   -r  AWS 繝ｪ繝ｼ繧ｸ繝ｧ繝ｳ・域里螳・ 迺ｰ蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / config・・#   -w  逶ｮ逧・憾諷句芦驕斐∪縺ｧ蠕・ｩ滂ｼ・tart->running縲《top->stopped・峨Ｓestart/status 縺ｧ縺ｯ辟｡隕・#   -t  蠕・ｩ溘ち繧､繝繧｢繧ｦ繝育ｧ抵ｼ域里螳・600縲∫ｯ・峇 30..3600・・#   -F  蠑ｷ蛻ｶ蛛懈ｭ｢・・top 縺ｮ縺ｿ・峨ゅョ繝ｼ繧ｿ謳榊､ｱ縺ｮ蜿ｯ閭ｽ諤ｧ縺ゅｊ
-#   -h  usage 陦ｨ遉ｺ
+
+
+
+
+
+
+
 #
-# 謖吝虚繧ｪ繝励す繝ｧ繝ｳ縺ｯ config/<env>/ec2ctl.conf 縺ｫ險ｭ螳壼庄閭ｽ縲・# 隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain
-# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 荳榊惠, 3 蠕・ｩ・迥ｶ諷倶ｸ肴ｭ｣,
-#             4 API 螟ｱ謨・ 10 aws CLI 荳榊惠, 20 隱崎ｨｼ
+
+
+
 # ============================================================================
 set -euo pipefail
 
@@ -46,7 +46,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- 繝輔ぉ繝ｼ繧ｺ 1: 菴咲ｽｮ蠑墓焚 + 繧ｪ繝励す繝ｧ繝ｳ ------------------------------------------
+
 action="${1:-}"
 case "$action" in
     start|stop|restart|status) shift ;;
@@ -81,7 +81,7 @@ while getopts "r:wt:Fh" opt; do
     esac
 done
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ ---------------------------------------------------
+
 load_ops_config "ec2ctl"
 [[ "$region_set" -eq 0       && -n "${OPS_CONFIG[Region]:-}"         ]] && region="${OPS_CONFIG[Region]}"
 [[ "$wait_timeout_set" -eq 0 && -n "${OPS_CONFIG[WaitTimeoutSec]:-}" ]] && wait_timeout="${OPS_CONFIG[WaitTimeoutSec]}"
@@ -100,7 +100,7 @@ fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
-# --- 繝輔ぉ繝ｼ繧ｺ 1・育ｶ壹″・・ 繝舌Μ繝・・繧ｷ繝ｧ繝ｳ ---------------------------------------------
+
 if ! [[ "$wait_timeout" =~ ^[0-9]+$ ]] || [[ "$wait_timeout" -lt 30 ]] || [[ "$wait_timeout" -gt 3600 ]]; then
     log_error "Invalid wait timeout: $wait_timeout (range 30..3600)"
     status="failed"; exit 1
@@ -120,7 +120,7 @@ log_info "Args validated: action=$action instanceCount=${#instance_ids[@]} regio
 region_arg=()
 [[ -n "$region" ]] && region_arg=(--region "$region")
 
-# --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け -----------------------------------------------------
+
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -192,7 +192,7 @@ fi
 
 log_info "Pre-check passed: action=$action toAct=${#to_act[@]} skipped=${#skipped[@]}"
 
-# --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・-----------------------------------------------
+
 log_info "Main start"
 
 case "$action" in

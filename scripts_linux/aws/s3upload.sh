@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # ============================================================================
 # s3upload.sh
-#   繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ繧・Amazon S3 縺ｫ繧｢繝・・繝ｭ繝ｼ繝会ｼ郁｡悟腰菴堺ｸ頑嶌縺榊ｯｾ蠢懶ｼ・#
+
 # 菴ｿ縺・婿:
 #   s3upload.sh [-p <local>] [-L <list-file>] [-b <bucket>] [-x <prefix>]
 #               [-r <region>] [-c <storage-class>] [-e <sse>] [-k <kms-key>]
 #               [-m archive|mirror]
 #
-# -L 縺ｮ繝ｪ繧ｹ繝亥推陦鯉ｼ・p 蜊倡匱繧ょ酔蠖｢蠑擾ｼ・
+
 #     <local_path> [Bucket=... Prefix=... Region=... StorageClass=...
 #                   ServerSideEncryption=... KmsKeyId=... Mode=...]
 #
-# 隗｣豎ｺ鬆・ｽ・ 陦悟・ > CLI > config/<env>/s3upload.conf > 譌｢螳壼､
-# 繝｢繝ｼ繝・
-#   archive  s3://<bucket>/<prefix>/<filename>.<JST yyyyMMdd-HHmmss>・域里螳夲ｼ・#   mirror   s3://<bucket>/<prefix>/<filename>・井ｸ頑嶌縺搾ｼ・#
-# 隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain
-# 遨ｺ縺ｮ繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ縺ｯ繧ｹ繧ｭ繝・・・亥・遲会ｼ・# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 繝ｪ繧ｹ繝医ヵ繧｡繧､繝ｫ荳榊惠,
-#             4 蜈ｨ莉ｶ繧｢繝・・繝ｭ繝ｼ繝牙､ｱ謨・ 10 aws CLI 荳榊惠
+
+
+
+
+
+
 # ============================================================================
 set -euo pipefail
 
@@ -46,7 +46,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- 繝輔ぉ繝ｼ繧ｺ 1: 蠑墓焚繝代・繧ｹ ----------------------------------------------
+
 path=""
 path_list=""
 bucket=""
@@ -80,7 +80,7 @@ while getopts "p:L:b:x:r:c:e:k:m:h" opt; do
     esac
 done
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ ---------------------------------------------------
+
 load_ops_config "s3upload"
 [[ "$bucket_set" -eq 0 && -n "${OPS_CONFIG[Bucket]:-}"               ]] && bucket="${OPS_CONFIG[Bucket]}"
 [[ "$prefix_set" -eq 0 && -n "${OPS_CONFIG[Prefix]:-}"               ]] && prefix="${OPS_CONFIG[Prefix]}"
@@ -99,7 +99,7 @@ fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
-# 繧ｰ繝ｭ繝ｼ繝舌Ν譌｢螳壼､縺ｮ enum 讀懆ｨｼ
+
 case "$storage_class" in STANDARD|STANDARD_IA|ONEZONE_IA|INTELLIGENT_TIERING|GLACIER|GLACIER_IR|DEEP_ARCHIVE) ;;
     *) log_error "Invalid StorageClass: $storage_class"; status="failed"; exit 1 ;;
 esac
@@ -112,7 +112,7 @@ esac
 
 log_info "Args validated: path='$path' pathList='$path_list' bucket='$bucket' prefix='$prefix' region='$region' storageClass=$storage_class sse=$sse mode=$mode"
 
-# --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け・医お繝ｳ繝医Μ蜿朱寔・・-----------------------------------
+
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -120,7 +120,7 @@ if ! command -v aws >/dev/null 2>&1; then
     status="failed"; exit 10
 fi
 
-# 蜷・お繝ｳ繝医Μ繧偵ち繝門玄蛻・ｊ繝ｬ繧ｳ繝ｼ繝峨→縺励※繧ｨ繝ｳ繧ｳ繝ｼ繝・
+
 # <path>\t<bucket>\t<prefix>\t<region>\t<storage_class>\t<sse>\t<kms>\t<mode>
 entries_text=""
 
@@ -195,7 +195,7 @@ fi
 entry_count=$(printf '%s' "$entries_text" | grep -c '^')
 log_info "Pre-check passed: entryCount=$entry_count"
 
-# --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・-----------------------------------------------
+
 log_info "Main start"
 stamp=$(ops_jst_stamp)
 

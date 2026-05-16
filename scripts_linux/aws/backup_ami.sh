@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================================
 # backup_ami.sh
-#   EC2 繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ縺九ｉ AMI 繧剃ｽ懈・縺励∝ｿ・ｦ√↓蠢懊§縺ｦ蜿､縺・AMI 繧剃ｸ紋ｻ｣蜑企勁縺吶ｋ
+
 #
 # 菴ｿ縺・婿:
 #   backup_ami.sh -i <instance-id> -p <name-prefix> [-r <region>]
 #                 [-d <retention-days>] [-m <min-interval-min>] [-R] [-w]
 #
-# 謖吝虚繝代Λ繝｡繝ｼ繧ｿ縺ｯ CLI縲…onfig 繝輔ぃ繧､繝ｫ (config/<env>/
-# backup_ami.conf) 繧ゅ＠縺上・繧ｹ繧ｯ繝ｪ繝励ヨ譌｢螳壼､縺ｧ謖・ｮ壼庄閭ｽ縲ょ━蜈磯・ｽ・ CLI > config > 譌｢螳壼､縲・# 螳溯｡後＃縺ｨ縺ｮ蟇ｾ雎｡ (-i / -p) 縺ｯ CLI 蟆ら畑
+
+
 #
-# 隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain・育腸蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / IAM 繝ｭ繝ｼ繝ｫ・・# 邨ゆｺ・さ繝ｼ繝・ 0 謌仙粥/繧ｹ繧ｭ繝・・, 1 usage, 2 繧､繝ｳ繧ｹ繧ｿ繝ｳ繧ｹ荳榊惠,
-#             3 蠕・ｩ溘ち繧､繝繧｢繧ｦ繝・ 4 菴懈・螟ｱ謨・ 10 aws CLI 荳榊惠, 20 隱崎ｨｼ
+
+
 # ============================================================================
 set -euo pipefail
 
@@ -39,7 +39,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- 繝輔ぉ繝ｼ繧ｺ 1: 蠑墓焚繝代・繧ｹ ----------------------------------------------
+
 instance_id=""
 name_prefix=""
 region=""
@@ -67,7 +67,7 @@ while getopts "i:p:r:d:m:Rwh" opt; do
     esac
 done
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壼､縺ｸ蜿肴丐 ---------------------------
+
 load_ops_config "backup_ami"
 [[ "$region_set" -eq 0         && -n "${OPS_CONFIG[Region]:-}"             ]] && region="${OPS_CONFIG[Region]}"
 [[ "$retention_days_set" -eq 0 && -n "${OPS_CONFIG[RetentionDays]:-}"      ]] && retention_days="${OPS_CONFIG[RetentionDays]}"
@@ -87,7 +87,7 @@ fi
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 
-# --- 繝輔ぉ繝ｼ繧ｺ 1・育ｶ壹″・・ 繝舌Μ繝・・繧ｷ繝ｧ繝ｳ ---------------------------------------------
+
 if [[ -z "$instance_id" || -z "$name_prefix" ]]; then
     log_error "Missing required arg: -i and -p are required"
     status="failed"; exit 1
@@ -114,7 +114,7 @@ log_info "Args validated: instance=$instance_id prefix=$name_prefix region=${reg
 region_arg=()
 [[ -n "$region" ]] && region_arg=(--region "$region")
 
-# --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け -----------------------------------------------------
+
 log_info "Pre-check start"
 
 if ! command -v aws >/dev/null 2>&1; then
@@ -154,7 +154,7 @@ fi
 
 log_info "Pre-check passed"
 
-# --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・-----------------------------------------------
+
 log_info "Main start"
 
 ts=$(ops_jst_stamp)

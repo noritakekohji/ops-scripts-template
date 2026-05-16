@@ -1,28 +1,28 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    繝ｭ繧ｰ繝輔ぃ繧､繝ｫ繧偵し繧､繧ｺ縺ｾ縺溘・邨碁℃譎る俣縺ｧ繝ｭ繝ｼ繝・・繝医☆繧具ｼ井ｻｻ諢上〒 gzip 蝨ｧ邵ｮ・峨・
+    サイズまたは経過時間でログをローテートする（Windows / PowerShell 版）。リストファイルによる一括処理、gzip 圧縮、世代保持に対応。
 .DESCRIPTION
-    蟇ｾ雎｡縺ｯ -Path・亥腰荳繝輔ぃ繧､繝ｫ or 繝・ぅ繝ｬ繧ｯ繝医Μ・峨♀繧医・/縺ｾ縺溘・
-    -PathList・医Μ繧ｹ繝医ヵ繧｡繧､繝ｫ・峨°繧芽ｧ｣豎ｺ縲ゅΜ繧ｹ繝亥推陦後〒蟇ｾ雎｡縺斐→縺ｮ
-    荳頑嶌縺阪ｒ `Key=Value` 蠖｢蠑上〒謖・ｮ壼庄閭ｽ:
+
+
+    サイズまたは経過時間でログをローテートする（Windows / PowerShell 版）。リストファイルによる一括処理、gzip 圧縮、世代保持に対応。
 
         /var/log/myapp/app.log
         /var/log/critical/audit.log MaxSizeMB=200 RetentionCount=90
         /opt/tomcat/logs/catalina.out MaxSizeMB=500 CopyTruncate=true RetentionCount=14
         /var/log/nginx Pattern=access*.log MaxAgeDays=1 RetentionCount=30
 
-    蜿励￠莉倥￠繧九く繝ｼ: Pattern, MaxSizeMB, MaxAgeDays, Compress,
-    RetentionCount, CopyTruncate縲りｧ｣豎ｺ鬆・ｽ・ 陦悟・ > CLI > config >
-    譌｢螳壼､縲ゆｸ肴・縺ｪ繧ｭ繝ｼ繝ｻ荳肴ｭ｣縺ｪ蛟､縺ｯ WARN 繧貞・縺励※縺昴・繧ｭ繝ｼ縺縺代せ繧ｭ繝・・
-    ・医お繝ｳ繝医Μ閾ｪ菴薙・邯呎価蛟､縺ｧ螳溯｡後＆繧後ｋ・峨・
-    繝ｭ繝ｼ繝・・繝亥ｾ後・繝輔ぃ繧､繝ｫ蜷・ <name>.YYYYMMDD-HHMMSS [.gz]・・ST・峨・
-    繝輔Ο繝ｼ・・hell-specification.md 貅匁侠・・
-      1. 蠑墓焚繝舌Μ繝・・繧ｷ繝ｧ繝ｳ
-      2. 迺ｰ蠅・そ繝・ヨ繧｢繝・・ (繝ｭ繧ｬ繝ｼ / config)
-      3. 繝励Ξ繝√ぉ繝・け            (蟇ｾ雎｡隗｣豎ｺ縲∝・遲・= 蟇ｾ雎｡縺ｪ縺・
-      4. 繝｡繧､繝ｳ蜃ｦ逅・             (蟇ｾ雎｡縺斐→縺ｫ rotate / compress / prune)
-      5. 蠕悟・逅・                 (譛邨・status 繝ｭ繧ｰ)
+
+
+
+
+
+
+
+
+
+
+
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -39,7 +39,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Ο繧ｬ繝ｼ -------------------------------------------------
+
 $libPath = $null
 foreach ($c in @(
     [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1'),
@@ -48,7 +48,7 @@ foreach ($c in @(
 if (-not $libPath) { throw 'Logging.psm1 not found' }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壹ヱ繝ｩ繝｡繝ｼ繧ｿ縺ｸ蜿肴丐 ---------------
+
 $configModulePath = $null
 foreach ($c in @(
     [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Config.psm1'),
@@ -152,7 +152,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: path='$Path' pathList='$PathList' pattern=$Pattern maxSizeMB=$MaxSizeMB maxAgeDays=$MaxAgeDays compress=$Compress retention=$RetentionCount copyTruncate=$CopyTruncate"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け・亥ｯｾ雎｡蜿朱寔・・---------------------------
+
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         $targets = [System.Collections.Generic.List[hashtable]]::new()
@@ -180,7 +180,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: targetCount=$($targets.Count)"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・ｼ亥ｯｾ雎｡縺斐→・・--------------------------
+
         Write-OpsLog -Level INFO -Message 'Main start'
 
         foreach ($t in $targets) {

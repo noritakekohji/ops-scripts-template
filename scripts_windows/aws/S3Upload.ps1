@@ -1,23 +1,23 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    1 縺､莉･荳翫・繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ繧・Amazon S3 縺ｫ繧｢繝・・繝ｭ繝ｼ繝峨☆繧具ｼ郁｡悟腰菴堺ｸ頑嶌縺榊ｯｾ蠢懶ｼ峨・
+    ローカルファイルを S3 にアップロード。リストファイルで複数対象 + 行内オプションをサポート。Windows / Linux 共通仕様。
 .DESCRIPTION
-    蟇ｾ雎｡縺ｯ -Path・亥腰荳繝輔ぃ繧､繝ｫ・峨→ -PathList・医ユ繧ｭ繧ｹ繝医ヵ繧｡繧､繝ｫ・峨°繧・    隗｣豎ｺ縺吶ｋ縲ゅΜ繧ｹ繝医・蜷・｡後・谺｡縺ｮ蠖｢蠑・
+
 
         <local_path> [Key=Value ...]
 
-    Recognised keys (CLI 縺ｨ蜷後§蜷榊燕縲…ase-sensitive):
+
       Bucket, Prefix, Region, StorageClass, ServerSideEncryption,
       KmsKeyId, Mode (= archive|mirror)
 
     Resolution: per-line > CLI > config/<env>/s3upload.conf > script default.
 
-    繝｢繝ｼ繝・
+
       archive  S3 key = <prefix>/<filename>.<UTC yyyyMMdd-HHmmss>   (default)
       mirror   S3 key = <prefix>/<filename>                          (overwrite)
 
-    隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain・育腸蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / IAM 繝ｭ繝ｼ繝ｫ・峨・    遨ｺ縺ｮ繝ｭ繝ｼ繧ｫ繝ｫ繝輔ぃ繧､繝ｫ縺ｯ繧ｹ繧ｭ繝・・・亥・遲会ｼ峨・
+
 .EXAMPLE
     .\S3Upload.ps1 -Path C:\backup\db.bak -Bucket my-backups -Prefix db/prod
 .EXAMPLE
@@ -42,7 +42,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Λ繧､繝悶Λ繝ｪ ----------------------------------------------------
+# --- Phase 2: Common library ----------------------------------------------------
 $libPath = $null
 foreach ($c in @(
     [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1'),
@@ -125,7 +125,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: path='$Path' pathList='$PathList' bucket='$Bucket' prefix='$Prefix' region='$Region' storageClass=$StorageClass sse=$ServerSideEncryption mode=$Mode"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
+        # --- Phase 3: Pre-checks ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.S3)) {
@@ -154,7 +154,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: entryCount=$($entries.Count)"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
+        # --- Phase 4: Main processing・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
         $stamp = Get-OpsJstStamp
 

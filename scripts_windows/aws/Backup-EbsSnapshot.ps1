@@ -1,17 +1,17 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    EBS 繧ｹ繝翫ャ繝励す繝ｧ繝・ヨ繧剃ｽ懈・縺励∝ｿ・ｦ√↓蠢懊§縺ｦ蜿､縺・ｂ縺ｮ繧剃ｸ紋ｻ｣蜑企勁縺吶ｋ縲・
+    EBS ボリュームのスナップショットを作成し、世代を超えた古いスナップショットを自動削除する（Windows / PowerShell 版）。
 .DESCRIPTION
-    謖吝虚繝代Λ繝｡繝ｼ繧ｿ縺ｯ CLI縲…onfig 繝輔ぃ繧､繝ｫ縲√ｂ縺励￥縺ｯ繧ｹ繧ｯ繝ｪ繝励ヨ譌｢螳壼､縺ｧ
-    謖・ｮ壼庄閭ｽ縲ょ━蜈磯・ｽ阪・ config/README.md 繧貞盾辣ｧ縲・    螳溯｡後＃縺ｨ縺ｮ蟇ｾ雎｡ (-VolumeId / -InstanceId / -NamePrefix) 縺ｯ CLI 蟆ら畑縲・
-    隱崎ｨｼ: 繝・ヵ繧ｩ繝ｫ繝・AWS credential chain・育腸蠅・､画焚 / 繝励Ο繝輔ぃ繧､繝ｫ / IAM 繝ｭ繝ｼ繝ｫ・峨・
-    繝輔Ο繝ｼ・・hell-specification.md 貅匁侠・・
-      1. 蠑墓焚繝舌Μ繝・・繧ｷ繝ｧ繝ｳ
-      2. 迺ｰ蠅・そ繝・ヨ繧｢繝・・ (繝ｭ繧ｬ繝ｼ / config)
-      3. 繝励Ξ繝√ぉ繝・け            (繝｢繧ｸ繝･繝ｼ繝ｫ / 蟇ｾ雎｡ / 蜀ｪ遲画ｧ)
-      4. 繝｡繧､繝ｳ蜃ｦ逅・             (繧ｹ繝翫ャ繝励す繝ｧ繝・ヨ菴懈・ / 蠕・ｩ・/ pruning)
-      5. 蠕悟・逅・                 (譛邨・status 繝ｭ繧ｰ)
+
+
+
+    EBS ボリュームのスナップショットを作成し、世代を超えた古いスナップショットを自動削除する（Windows / PowerShell 版）。
+
+
+
+
+
 #>
 [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Volume')]
 param(
@@ -40,7 +40,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 蜈ｱ騾壹Ο繧ｬ繝ｼ -------------------------------------------------
+
 $libPath = $null
 foreach ($c in @(
     [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1'),
@@ -49,7 +49,7 @@ foreach ($c in @(
 if (-not $libPath) { throw 'Logging.psm1 not found' }
 Import-Module (Resolve-Path $libPath).Path -Force
 
-# --- 繝輔ぉ繝ｼ繧ｺ 2: 險ｭ螳壹ヵ繧｡繧､繝ｫ隱ｭ霎ｼ縺ｿ縲∵悴謖・ｮ壹ヱ繝ｩ繝｡繝ｼ繧ｿ縺ｸ蜿肴丐 ---------------
+
 $configModulePath = $null
 foreach ($c in @(
     [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Config.psm1'),
@@ -78,7 +78,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: paramSet=$($PSCmdlet.ParameterSetName) namePrefix=$NamePrefix region=$Region retentionDays=$RetentionDays minIntervalMin=$MinIntervalMinutes"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
+        # --- Phase 3: Pre-checks ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
@@ -154,7 +154,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: volumeCount=$($volumes.Count)"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
+        # --- Phase 4: Main processing・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         $ts = Get-OpsJstStamp

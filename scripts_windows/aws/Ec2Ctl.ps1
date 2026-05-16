@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    EC2 繝ｩ繧､繝輔し繧､繧ｯ繝ｫ蛻ｶ蠕｡・嘖tart / stop / restart / status・亥・遲会ｼ峨・
+    EC2 ライフサイクル統合制御：start / stop / restart / status を 1 本で。Windows / Linux 共通仕様。
 .DESCRIPTION
     Usage: Ec2Ctl.ps1 <action> <instanceId[,instanceId,...]> [options]
 
@@ -89,7 +89,7 @@ try {
         Write-OpsLog -Level INFO -Message "Config loaded: env=$cfgEnv keys=$($cfg.Count)"
         Write-OpsLog -Level INFO -Message "Args validated: action=$Action instanceCount=$($InstanceId.Count) region=$Region wait=$Wait timeoutSec=$WaitTimeoutSec forceStop=$ForceStop"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 3: 繝励Ξ繝√ぉ繝・け ---------------------------------------------
+        # --- Phase 3: Pre-checks ---------------------------------------------
         Write-OpsLog -Level INFO -Message 'Pre-check start'
 
         if (-not (Get-Module -ListAvailable AWS.Tools.EC2)) {
@@ -173,7 +173,7 @@ try {
 
         Write-OpsLog -Level INFO -Message "Pre-check passed: action=$Action toAct=$($toAct.Count) skipped=$($skipped.Count)"
 
-        # --- 繝輔ぉ繝ｼ繧ｺ 4: 繝｡繧､繝ｳ蜃ｦ逅・---------------------------------------
+        # --- Phase 4: Main processing・---------------------------------------
         Write-OpsLog -Level INFO -Message 'Main start'
 
         if ($PSCmdlet.ShouldProcess(($toAct -join ','), "EC2 $Action")) {
