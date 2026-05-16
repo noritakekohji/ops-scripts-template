@@ -253,8 +253,11 @@ function Invoke-Start {
     if ($OutputDir)        { $CFG['OutputDir']    = $OutputDir }
     if ($Prefix)           { $CFG['OutputPrefix'] = $Prefix    }
 
-    $ts     = (Get-Date).ToString('yyyyMMdd-HHmmss')
-    $sesDir = Join-Path (Resolve-Path $CFG['OutputDir']).Path "$($CFG['OutputPrefix'])_${ts}"
+    $ts      = (Get-Date).ToString('yyyyMMdd-HHmmss')
+    # OutputDir が存在しない場合は先に作成してから絶対パスに解決する
+    $outDir  = $CFG['OutputDir']
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    $sesDir  = Join-Path (Resolve-Path $outDir).Path "$($CFG['OutputPrefix'])_${ts}"
     New-Item -ItemType Directory -Path $sesDir -Force | Out-Null
 
     # 設定スナップショット保存
