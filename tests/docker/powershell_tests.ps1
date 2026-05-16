@@ -371,6 +371,110 @@ Check "file exists" { Test-Path $ChangeDetect }
 SyntaxCheck $ChangeDetect
 
 # ============================================================
+# Suite 13: tools/perf-monitor
+# ============================================================
+Suite "tools/perf-monitor"
+
+$PerfMonSh   = "$Repo/tools/perf-monitor/perf_monitor.sh"
+$PerfMonPs   = "$Repo/tools/perf-monitor/PerfMonitor.ps1"
+$PerfMonPy   = "$Repo/tools/perf-monitor/render_report.py"
+$PerfMonConf = "$Repo/tools/perf-monitor/perf_monitor.conf"
+$PerfDir     = "$Tmp/perf_monitor"
+New-Item -ItemType Directory -Path $PerfDir -Force | Out-Null
+
+Check "perf_monitor.sh exists"   { Test-Path $PerfMonSh   }
+Check "PerfMonitor.ps1 exists"   { Test-Path $PerfMonPs   }
+Check "render_report.py exists"  { Test-Path $PerfMonPy   }
+Check "perf_monitor.conf exists" { Test-Path $PerfMonConf }
+SyntaxCheck $PerfMonPs
+
+# render_report.py: Python3 で直接テストデータを生成してレポート確認
+# (PS7/Linux コンテナでは Get-Counter 系が動かないため、
+#  データ生成は Python で行い render_report.py の動作を検証する)
+Check "render_report.py: generates HTML from test data" {
+    $testData = "$PerfDir/test_data.jsonl"
+    $testHtml = "$PerfDir/test_report.html"
+
+    # テストデータ生成（Python3 で JSON Lines を作成）
+    & pwsh -NonInteractive -Command "
+        `$null = python3 -c @'
+import json, datetime, math, random, pathlib
+start = datetime.datetime(2026, 5, 17, 10, 0, 0)
+rows = []
+random.seed(42)
+for i in range(24):  # 2分相当(5秒x24)
+    t = start + datetime.timedelta(seconds=i*5)
+    rows.append({
+        'ts': t.strftime('%Y-%m-%dT%H:%M:%S+09:00'),
+        'hostname': 'test-host', 'os': 'linux',
+        'cpu_pct':          round(30 + 50*(i/24) + random.uniform(-5,5), 1),
+        'mem_used_pct':     round(55 + 20*(i/24) + random.uniform(-2,2), 1),
+        'mem_used_gb':      round(8.8  + 3.2*(i/24), 2),
+        'mem_free_gb':      round(7.2  - 3.2*(i/24), 2),
+        'mem_total_gb':     16.0,
+        'swap_used_pct':    round(5 + 3*(i/24), 1),
+        'swap_used_gb':     round(0.8 + 0.5*(i/24), 2),
+        'disk_read_mbps':   round(abs(random.gauss(80,  40)), 2),
+        'disk_write_mbps':  round(abs(random.gauss(50,  30)), 2),
+        'net_rx_mbps':      round(abs(random.gauss(200, 80)), 2),
+        'net_tx_mbps':      round(abs(random.gauss(50,  20)), 2),
+        'load_avg_1':       round(1.5 + 2.5*(i/24) + random.uniform(-0.3,0.3), 2),
+        'load_avg_5':       round(1.2 + 2.0*(i/24), 2),
+        'load_avg_15':      round(1.0 + 1.5*(i/24), 2),
+        'proc_count':       random.randint(280, 350),
+    })
+with open('$testData', 'w') as f:
+    for r in rows: f.write(json.dumps(r) + chr(10))
+print('generated', len(rows), 'rows')
+'@
+    " 2>/dev/null
+
+    Test-Path $testData
+}
+
+Check "render_report.py: HTML output valid" {
+    $testData = "$PerfDir/test_data.jsonl"
+    $testHtml = "$PerfDir/test_report.html"
+    if (-not (Test-Path $testData)) { return $false }
+
+    $env:PERF_THR_CPU    = '75'
+    $env:PERF_THR_MEM    = '65'
+    $env:PERF_THR_DISK_R = '100'
+    $env:PERF_THR_DISK_W = '80'
+    $env:PERF_THR_NET_RX = '250'
+    $env:PERF_THR_NET_TX = '70'
+    $env:PERF_THR_LOAD   = '3.0'
+
+    & python3 $PerfMonPy $testData $testHtml 2>/dev/null
+    Test-Path $testHtml
+}
+
+Check "render_report.py: HTML has Chart.js" {
+    $testHtml = "$PerfDir/test_report.html"
+    if (-not (Test-Path $testHtml)) { return $false }
+    $bytes = [System.IO.File]::ReadAllBytes($testHtml)
+    $content = [System.Text.Encoding]::UTF8.GetString($bytes)
+    ($content -match 'chart\.js') -and ($content -match 'chartCpu') -and ($content -match 'chartMem')
+}
+
+Check "render_report.py: HTML has stats table" {
+    $testHtml = "$PerfDir/test_report.html"
+    if (-not (Test-Path $testHtml)) { return $false }
+    $bytes = [System.IO.File]::ReadAllBytes($testHtml)
+    $content = [System.Text.Encoding]::UTF8.GetString($bytes)
+    ($content -match '95') -and ($content -match 'CPU|cpu') -and ($bytes.Length -gt 5000)
+}
+
+Check "render_report.py: HTML has alert section" {
+    $testHtml = "$PerfDir/test_report.html"
+    if (-not (Test-Path $testHtml)) { return $false }
+    $bytes = [System.IO.File]::ReadAllBytes($testHtml)
+    $content = [System.Text.Encoding]::UTF8.GetString($bytes)
+    # しきい値超過か「しきい値設定」セクションがあること
+    ($content -match 'しきい値') -or ($content -match 'alert') -or ($content -match 'Threshold')
+}
+
+# ============================================================
 # Summary
 # ============================================================
 $Total = $script:Pass + $script:Fail

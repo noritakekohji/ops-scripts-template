@@ -337,6 +337,118 @@ check "0 changes detected" bash -c "
 "
 
 # ============================================================
+# Suite 12: tools/perf-monitor
+# ============================================================
+suite "tools/perf-monitor"
+
+PM="$REPO/tools/perf-monitor/perf_monitor.sh"
+PM_PY="$REPO/tools/perf-monitor/render_report.py"
+PM_CONF="$REPO/tools/perf-monitor/perf_monitor.conf"
+PM_DIR="$TMP/perf_monitor"
+mkdir -p "$PM_DIR"
+
+check "perf_monitor.sh exists"   test -f "$PM"
+check "render_report.py exists"  test -f "$PM_PY"
+check "perf_monitor.conf exists" test -f "$PM_CONF"
+syntax_check "perf_monitor.sh"   "$PM"
+
+# start: 5秒間隔・15秒で自動停止
+bash "$PM" start -i 5 -d 15 -o "$PM_DIR" -p pmtest 2>&1 | tee "$TMP/pm_start.log" || true
+
+check "start: session directory created" bash -c "
+    ls -d '$PM_DIR'/pmtest_* 1>/dev/null 2>&1
+"
+check "start: collector.pid created" bash -c "
+    ls '$PM_DIR'/pmtest_*/collector.pid 1>/dev/null 2>&1
+"
+
+# 20秒待機（15秒duration + バッファ）
+sleep 20
+
+check "data.jsonl: created with samples" bash -c "
+    df=\$(ls '$PM_DIR'/pmtest_*/data.jsonl 2>/dev/null | head -1)
+    [[ -z \"\$df\" ]] && { echo 'data.jsonl not found'; exit 1; }
+    cnt=\$(wc -l < \"\$df\")
+    echo \"samples: \$cnt\"
+    [[ \$cnt -ge 2 ]]
+"
+
+check "data.jsonl: valid JSON Lines" bash -c "
+    df=\$(ls '$PM_DIR'/pmtest_*/data.jsonl 2>/dev/null | head -1)
+    [[ -z \"\$df\" ]] && exit 1
+    python3 -c \"
+import json
+rows = [json.loads(l) for l in open('$df') if l.strip()]
+assert len(rows) >= 2, f'Too few rows: {len(rows)}'
+print(f'OK: {len(rows)} rows')
+\"
+"
+
+check "data.jsonl: required fields present" bash -c "
+    df=\$(ls '$PM_DIR'/pmtest_*/data.jsonl 2>/dev/null | head -1)
+    [[ -z \"\$df\" ]] && exit 1
+    python3 -c \"
+import json
+rows = [json.loads(l) for l in open('$df') if l.strip()]
+r = rows[0]
+required = ['ts','hostname','os','cpu_pct','mem_used_pct','mem_used_gb',
+            'disk_read_mbps','disk_write_mbps','net_rx_mbps','net_tx_mbps',
+            'load_avg_1','proc_count']
+missing = [f for f in required if f not in r]
+assert not missing, f'Missing: {missing}'
+print('All required fields present')
+\"
+"
+
+check "status: shows session info" bash -c "
+    sd=\$(ls -d '$PM_DIR'/pmtest_* 2>/dev/null | head -1)
+    [[ -z \"\$sd\" ]] && exit 1
+    bash '$PM' status \"\$sd\" 2>&1 | grep -qE 'pmtest|perf|session|Session'
+"
+
+check "list: shows sessions" bash -c "
+    cd '$PM_DIR' && bash '$PM' list 2>&1 | grep -qiE 'pmtest|perf|session'
+"
+
+check "report: HTML generated" bash -c "
+    sd=\$(ls -d '$PM_DIR'/pmtest_* 2>/dev/null | head -1)
+    [[ -z \"\$sd\" ]] && exit 1
+    df=\"\${sd}/data.jsonl\"
+    html=\"\${sd}/report.html\"
+    PERF_THR_CPU=70 PERF_THR_MEM=80 PERF_THR_LOAD=2.0 \
+        python3 '$PM_PY' \"\$df\" \"\$html\" 2>&1
+    test -f \"\$html\"
+"
+
+check "report: HTML has Chart.js and charts" bash -c "
+    html=\$(ls '$PM_DIR'/pmtest_*/report.html 2>/dev/null | head -1)
+    [[ -z \"\$html\" ]] && exit 1
+    python3 -c \"
+s = open('\$html', encoding='utf-8').read()
+assert 'chart.js' in s.lower(), 'No Chart.js'
+assert 'chartCpu'  in s, 'No CPU chart'
+assert 'chartMem'  in s, 'No memory chart'
+assert 'chartDisk' in s, 'No disk chart'
+assert 'chartNet'  in s, 'No network chart'
+assert 'chartLoad' in s, 'No load avg chart'
+print(f'Charts OK, size={len(s)} bytes')
+\"
+"
+
+check "report: HTML has stats and summary" bash -c "
+    html=\$(ls '$PM_DIR'/pmtest_*/report.html 2>/dev/null | head -1)
+    [[ -z \"\$html\" ]] && exit 1
+    python3 -c \"
+s = open('\$html', encoding='utf-8').read()
+assert 'Performance Monitor' in s, 'No title'
+assert '95' in s, 'No p95 stats column'
+assert 'cpu_pct' in s or 'CPU' in s, 'No CPU stats'
+assert len(s) > 5000, f'HTML too short: {len(s)}'
+print(f'Stats OK, size={len(s)} bytes')
+\"
+"
+
+# ============================================================
 # Summary
 # ============================================================
 TOTAL=$((PASS+FAIL))
