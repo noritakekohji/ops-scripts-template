@@ -44,7 +44,7 @@ THR = {
 # ─────────────────────────────────────────────────────────────
 def load_data(path: str) -> list[dict]:
     records = []
-    with open(path, encoding='utf-8') as f:
+    with open(path, encoding='utf-8-sig') as f:  # utf-8-sig handles optional BOM
         for line in f:
             line = line.strip()
             if line:
