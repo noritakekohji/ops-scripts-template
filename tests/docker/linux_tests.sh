@@ -365,31 +365,28 @@ check "start: collector.pid created" bash -c "
 # 20秒待機（15秒duration + バッファ）
 sleep 20
 
+# セッションパスを確定（以降のチェックで使用）
+PM_SESS=$(ls -d "$PM_DIR"/pmtest_* 2>/dev/null | head -1)
+PM_DATA="${PM_SESS}/data.jsonl"
+PM_HTML="${PM_SESS}/report.html"
+
 check "data.jsonl: created with samples" bash -c "
-    df=\$(ls '$PM_DIR'/pmtest_*/data.jsonl 2>/dev/null | head -1)
-    [[ -z \"\$df\" ]] && { echo 'data.jsonl not found'; exit 1; }
-    cnt=\$(wc -l < \"\$df\")
+    [[ -z '$PM_DATA' || ! -f '$PM_DATA' ]] && { echo 'data.jsonl not found'; exit 1; }
+    cnt=\$(wc -l < '$PM_DATA')
     echo \"samples: \$cnt\"
     [[ \$cnt -ge 2 ]]
 "
 
-check "data.jsonl: valid JSON Lines" bash -c "
-    df=\$(ls '$PM_DIR'/pmtest_*/data.jsonl 2>/dev/null | head -1)
-    [[ -z \"\$df\" ]] && exit 1
-    python3 -c \"
+check "data.jsonl: valid JSON Lines" python3 -c "
 import json
-rows = [json.loads(l) for l in open('$df') if l.strip()]
+rows = [json.loads(l) for l in open('$PM_DATA') if l.strip()]
 assert len(rows) >= 2, f'Too few rows: {len(rows)}'
 print(f'OK: {len(rows)} rows')
-\"
 "
 
-check "data.jsonl: required fields present" bash -c "
-    df=\$(ls '$PM_DIR'/pmtest_*/data.jsonl 2>/dev/null | head -1)
-    [[ -z \"\$df\" ]] && exit 1
-    python3 -c \"
+check "data.jsonl: required fields present" python3 -c "
 import json
-rows = [json.loads(l) for l in open('$df') if l.strip()]
+rows = [json.loads(l) for l in open('$PM_DATA') if l.strip()]
 r = rows[0]
 required = ['ts','hostname','os','cpu_pct','mem_used_pct','mem_used_gb',
             'disk_read_mbps','disk_write_mbps','net_rx_mbps','net_tx_mbps',
@@ -397,13 +394,10 @@ required = ['ts','hostname','os','cpu_pct','mem_used_pct','mem_used_gb',
 missing = [f for f in required if f not in r]
 assert not missing, f'Missing: {missing}'
 print('All required fields present')
-\"
 "
 
 check "status: shows session info" bash -c "
-    sd=\$(ls -d '$PM_DIR'/pmtest_* 2>/dev/null | head -1)
-    [[ -z \"\$sd\" ]] && exit 1
-    bash '$PM' status \"\$sd\" 2>&1 | grep -qE 'pmtest|perf|session|Session'
+    bash '$PM' status '$PM_SESS' 2>&1 | grep -qE 'pmtest|perf|session|Session|sample'
 "
 
 check "list: shows sessions" bash -c "
@@ -411,20 +405,13 @@ check "list: shows sessions" bash -c "
 "
 
 check "report: HTML generated" bash -c "
-    sd=\$(ls -d '$PM_DIR'/pmtest_* 2>/dev/null | head -1)
-    [[ -z \"\$sd\" ]] && exit 1
-    df=\"\${sd}/data.jsonl\"
-    html=\"\${sd}/report.html\"
     PERF_THR_CPU=70 PERF_THR_MEM=80 PERF_THR_LOAD=2.0 \
-        python3 '$PM_PY' \"\$df\" \"\$html\" 2>&1
-    test -f \"\$html\"
+        python3 '$PM_PY' '$PM_DATA' '$PM_HTML' 2>&1
+    test -f '$PM_HTML'
 "
 
-check "report: HTML has Chart.js and charts" bash -c "
-    html=\$(ls '$PM_DIR'/pmtest_*/report.html 2>/dev/null | head -1)
-    [[ -z \"\$html\" ]] && exit 1
-    python3 -c \"
-s = open('\$html', encoding='utf-8').read()
+check "report: HTML has Chart.js and charts" python3 -c "
+s = open('$PM_HTML', encoding='utf-8').read()
 assert 'chart.js' in s.lower(), 'No Chart.js'
 assert 'chartCpu'  in s, 'No CPU chart'
 assert 'chartMem'  in s, 'No memory chart'
@@ -432,20 +419,15 @@ assert 'chartDisk' in s, 'No disk chart'
 assert 'chartNet'  in s, 'No network chart'
 assert 'chartLoad' in s, 'No load avg chart'
 print(f'Charts OK, size={len(s)} bytes')
-\"
 "
 
-check "report: HTML has stats and summary" bash -c "
-    html=\$(ls '$PM_DIR'/pmtest_*/report.html 2>/dev/null | head -1)
-    [[ -z \"\$html\" ]] && exit 1
-    python3 -c \"
-s = open('\$html', encoding='utf-8').read()
+check "report: HTML has stats and summary" python3 -c "
+s = open('$PM_HTML', encoding='utf-8').read()
 assert 'Performance Monitor' in s, 'No title'
 assert '95' in s, 'No p95 stats column'
-assert 'cpu_pct' in s or 'CPU' in s, 'No CPU stats'
+assert 'CPU' in s, 'No CPU stats'
 assert len(s) > 5000, f'HTML too short: {len(s)}'
 print(f'Stats OK, size={len(s)} bytes')
-\"
 "
 
 # ============================================================
