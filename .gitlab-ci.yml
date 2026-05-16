@@ -1,7 +1,10 @@
 # ============================================================
 # GitLab CI pipeline for ops-scripts
 # ------------------------------------------------------------
-# Stages: lint -> security -> test
+# Stages:
+#   lint     -> security -> test   : このリポジトリの品質チェック
+#   sync                           : ターゲットリポジトリへのスクリプト同期 MR 作成
+#
 # Each module is included from ci/<category>/*.gitlab-ci.yml
 # so you can disable any check by commenting out a single line
 # in the `include:` section below.
@@ -9,6 +12,10 @@
 # Runner tag conventions (adjust to your environment):
 #   - linux   : self-hosted Linux runner (Docker executor)
 #   - windows : self-hosted Windows runner (shell executor, PowerShell 7+)
+#
+# CI/CD Variables (Settings > CI/CD > Variables) で設定が必要:
+#   GITLAB_URL    GitLab のベース URL  例: https://gitlab.example.com
+#   GITLAB_TOKEN  Personal Access Token (api, write_repository スコープ)
 # ============================================================
 
 workflow:
@@ -16,11 +23,13 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"    # 手動実行（sync-scripts-manual 用）
 
 stages:
   - lint
   - security
   - test
+  - sync                                  # ターゲットリポジトリへの同期
 
 variables:
   GIT_DEPTH: "0"  # full history needed for gitleaks
@@ -49,3 +58,6 @@ include:
   # test
   - local: ci/test/pester.gitlab-ci.yml
   - local: ci/test/bats.gitlab-ci.yml
+  # deploy — ターゲットリポジトリへの同期 MR を作成
+  # 不要な場合はこの行をコメントアウト
+  - local: ci/deploy/sync.gitlab-ci.yml

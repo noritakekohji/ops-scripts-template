@@ -1,0 +1,119 @@
+# ============================================================
+# deploy/servers.yaml  —  ops-scripts 同期台帳
+#
+# CI がこのファイルを読み取り、各ターゲットリポジトリの
+# サーバーディレクトリへスクリプトをコピーした MR を作成する。
+#
+# コピールール:
+#   scripts  → scripts_dir へ上書きコピー（常に最新化）
+#   configs  → config_dir へ初回のみコピー（既存ファイルはスキップ）
+#
+# パス変換ルール (src → scripts_dir 内の相対パス):
+#   scripts_windows/lib/  → lib/
+#   scripts_linux/os/     → os/
+#   tools/server-compare/ → tools/server-compare/
+#   config/default/*.conf → (config_dir 直下)
+# ============================================================
+
+# ── ターゲットリポジトリ一覧 ────────────────────────────────
+# id はサーバー定義の target: フィールドで参照する識別子
+targets:
+
+  - id: infra-tokyo                    # 識別子（任意の文字列）
+    project_id: 101                    # GitLab project ID（要変更）
+    branch: main                       # MR のマージ先ブランチ
+    mr_labels:                         # MR に付与するラベル（省略可）
+      - ops-sync
+      - automated
+    mr_assignee_id: null               # MR アサイン先ユーザーID（省略可）
+
+  - id: infra-osaka
+    project_id: 202
+    branch: main
+    mr_labels:
+      - ops-sync
+      - automated
+    mr_assignee_id: null
+
+  # ── 追加例: 開発環境リポジトリ ──────────────────────────
+  # - id: infra-dev
+  #   project_id: 303
+  #   branch: develop
+  #   mr_labels:
+  #     - ops-sync
+  #     - dev
+
+
+# ── サーバー定義 ────────────────────────────────────────────
+servers:
+
+  # ── 東京リージョン: Windows サーバー ──────────────────
+  - name: server-web01
+    target: infra-tokyo                # 上の targets[].id を指定
+    os: windows
+    description: "Web サーバー (IIS / Windows Server 2022)"
+    enabled: true
+
+    # ターゲットリポジトリ内の宛先ディレクトリ
+    scripts_dir: server-web01/scripts
+    config_dir:  server-web01/config
+
+    scripts:
+      - scripts_windows/lib/           # 共通ライブラリ全体
+      - scripts_windows/os/Get-ServerInfo.ps1
+      - scripts_windows/os/Rotate-Log.ps1
+      - scripts_windows/os/Deploy-Scripts.ps1
+      - scripts_windows/os/Compare-ServerInfo.ps1
+      # - tools/server-compare/        # ツールも配置する場合
+
+    configs:
+      - config/default/global.conf
+
+  # ── 東京リージョン: Linux サーバー ────────────────────
+  - name: server-db01
+    target: infra-tokyo
+    os: linux
+    description: "DB サーバー (PostgreSQL / Ubuntu 22.04)"
+    enabled: true
+
+    scripts_dir: server-db01/scripts
+    config_dir:  server-db01/config
+
+    scripts:
+      - scripts_linux/lib/
+      - scripts_linux/os/get_server_info.sh
+      - scripts_linux/os/rotate_log.sh
+      - scripts_linux/os/deploy_scripts.sh
+
+    configs:
+      - config/default/global.conf
+
+  # ── 大阪リージョン: Windows サーバー ──────────────────
+  - name: server-web02
+    target: infra-osaka                # 別リポジトリへ
+    os: windows
+    description: "Web サーバー DR (IIS / Windows Server 2022)"
+    enabled: true
+
+    scripts_dir: server-web02/scripts
+    config_dir:  server-web02/config
+
+    scripts:
+      - scripts_windows/lib/
+      - scripts_windows/os/Get-ServerInfo.ps1
+      - scripts_windows/os/Rotate-Log.ps1
+      - scripts_windows/os/Deploy-Scripts.ps1
+      - scripts_windows/os/Compare-ServerInfo.ps1
+
+    configs:
+      - config/default/global.conf
+
+  # ── 無効化例 ──────────────────────────────────────────
+  # - name: server-old01
+  #   target: infra-tokyo
+  #   os: linux
+  #   enabled: false
+  #   scripts_dir: server-old01/scripts
+  #   config_dir:  server-old01/config
+  #   scripts: []
+  #   configs: []

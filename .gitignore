@@ -25,3 +25,6 @@ bats-results.xml
 .idea/
 .DS_Store
 Thumbs.db
+
+# Microsoft Office 一時ロックファイル
+~$*

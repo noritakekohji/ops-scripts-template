@@ -1,0 +1,51 @@
+# ============================================================
+# ci/deploy/sync.gitlab-ci.yml
+#
+# ops-scripts を複数のターゲットリポジトリへ同期する CI ジョブ。
+# .gitlab-ci.yml の include: から参照する。
+#
+# 必要な CI/CD 変数 (Settings > CI/CD > Variables):
+#   GITLAB_URL    GitLab のベース URL   例: https://gitlab.example.com
+#   GITLAB_TOKEN  Personal Access Token (api, write_repository スコープ)
+#
+# オプション変数（Web UI 手動実行時に上書き可能）:
+#   DEPLOY_SERVERS  コンマ区切りのサーバー名     空 = 全有効サーバー
+#   DEPLOY_TARGETS  コンマ区切りのターゲット ID  空 = 全ターゲット
+#   DRY_RUN         "true" でドライラン（MR 未作成）
+# ============================================================
+
+.sync-base:
+  stage: sync
+  image: python:3.11-slim
+  before_script:
+    - pip install -q pyyaml requests
+    - git config --global user.email "${GITLAB_USER_EMAIL:-ci-sync@ops-scripts}"
+    - git config --global user.name  "${GITLAB_USER_NAME:-Ops Sync CI}"
+  script:
+    - python3 deploy/sync.py
+  allow_failure: false
+
+# ── メインブランチ push 後に自動実行 ─────────────────────
+sync-scripts:
+  extends: .sync-base
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+  variables:
+    DEPLOY_SERVERS: ""             # 空 = 全有効サーバー
+    DEPLOY_TARGETS: ""             # 空 = 全ターゲットリポジトリ
+    DRY_RUN: "false"
+
+# ── Web UI からの手動実行 ─────────────────────────────────
+# 用途例:
+#   特定サーバーのみ:   DEPLOY_SERVERS=server-web01
+#   特定リポジトリのみ: DEPLOY_TARGETS=infra-tokyo
+#   ドライラン確認:     DRY_RUN=true
+sync-scripts-manual:
+  extends: .sync-base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+  variables:
+    DEPLOY_SERVERS: ""
+    DEPLOY_TARGETS: ""
+    DRY_RUN: "false"
