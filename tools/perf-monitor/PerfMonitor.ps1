@@ -63,6 +63,31 @@ function Write-Log([string]$Level, [string]$Msg) {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     Write-Host "[$ts] [$Level] $Msg"
 }
+
+# プロセス生存確認: Get-Process の代替 (GPO 制限環境対応)
+# Win32_Process CIM クエリを使用。失敗時は $false を返す。
+function Test-PidRunning([int]$ProcId) {
+    try {
+        $found = Get-CimInstance -ClassName Win32_Process `
+            -Filter "ProcessId=$ProcId" -ErrorAction Stop
+        return ($null -ne $found)
+    } catch {
+        # CIM も失敗した場合は pid ファイルの存在で判断（保守的に running とみなす）
+        return $true
+    }
+}
+
+# プロセス終了: Stop-Process の代替 (GPO 制限環境対応)
+# taskkill.exe (Windows 組み込み) を使用。
+function Stop-PidSafe([int]$ProcId) {
+    try {
+        # taskkill は管理者不要で自分のプロセスまたは同一ユーザーのプロセスを終了できる
+        $null = & taskkill.exe /PID $ProcId /F /T 2>&1
+        return $true
+    } catch {
+        return $false
+    }
+}
 function Log-Info([string]$m)  { Write-Log 'INFO ' $m }
 function Log-Warn([string]$m)  { Write-Log 'WARN ' $m }
 function Log-Error([string]$m) { Write-Log 'ERROR' $m }
@@ -131,15 +156,16 @@ function Invoke-Collect {
             $ts = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
             $hn = $env:COMPUTERNAME
 
-            # CPU
+            # ── CPU (Get-Counter 代替: Win32_PerfFormattedData_PerfOS_Processor) ──
+            # Get-Counter はGPOで制限される場合があるため CIM を使用する
             $cpu_pct = $null
             try {
-                $c = Get-Counter '\Processor(_Total)\% Processor Time' `
-                    -SampleInterval 1 -MaxSamples 1 -ErrorAction Stop
-                $cpu_pct = [math]::Round($c.CounterSamples[0].CookedValue, 1)
+                $cp = Get-CimInstance -ClassName Win32_PerfFormattedData_PerfOS_Processor `
+                    -Filter "Name='_Total'" -ErrorAction Stop
+                if ($cp) { $cpu_pct = [math]::Round($cp.PercentProcessorTime, 1) }
             } catch {}
 
-            # メモリ
+            # ── メモリ (Win32_OperatingSystem は従来通り) ──────────────────────
             $mem_used_pct = $null; $mem_used_gb = $null
             $mem_free_gb  = $null; $mem_total_gb = $null
             $swap_used_pct = $null; $swap_used_gb = $null
@@ -161,31 +187,35 @@ function Invoke-Collect {
                 }
             } catch {}
 
-            # ディスク
+            # ── ディスク (Win32_PerfFormattedData_PerfDisk_PhysicalDisk) ────────
             $disk_read_mbps = $null; $disk_write_mbps = $null
             try {
-                $dr = Get-Counter '\PhysicalDisk(_Total)\Disk Read Bytes/sec'  -SampleInterval 1 -MaxSamples 1 -ErrorAction Stop
-                $dw = Get-Counter '\PhysicalDisk(_Total)\Disk Write Bytes/sec' -SampleInterval 1 -MaxSamples 1 -ErrorAction Stop
-                $disk_read_mbps  = [math]::Round($dr.CounterSamples[0].CookedValue / 1MB, 2)
-                $disk_write_mbps = [math]::Round($dw.CounterSamples[0].CookedValue / 1MB, 2)
+                $dk = Get-CimInstance -ClassName Win32_PerfFormattedData_PerfDisk_PhysicalDisk `
+                    -Filter "Name='_Total'" -ErrorAction Stop
+                if ($dk) {
+                    $disk_read_mbps  = [math]::Round($dk.DiskReadBytesPerSec  / 1MB, 2)
+                    $disk_write_mbps = [math]::Round($dk.DiskWriteBytesPerSec / 1MB, 2)
+                }
             } catch {}
 
-            # ネットワーク
+            # ── ネットワーク (Win32_PerfFormattedData_Tcpip_NetworkInterface) ──
             $net_rx_mbps = $null; $net_tx_mbps = $null
             try {
-                $rx = Get-Counter '\Network Interface(*)\Bytes Received/sec' -SampleInterval 1 -MaxSamples 1 -ErrorAction Stop
-                $tx = Get-Counter '\Network Interface(*)\Bytes Sent/sec'     -SampleInterval 1 -MaxSamples 1 -ErrorAction Stop
-                $rx_t = ($rx.CounterSamples | Where-Object { $_.InstanceName -notmatch 'loopback|isatap' } | Measure-Object CookedValue -Sum).Sum
-                $tx_t = ($tx.CounterSamples | Where-Object { $_.InstanceName -notmatch 'loopback|isatap' } | Measure-Object CookedValue -Sum).Sum
-                $net_rx_mbps = [math]::Round($rx_t * 8 / 1MB, 2)
-                $net_tx_mbps = [math]::Round($tx_t * 8 / 1MB, 2)
+                $nics = Get-CimInstance -ClassName Win32_PerfFormattedData_Tcpip_NetworkInterface `
+                    -ErrorAction Stop | Where-Object { $_.Name -notmatch 'Loopback|isatap' }
+                if ($nics) {
+                    $rx_bps = ($nics | Measure-Object BytesReceivedPerSec -Sum).Sum
+                    $tx_bps = ($nics | Measure-Object BytesSentPerSec     -Sum).Sum
+                    $net_rx_mbps = [math]::Round($rx_bps * 8 / 1MB, 2)
+                    $net_tx_mbps = [math]::Round($tx_bps * 8 / 1MB, 2)
+                }
             } catch {}
 
-            # プロセス数
+            # ── プロセス数 (Win32_OperatingSystem.NumberOfProcesses) ────────────
             $proc_count = $null
             try {
-                $pc = Get-Counter '\System\Processes' -SampleInterval 1 -MaxSamples 1 -ErrorAction SilentlyContinue
-                if ($pc) { $proc_count = [int]$pc.CounterSamples[0].CookedValue }
+                $os2 = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+                if ($os2) { $proc_count = [int]$os2.NumberOfProcesses }
             } catch {}
 
             # JSON 出力（BOM なし UTF-8 で追記）
@@ -312,9 +342,8 @@ function Invoke-Stop {
     $pidFile = Join-Path $sd 'collector.pid'
     if (-not (Test-Path $pidFile)) { Log-Error "PID file not found: $pidFile"; exit 4 }
     $procId = [int](Get-Content $pidFile)
-    $proc   = Get-Process -Id $procId -ErrorAction SilentlyContinue
-    if ($proc) {
-        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+    if (Test-PidRunning $procId) {
+        $null = Stop-PidSafe $procId
         Log-Info "Stopped PID $procId"
     } else {
         Log-Warn "PID $procId not running (already stopped?)"
@@ -337,7 +366,6 @@ function Invoke-Report {
     }
     $df = Join-Path $sd 'data.jsonl'
     if (-not (Test-Path $df)) { Log-Error "Data file not found: $df"; exit 4 }
-    if (-not (Test-Path $RenderPy)) { Log-Error "render_report.py not found: $RenderPy"; exit 5 }
 
     $confPath = if ($Config) { $Config } else { $DefaultConf }
     Load-Conf $confPath
@@ -347,21 +375,274 @@ function Invoke-Report {
     $outHtml = Join-Path $sd 'report.html'
     Log-Info "Generating report: $outHtml"
 
-    $env:PERF_THR_CPU    = $CFG['ThresholdCpuPct']
-    $env:PERF_THR_MEM    = $CFG['ThresholdMemPct']
-    $env:PERF_THR_DISK_R = $CFG['ThresholdDiskReadMBps']
-    $env:PERF_THR_DISK_W = $CFG['ThresholdDiskWriteMBps']
-    $env:PERF_THR_NET_RX = $CFG['ThresholdNetRxMbps']
-    $env:PERF_THR_NET_TX = $CFG['ThresholdNetTxMbps']
-    $env:PERF_THR_LOAD   = $CFG['ThresholdLoadAvg1']
+    # python3 が利用できれば render_report.py を優先使用（高品質チャート）
+    $py3 = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $py3) { $py3 = Get-Command python  -ErrorAction SilentlyContinue }
 
-    python3 $RenderPy $df $outHtml
-    if ($LASTEXITCODE -eq 0) {
-        Log-Info "Report generated: $outHtml"
+    if ($py3 -and (Test-Path $RenderPy)) {
+        $env:PERF_THR_CPU    = $CFG['ThresholdCpuPct']
+        $env:PERF_THR_MEM    = $CFG['ThresholdMemPct']
+        $env:PERF_THR_DISK_R = $CFG['ThresholdDiskReadMBps']
+        $env:PERF_THR_DISK_W = $CFG['ThresholdDiskWriteMBps']
+        $env:PERF_THR_NET_RX = $CFG['ThresholdNetRxMbps']
+        $env:PERF_THR_NET_TX = $CFG['ThresholdNetTxMbps']
+        $env:PERF_THR_LOAD   = $CFG['ThresholdLoadAvg1']
+        & $py3.Source $RenderPy $df $outHtml
+        if ($LASTEXITCODE -eq 0) {
+            Log-Info "Report generated via python3: $outHtml"
+            Write-Host ""; Write-Host "  レポート生成完了: $outHtml"; Write-Host ""
+            return
+        }
+        Log-Warn "python3 failed (exit $LASTEXITCODE), falling back to PowerShell renderer"
+    } else {
+        Log-Info "python3 not found — using built-in PowerShell renderer"
+    }
+
+    # PowerShell ネイティブ HTML 生成（python3 不要）
+    $thr = @{
+        cpu_pct        = [double]$CFG['ThresholdCpuPct']
+        mem_used_pct   = [double]$CFG['ThresholdMemPct']
+        disk_read_mbps = [double]$CFG['ThresholdDiskReadMBps']
+        disk_write_mbps= [double]$CFG['ThresholdDiskWriteMBps']
+        net_rx_mbps    = [double]$CFG['ThresholdNetRxMbps']
+        net_tx_mbps    = [double]$CFG['ThresholdNetTxMbps']
+    }
+    if (New-PerfHtmlReport -DataFile $df -OutputFile $outHtml -Thresholds $thr) {
+        Log-Info "Report generated via PS renderer: $outHtml"
         Write-Host ""; Write-Host "  レポート生成完了: $outHtml"; Write-Host ""
     } else {
-        Log-Error "render_report.py failed"; exit 5
+        Log-Error "Report generation failed"; exit 5
     }
+}
+
+# ════════════════════════════════════════════════════════════
+# PowerShell ネイティブ HTML レポート生成
+#   python3 が使えない環境向けのフォールバック。
+#   Chart.js (CDN) を使ってブラウザで描画するため
+#   ネットワーク接続があれば python3 版と同等のグラフが得られる。
+# ════════════════════════════════════════════════════════════
+function New-PerfHtmlReport {
+    param(
+        [string]$DataFile,
+        [string]$OutputFile,
+        [hashtable]$Thresholds
+    )
+    $enc = [System.Text.UTF8Encoding]::new($false)
+
+    # データ読み込み
+    $records = @(
+        Get-Content $DataFile -Encoding utf8 |
+        Where-Object { $_.Trim() } |
+        ForEach-Object { ConvertFrom-Json $_ }
+    )
+    if ($records.Count -eq 0) { Write-Log 'ERROR' "No records in $DataFile"; return $false }
+
+    # タイムスタンプラベル
+    function Get-TsLabel([string]$Ts) {
+        try   { return ([datetime]::Parse($Ts)).ToString('HH:mm:ss') }
+        catch { return $Ts.Substring([math]::Max(0,$Ts.Length-8), [math]::Min(8,$Ts.Length)) }
+    }
+
+    # JS 配列文字列生成
+    function To-JsArr([string]$Key) {
+        $parts = $records | ForEach-Object {
+            $v = $_.$Key
+            if ($null -eq $v) { 'null' } else { "$v" }
+        }
+        return '[' + ($parts -join ',') + ']'
+    }
+
+    $labels_js = '[' + (($records | ForEach-Object { '"' + (Get-TsLabel $_.ts) + '"' }) -join ',') + ']'
+
+    # 統計計算
+    function Measure-Stats([string]$Key) {
+        $vals = @($records | Where-Object { $null -ne $_.$Key } | ForEach-Object { [double]$_.$Key })
+        if ($vals.Count -eq 0) { return $null }
+        $sorted = @($vals | Sort-Object)
+        $p95i   = [math]::Min([int]($vals.Count * 0.95), $vals.Count - 1)
+        return [PSCustomObject]@{
+            min = [math]::Round(($vals | Measure-Object -Min).Minimum, 2)
+            max = [math]::Round(($vals | Measure-Object -Max).Maximum, 2)
+            avg = [math]::Round(($vals | Measure-Object -Average).Average, 2)
+            p95 = [math]::Round($sorted[$p95i], 2)
+        }
+    }
+
+    # しきい値超過チェック
+    function Get-AlertCount([string]$Key) {
+        $tv = $Thresholds[$Key]
+        if (-not $tv -or $tv -le 0) { return 0 }
+        return @($records | Where-Object { $null -ne $_.$Key -and [double]$_.$Key -ge $tv }).Count
+    }
+
+    $tsFirst = $records[0].ts;  $tsLast = $records[-1].ts
+    $hn      = $records[0].hostname
+    try { $dur = [math]::Round(([datetime]::Parse($tsLast) - [datetime]::Parse($tsFirst)).TotalSeconds) } catch { $dur = 0 }
+    $genTime = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $nSam    = $records.Count
+
+    $st_cpu  = Measure-Stats 'cpu_pct'
+    $st_mem  = Measure-Stats 'mem_used_pct'
+    $st_dr   = Measure-Stats 'disk_read_mbps'
+    $st_dw   = Measure-Stats 'disk_write_mbps'
+    $st_rx   = Measure-Stats 'net_rx_mbps'
+    $st_tx   = Measure-Stats 'net_tx_mbps'
+
+    $totalAlerts = 0
+    foreach ($k in $Thresholds.Keys) { $totalAlerts += Get-AlertCount $k }
+
+    function Stat-Row([string]$Label, $St, [string]$Unit, [string]$Key) {
+        if (-not $St) { return "<tr><td>$Label</td><td colspan='4' class='na'>N/A</td></tr>" }
+        $tv  = $Thresholds[$Key]
+        $mcls = if ($tv -gt 0 -and $St.max -ge $tv) { " class='alert'" } else { "" }
+        return "<tr><td>$Label</td><td>$($St.min)$Unit</td><td>$($St.avg)$Unit</td><td$mcls>$($St.max)$Unit</td><td>$($St.p95)$Unit</td></tr>"
+    }
+
+    $statRows = (
+        (Stat-Row 'CPU 使用率'     $st_cpu '%'    'cpu_pct') +
+        (Stat-Row 'メモリ使用率'   $st_mem '%'    'mem_used_pct') +
+        (Stat-Row 'Disk Read'     $st_dr  'MB/s' 'disk_read_mbps') +
+        (Stat-Row 'Disk Write'    $st_dw  'MB/s' 'disk_write_mbps') +
+        (Stat-Row 'Net Rx'        $st_rx  'Mbps' 'net_rx_mbps') +
+        (Stat-Row 'Net Tx'        $st_tx  'Mbps' 'net_tx_mbps')
+    )
+
+    # アラートテーブル行生成（最大 200 行）
+    $alertRows = ''
+    $alertLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($r in $records) {
+        foreach ($k in $Thresholds.Keys) {
+            $tv = $Thresholds[$k]
+            if ($tv -le 0) { continue }
+            $v  = $r.$k
+            if ($null -ne $v -and [double]$v -ge $tv) {
+                $tl = Get-TsLabel $r.ts
+                $alertLines.Add("<tr><td>$tl</td><td>$k</td><td class='alert'>$v</td><td>$tv</td></tr>")
+                if ($alertLines.Count -ge 200) { break }
+            }
+        }
+        if ($alertLines.Count -ge 200) { break }
+    }
+    $alertRows = $alertLines -join "`n"
+    $alertSection = if ($totalAlerts -gt 0) { @"
+<div class="section">
+  <div class="section-title">&#x26A0; しきい値超過一覧 ($totalAlerts 件)</div>
+  <table><thead><tr><th>時刻</th><th>メトリクス</th><th>値</th><th>しきい値</th></tr></thead>
+  <tbody>$alertRows</tbody></table>
+</div>
+"@ } else { '' }
+
+    # Chart.js 関数定義
+    $cpu_js   = To-JsArr 'cpu_pct'
+    $mem_js   = To-JsArr 'mem_used_pct'
+    $dr_js    = To-JsArr 'disk_read_mbps'
+    $dw_js    = To-JsArr 'disk_write_mbps'
+    $rx_js    = To-JsArr 'net_rx_mbps'
+    $tx_js    = To-JsArr 'net_tx_mbps'
+    $ld1_js   = To-JsArr 'load_avg_1'
+
+    $thr_cpu = $Thresholds['cpu_pct']; $thr_mem = $Thresholds['mem_used_pct']
+    $thr_dr  = $Thresholds['disk_read_mbps']; $thr_dw = $Thresholds['disk_write_mbps']
+    $thr_rx  = $Thresholds['net_rx_mbps'];    $thr_tx = $Thresholds['net_tx_mbps']
+
+    function Make-Chart([string]$id, [string]$title, [string]$y_label, [string]$data_js,
+                        [string]$color, [double]$threshold = 0, [string]$data2_js = '',
+                        [string]$color2 = '', [string]$label1 = '', [string]$label2 = '') {
+        $lbl1  = if ($label1) { $label1 } else { $title }
+        $thr_ds = if ($threshold -gt 0) {
+            ",{label:'しきい値 ($threshold)',data:Array($nSam).fill($threshold),borderColor:'#ef4444',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false,spanGaps:true}"
+        } else { '' }
+        $ds2 = if ($data2_js) {
+            ",{label:'$label2',data:$data2_js,borderColor:'$color2',backgroundColor:'${color2}26',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false,spanGaps:true}"
+        } else { '' }
+        return @"
+<div class="chart-box">
+  <div class="chart-title">$title</div>
+  <canvas id="$id" height="220"></canvas>
+</div>
+<script>
+(function(){var ctx=document.getElementById('$id').getContext('2d');
+new Chart(ctx,{type:'line',data:{labels:$labels_js,datasets:[
+  {label:'$lbl1',data:$data_js,borderColor:'$color',backgroundColor:'${color}26',borderWidth:1.5,pointRadius:0,tension:0.3,fill:true,spanGaps:true}
+  $ds2$thr_ds]},
+options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},
+  plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
+  tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+(c.parsed.y??'-')+' $y_label'}}}},
+  scales:{x:{ticks:{maxTicksLimit:12,font:{size:10}},grid:{color:'#f1f5f9'}},
+          y:{beginAtZero:true,title:{display:true,text:'$y_label',font:{size:11}},ticks:{font:{size:10}},grid:{color:'#f1f5f9'}}}}});
+})();</script>
+"@
+    }
+
+    $charts = (
+        (Make-Chart 'ch_cpu'  'CPU 使用率'            '%'    $cpu_js  '#3b82f6' $thr_cpu) +
+        (Make-Chart 'ch_mem'  'メモリ使用率'           '%'    $mem_js  '#8b5cf6' $thr_mem) +
+        (Make-Chart 'ch_disk' 'ディスク I/O'          'MB/s' $dr_js   '#f59e0b' ([math]::Max($thr_dr,$thr_dw)) '' $dw_js '#f97316' 'Read (MB/s)' 'Write (MB/s)') +
+        (Make-Chart 'ch_net'  'ネットワーク'           'Mbps' $rx_js   '#06b6d4' ([math]::Max($thr_rx,$thr_tx)) '' $tx_js '#0891b2' 'Rx (Mbps)' 'Tx (Mbps)') +
+        (Make-Chart 'ch_load' 'ロードアベレージ'       ''     $ld1_js  '#22c55e')
+    )
+
+    $peakCpu = if ($st_cpu) { "$($st_cpu.max)% (avg $($st_cpu.avg)%)" } else { 'N/A' }
+    $peakMem = if ($st_mem) { "$($st_mem.max)% (avg $($st_mem.avg)%)" } else { 'N/A' }
+    $alertBadge = if ($totalAlerts -gt 0) { "<span class='alert-badge'>$totalAlerts 回</span>" } else { "<span class='ok-badge'>なし</span>" }
+    $durStr = "$([int]($dur/60))分$([int]($dur%60))秒"
+
+    $html = @"
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>Performance Monitor Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;background:#f0f2f5;color:#222}
+.header{background:#1e293b;color:#fff;padding:20px 24px}
+.header h1{font-size:22px;font-weight:700}
+.header .sub{font-size:12px;color:#94a3b8;margin-top:4px}
+.meta-bar{display:flex;gap:12px;padding:14px 24px;flex-wrap:wrap;background:#fff;border-bottom:1px solid #e2e8f0}
+.meta-item{font-size:12px;color:#475569}.meta-item span{font-weight:600;color:#1e293b;margin-left:4px}
+.section{padding:16px 24px}
+.section-title{font-size:14px;font-weight:700;color:#1e293b;margin-bottom:12px;padding-left:8px;border-left:3px solid #3b82f6}
+.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.card{background:#fff;border-radius:8px;padding:14px 18px;min-width:160px;box-shadow:0 1px 3px rgba(0,0,0,.1);flex:1}
+.card-title{font-size:11px;color:#64748b;margin-bottom:6px}.card-value{font-size:14px;font-weight:700;color:#1e293b}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:16px}
+.chart-box{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.chart-title{font-size:13px;font-weight:600;color:#1e293b;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th{background:#f1f5f9;padding:8px 12px;text-align:left;font-weight:600;color:#475569;font-size:12px;border-bottom:2px solid #e2e8f0}
+td{padding:7px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}tr:last-child td{border-bottom:none}
+td.alert{color:#dc2626;font-weight:700}td.na{color:#94a3b8}
+.alert-badge{background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.ok-badge{background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.footer{text-align:center;padding:16px;font-size:11px;color:#94a3b8}
+</style></head><body>
+<div class="header"><h1>&#128200; Performance Monitor Report</h1>
+<div class="sub">Generated: $genTime (PowerShell renderer)</div></div>
+<div class="meta-bar">
+  <div class="meta-item">ホスト<span>$hn</span></div>
+  <div class="meta-item">開始<span>$tsFirst</span></div>
+  <div class="meta-item">終了<span>$tsLast</span></div>
+  <div class="meta-item">計測時間<span>$durStr</span></div>
+  <div class="meta-item">サンプル数<span>$nSam 件</span></div>
+  <div class="meta-item">しきい値超過<span>$alertBadge</span></div>
+</div>
+<div class="section"><div class="section-title">サマリー</div>
+<div class="cards">
+  <div class="card" style="border-top:3px solid #3b82f6"><div class="card-title">CPU ピーク</div><div class="card-value">$peakCpu</div></div>
+  <div class="card" style="border-top:3px solid #8b5cf6"><div class="card-title">メモリ ピーク</div><div class="card-value">$peakMem</div></div>
+  <div class="card" style="border-top:3px solid $(if($totalAlerts -gt 0){'#ef4444'}else{'#16a34a'})"><div class="card-title">しきい値超過</div><div class="card-value">$totalAlerts 回</div></div>
+</div></div>
+<div class="section"><div class="section-title">リソース推移グラフ</div>
+<div class="charts-grid">$charts</div></div>
+<div class="section"><div class="section-title">統計サマリー</div>
+<table><thead><tr><th>メトリクス</th><th>最小</th><th>平均</th><th>最大</th><th>95パーセンタイル</th></tr></thead>
+<tbody>$statRows</tbody></table></div>
+$alertSection
+<div class="footer">Performance Monitor &bull; PerfMonitor.ps1 (PS renderer) &bull; $genTime</div>
+</body></html>
+"@
+
+    [System.IO.File]::WriteAllText($OutputFile, $html, $enc)
+    return $true
 }
 
 # ════════════════════════════════════════════════════════════
@@ -378,8 +659,8 @@ function Invoke-Status {
     $pf = Join-Path $sd 'collector.pid'
     if (Test-Path $pf) {
         $pid_ = [int](Get-Content $pf)
-        $proc = Get-Process -Id $pid_ -ErrorAction SilentlyContinue
-        Write-Host "  状態: $(if($proc){'収集中 (PID='+$pid_+')'}else{'停止済み'})"
+        $running = Test-PidRunning $pid_
+        Write-Host "  状態: $(if($running){'収集中 (PID='+$pid_+')'}else{'停止済み'})"
     } else { Write-Host "  状態: 停止済み" }
 
     $df = Join-Path $sd 'data.jsonl'
@@ -404,8 +685,7 @@ function Invoke-List {
         Sort-Object LastWriteTime -Descending | ForEach-Object {
             $d = $_.DirectoryName
             $pid_ = [int](Get-Content $_.FullName)
-            $proc = Get-Process -Id $pid_ -ErrorAction SilentlyContinue
-            $active = if ($proc) { '収集中' } else { '停止済み' }
+            $active = if (Test-PidRunning $pid_) { '収集中' } else { '停止済み' }
             $df = Join-Path $d 'data.jsonl'
             $count = if (Test-Path $df) { (Get-Content $df).Count } else { 0 }
             Write-Host ("  [{0,-6}] {1}  ({2} サンプル)" -f $active, $d, $count)
