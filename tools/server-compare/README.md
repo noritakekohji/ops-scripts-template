@@ -4,14 +4,22 @@
 
 ```
 tools/server-compare/
-├── Get-ServerInfo.ps1     # Windows 情報収集
-├── Get-ServerInfo.bat     # Windows 起動用バッチ
-├── get_server_info.sh     # Linux  情報収集
-├── Compare-ServerInfo.ps1 # 比較（コンソール + HTML）
-└── Compare-ServerInfo.bat # Windows 起動用バッチ
+├── Get-ServerInfo.ps1         # Windows 情報収集
+├── Get-ServerInfo.bat         # Windows 起動用バッチ
+├── get_server_info.sh         # Linux  情報収集
+├── Compare-ServerInfo.ps1     # 比較ラッパー（python3 があれば共通エンジンへ委譲）
+├── Compare-ServerInfo.bat     # Windows 起動用バッチ
+├── compare_server_info.sh     # Linux 用 比較ラッパー
+└── compare_server_info.py     # 共通比較エンジン（カテゴリ/HTML 出力の真実の源）
 ```
 
-> Linux 単体での比較は `tools/change-detect/change_detect.sh compare` を利用してください（内部で Python 比較器を呼び出します）。
+> **比較ロジックの一元化**: 比較カテゴリ・volatile 値の除外ルール・HTML レポートは
+> `compare_server_info.py` に集約しています。`change_detect.sh compare`、
+> `compare_server_info.sh`、`Compare-ServerInfo.ps1`（python3 が利用可能な場合）
+> はすべて同じエンジンを呼び出すため、OS によらず同じ結果が得られます。
+>
+> python3 が制限された Windows 環境では Compare-ServerInfo.ps1 が PowerShell
+> ネイティブ実装に自動フォールバックします（カテゴリ・出力は若干簡略化されます）。
 
 ---
 

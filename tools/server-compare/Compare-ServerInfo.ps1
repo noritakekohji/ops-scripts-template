@@ -43,6 +43,38 @@ if ($env:OPS_LOG_FILE) {
 }
 
 # ============================================================
+# Prefer the shared Python comparator (compare_server_info.py) so that
+# this command and `change_detect.sh compare` produce **identical** output
+# regardless of OS. We fall back to the PS-native implementation below when:
+#   - python3 / py is not in PATH (security-restricted Windows), or
+#   - the .py engine is missing
+# Category filtering (-Category) is a PS-only refinement and is honoured
+# only by the PS implementation; if -Category is anything other than 'all'
+# we keep using the PS path so the user gets the requested narrowing.
+# ============================================================
+$pythonComparator = Join-Path $PSScriptRoot 'compare_server_info.py'
+$useShared = $false
+if ((Test-Path $pythonComparator) -and ($Category -contains 'all' -or $Category.Count -eq 0)) {
+    $py = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $py) { $py = Get-Command py      -ErrorAction SilentlyContinue }
+    if ($py) {
+        $pyArgs = @($pythonComparator, $Before, $After)
+        if ($HtmlReport) { $pyArgs += @('--html', $HtmlReport) }
+        if ($DiffOnly)   { $pyArgs += '--diff-only' }
+        # ANSI 色は Windows コンソールで化けやすいので無効化
+        $pyArgs += '--no-color'
+        & $py.Source @pyArgs
+        $useShared = $true
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "compare_server_info.py exited with $LASTEXITCODE; falling back to PS native compare"
+            $useShared = $false
+        }
+    }
+}
+if ($useShared) { exit 0 }
+
+# ============================================================
 # Data structures
 # ============================================================
 
