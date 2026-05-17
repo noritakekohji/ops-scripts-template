@@ -1,408 +1,268 @@
-# 大規模サーバ運用シェル ディレクトリ構成設計書
+# 運用シェル ディレクトリ構成設計書
 
-エンタープライズ向け（社内利用・セキュリティ重視・大規模サーバ群運用）の運用シェルスクリプト群について、ディレクトリ構成と設計指針をまとめたドキュメントです。
+エンタープライズ向け（社内利用・セキュリティ重視・大規模サーバ群運用）の運用スクリプト群について、本リポジトリ `ops-scripts-template` の **実際のディレクトリ構成** と設計指針をまとめたドキュメントです。
 
-PowerShell（Windows 系）と Bash（Linux 系）が混在し、Tomcat / SQL Server のように **同じミドルウェアが複数 OS で動く** ケースを前提としています。
+PowerShell（Windows 系）と Bash（Linux 系）が混在し、AWS / OS / 各種ミドルウェア（PostgreSQL / MySQL / SAP HANA / S/4HANA / SQL Server / Tomcat）の運用を 1 つのテンプレートでカバーします。
 
 ---
 
 ## 1. 設計の基本方針
 
-このディレクトリ構成は、次の 4 つの分離を軸にしています。
+このリポジトリは、次の 4 つの分離を軸にしています。
 
 | 分離の軸 | 何を分けるか | なぜ分けるか |
 |---|---|---|
-| **コード / 設定 / シークレット** | スクリプト本体、環境別パラメータ、秘密情報 | コードを変えずに環境を切り替えるため。秘密情報を Git に混入させないため |
-| **ミドルウェア / OS** | Tomcat や SQL Server の運用 と、AD や systemd のような OS 固有運用 | 担当者の役割（DBA、AP サーバ担当）に沿わせ、Runbook を集約しやすくするため |
-| **単機能スクリプト / 業務手順（Playbook）** | 1 つの操作 と、複数操作を束ねた業務フロー | 単機能はテスト・再利用しやすく、業務フローは「やりたいこと」で表現できるようにするため |
-| **インベントリ / コード** | サーバ一覧と、それを操作するスクリプト | サーバ追加・移設をコード変更なしで行うため |
+| **コード / 設定 / シークレット** | スクリプト本体、環境別パラメータ、秘密情報 | コードを変えずに環境を切り替える。秘密情報を Git に混入させない |
+| **OS / ミドルウェア** | Windows (PowerShell) と Linux (Bash) の実装、AWS や各 DB 等のドメイン | 担当者の役割（DBA、AP サーバ担当）に沿わせ、Runbook を集約しやすくする |
+| **本体スクリプト / 運用ツール** | 1 つのリソースを操作する制御スクリプトと、汎用補助ツール | 単機能はテスト・再利用しやすく、汎用ツールは横串で全環境に再利用できる |
+| **テンプレ / 配備物** | テンプレ本体と、配備先で実際に動くスクリプト | テンプレを介して別リポジトリへ同期配備し、配備先の差分を見える化する |
+
+### OS-first を採用している理由
+
+ミドルウェア優先（`scripts/<middleware>/<lang>/`）も有力な選択肢でしたが、以下の理由で **OS-first（`scripts_linux/<domain>/` と `scripts_windows/<domain>/`）** を採用しています。
+
+- **担当の現実に沿う**: 多くの組織で「Windows サーバ担当」「Linux サーバ担当」が縦割りで、レビュアーも OS 単位で分かれます。
+- **PowerShell / Bash の lint / テスト系統が OS で分かれる**: PSScriptAnalyzer / Pester は Windows runner、ShellCheck / bats は Linux runner と物理的に分断され、CI の include / runner タグも OS 単位で整理する方が直感的です。
+- **配備先の OS が明確**: 配備先サーバは大抵 OS が単一で、`scripts_linux/` 一式をそのまま `/opt/ops-scripts/` へ撒けるなど、配備が単純です。
+- **同名スクリプトを Linux / Windows で対比しやすい**: `postgresqlctl.sh` ↔ `PostgreSQLCtl.ps1` のように、対応関係がディレクトリの並びだけで読み取れます。
 
 ### セキュリティの統制ポイント
 
-- **シークレットはリポジトリに置かない**：参照キーのみを `config/` に置き、実値は Vault / Azure Key Vault / CyberArk から共通ライブラリ経由で取得する。
-- **共通ライブラリでガードレールを作る**：ロギング・監査・シークレット取得・エラー処理を `lib/` に集約し、すべてのスクリプトがこれを通る。これにより「誰が・いつ・どこで・何をしたか」が SIEM に必ず記録される。
-- **CI で必須チェック**：lint（PSScriptAnalyzer / ShellCheck）、シークレットスキャン（gitleaks）、テスト（Pester / bats）をプルリク必須に。
+- **シークレットはリポジトリに置かない**: 参照キーのみを `config/` に置き、実値は Vault / Azure Key Vault / CyberArk から共通ライブラリ経由で取得する。
+- **共通ライブラリでガードレールを作る**: ロギング・設定取得・エラー処理を `scripts_linux/lib/` と `scripts_windows/lib/` に集約し、すべての制御スクリプトがこれを通る。これにより「誰が・いつ・どこで・何をしたか」が SIEM に必ず記録される。
+- **CI で必須チェック**: lint（PSScriptAnalyzer / ShellCheck / sqlfluff / yamllint）、シークレットスキャン（gitleaks）、依存脆弱性（Trivy）、テンプレ準拠（template-check）、ユニットテスト（Pester / bats）を MR 必須にする。
 
 ---
 
 ## 2. ディレクトリ構成（全体像）
 
 ```
-ops-scripts/
+ops-scripts-template/
 ├── README.md
-├── CHANGELOG.md
-├── .gitignore
-├── .editorconfig
-│
-├── docs/                          # ドキュメント
-│   ├── runbooks/                  # 運用手順書・インシデント対応
-│   ├── architecture/              # 構成図・設計判断の記録
-│   ├── security/                  # セキュリティポリシー、権限設計、監査要件
-│   └── onboarding.md              # 新規担当者向け
+├── install.md / install.bat / install.sh
+├── shell-specification.md         # シェル/PS のコーディング規約・出力規約
+├── development-rules.md           # 開発時の落とし穴と回避策（事実上のチェックリスト）
+├── ops-scripts-structure.md       # 本ドキュメント
 │
 ├── config/                        # 環境別設定（コードと完全分離）
-│   ├── default/                   # 全環境共通の既定パラメータ（OPS_ENV 未設定時もここを読む）
+│   ├── default/                   # 全環境共通の既定値（OPS_ENV 未設定時もここを読む）
 │   ├── dev/
 │   ├── staging/
 │   └── production/
-│       └── secrets.ref.yml        # Vault 等への「参照」のみ。実値は置かない
 │
-├── inventory/                     # サーバ一覧
-│   ├── windows/
-│   ├── sqlserver/
-│   ├── tomcat/
-│   ├── linux/
-│   └── groups.yml                 # 役割・拠点・環境でグルーピング
+├── scripts_linux/                 # Bash 実装（OS-first）
+│   ├── lib/                       # config.sh / logging.sh（必須経路）
+│   ├── aws/                       # backup_ami / backup_ebs_snapshot / ec2ctl / s3upload
+│   ├── hana/                      # hanactl
+│   ├── mysql/                     # mysqlctl
+│   ├── os/                        # deploy_scripts / get_server_info / rotate_log
+│   ├── postgresql/                # postgresqlctl
+│   ├── sap/                       # sapctl
+│   ├── sqlserver/                 # sqlserverctl
+│   └── tomcat/                    # tomcatctl
 │
-├── scripts/                       # 実スクリプト本体
-│   ├── tomcat/                    # ミドルウェア（OS 横断）
-│   │   ├── common/                # OS 非依存の資産
-│   │   ├── powershell/            # PowerShell 実装
-│   │   └── bash/                  # Bash 実装
-│   │
-│   ├── sqlserver/
-│   │   ├── common/                # T-SQL（.sql）はここに集約
-│   │   ├── powershell/
-│   │   └── bash/
-│   │
-│   ├── windows/                   # OS 固有（AD、IIS、イベントログ 等）
-│   │   └── powershell/            # PowerShell 実装
-│   ├── linux/                     # OS 固有（systemd、cron 等）
-│   │   └── bash/                  # Bash 実装
-│   │
-│   └── common/                    # ミドル横断の汎用処理（通知、監査送信 等）
+├── scripts_windows/               # PowerShell 実装（OS-first）
+│   ├── lib/                       # Config.psm1 / Logging.psm1（必須経路）
+│   ├── aws/                       # Backup-Ami / Backup-EbsSnapshot / Ec2Ctl / S3Upload
+│   ├── mysql/                     # MySQLCtl
+│   ├── os/                        # Compare-ServerInfo / Deploy-Scripts / Get-ServerInfo / Rotate-Log
+│   ├── postgresql/                # PostgreSQLCtl
+│   ├── sap/                       # SAPCtl
+│   ├── sqlserver/                 # SqlServerCtl
+│   └── tomcat/                    # TomcatCtl
 │
-├── lib/                           # 共通ライブラリ（再利用と統制の要）
-│   ├── powershell/
-│   ├── bash/
-│   └── sql/
+├── docs_linux/                    # Linux スクリプトの仕様書 (*.md)
+├── docs_windows/                  # Windows スクリプトの仕様書 (*.md)
 │
-├── playbooks/                     # 業務手順（複数スクリプトを束ねる）
-│   ├── monthly-patching/
-│   ├── dr-failover/
-│   ├── tomcat-blue-green/
-│   └── new-server-provisioning/
+├── tools/                         # 運用補助ツール（OS 両対応のスタンドアロン）
+│   ├── perf-monitor/              # 負荷テスト中のリソース監視＋HTML レポート
+│   ├── network-check/             # DNS / Ping / TCP 疎通確認
+│   ├── change-detect/             # サーバ情報の前後比較ワークフロー
+│   ├── server-compare/            # サーバ情報収集と差分検出
+│   └── templates/                 # 新規スクリプト用テンプレート（5-phase 構造）
 │
-├── tests/                         # 自動テスト
-│   ├── pester/                    # PowerShell 用
-│   ├── bats/                      # Bash 用
-│   └── fixtures/
+├── deploy/                        # 別リポジトリへの自動同期
+│   ├── servers.yaml               # コピー先リポジトリ一覧
+│   ├── sync.py                    # MR 自動作成スクリプト
+│   └── SPEC.md
 │
-├── ci/                            # CI/CD パイプライン定義
-│   ├── lint/                      # PSScriptAnalyzer / ShellCheck / sqlfluff
-│   ├── security-scan/             # gitleaks / Trivy / Semgrep
-│   └── pipelines/                 # GitHub Actions / Azure Pipelines 等
+├── tests/
+│   ├── pester/                    # PowerShell ユニットテスト
+│   ├── bats/                      # Bash ユニットテスト
+│   └── docker/                    # Docker でのエンドツーエンドテスト
 │
-└── tools/                         # 開発支援ツール
-    ├── bootstrap.ps1              # 開発環境セットアップ
-    ├── new-script.ps1             # スクリプトのスケルトン生成
-    └── pre-commit/                # コミット前フック（lint + secret scan）
+├── ci/                            # GitLab CI 定義
+│   ├── lint/                      # psscriptanalyzer / shellcheck / sqlfluff / yamllint / template-check
+│   ├── security/                  # gitleaks / Trivy
+│   ├── test/                      # Pester / bats
+│   ├── deploy/                    # 別リポジトリ自動同期
+│   └── template-check/            # テンプレ準拠検査スクリプト
+│
+├── .gitlab-ci.yml                 # メインパイプライン（include で各モジュールを読む）
+├── .gitleaks.toml / .yamllint / .sqlfluff / .gitignore / .gitattributes
+└── presentations/                 # 紹介スライド (*.pptx) 等
 ```
 
 ---
 
 ## 3. 各ディレクトリの説明
 
-### 3.1 `docs/` — ドキュメント
-
-運用に必要な「人間向け情報」を置きます。
-
-| サブディレクトリ | 内容 | 例 |
-|---|---|---|
-| `runbooks/` | 障害対応・定例作業の手順書 | 「Tomcat が応答しないときの対処」 |
-| `architecture/` | システム構成図、設計判断の根拠 | 「なぜ AlwaysOn AG を採用したか」 |
-| `security/` | 権限設計、監査要件、ポリシー | 「本番作業時の承認フロー」 |
-| `onboarding.md` | 新規担当者の立ち上げ手順 | 環境構築、権限申請の流れ |
-
-> **ポイント**：スクリプトを読まなくても**「何をするためのものか」が分かる入口**になります。
-
----
-
-### 3.2 `config/` — 環境別設定
+### 3.1 `config/` — 環境別設定
 
 **コードを変えずに環境を切り替える** ためのパラメータ置き場です。
 
 ```
 config/
-├── default/             # 全環境共通の既定値（OPS_ENV 未設定時のみ参照 / 指定時は env で上書き）
+├── default/                       # 全環境共通の既定値（OPS_ENV 未設定時のみ参照 / 指定時は env で上書き）
+│   ├── global.conf                # 全スクリプト共通設定（ログレベル等）
+│   ├── postgresqlctl.conf
+│   ├── tomcatctl.conf
+│   └── ...                        # スクリプトごとの .conf
 ├── dev/
 ├── staging/
 └── production/
-    ├── tomcat.yml       # 本番 Tomcat の接続先・JVM パラメータ等
-    ├── sqlserver.yml
-    └── secrets.ref.yml  # 例：sqlserver_password: ref://vault/production/sqlserver
 ```
 
 **ルール**
 
-- 実際のパスワードや API キーは絶対に書かない。
-- 書いてよいのは「Vault 内のどこに格納されているか」という参照キーだけ。
-- 環境ファイルの差分が、そのまま「環境間の差」として可視化される。
+- 実際のパスワードや API キーは絶対に書かない（Vault 参照のみ）。
+- 各スクリプトは `lib/config.sh` (Bash) / `lib/Config.psm1` (PowerShell) 経由でロードする。
+- 設定の優先順位: **CLI 引数 > 環境別 .conf > default/.conf > スクリプト内既定値**。
 
----
+### 3.2 `scripts_linux/` / `scripts_windows/` — 制御スクリプト本体
 
-### 3.3 `inventory/` — サーバ一覧
-
-「どのサーバが、どの役割で、どの環境にいるか」をデータとして持ちます。Ansible のインベントリ形式に近い思想です。
-
-```yaml
-# inventory/groups.yml の例
-tomcat_prod:
-  hosts: [tomcat01, tomcat02, tomcat03]
-
-sqlserver_prod:
-  hosts: [sqldb01, sqldb02]
-
-# ホスト個別の属性
-tomcat01: { os: windows, dc: tokyo }
-tomcat02: { os: linux,   dc: tokyo }
-tomcat03: { os: linux,   dc: osaka }
-```
-
-**ポイント**
-
-- サーバ追加 = YAML への 1 行追記。スクリプト改修は不要。
-- `os` 属性で **PowerShell 版 / Bash 版を Playbook が自動で振り分け** られるようになる（後述）。
-
----
-
-### 3.4 `scripts/` — スクリプト本体
-
-最重要ディレクトリ。**「ミドルウェア優先 + OS サブディレクトリ」** のルールで配置します。
-
-#### なぜミドルウェア優先か
-
-運用担当は通常、**OS ではなくミドル単位で分業** されています（DBA、AP サーバ担当、AD 担当 …）。OS で先に分けると同じ Tomcat の知識が `windows/tomcat/` と `linux/tomcat/` の 2 箇所に分散し、メンテが破綻します。
-
-#### 構造のパターン
-
-##### パターン A：クロスプラットフォームなミドル（Tomcat、SQL Server、Nginx、AWS 等）
+**OS でディレクトリを分け、その下にドメイン別**（aws / postgresql / tomcat / os / ...）でファイルを置きます。同じドメイン名のディレクトリは Linux 側と Windows 側で対応し、同じコマンド体系・終了コード規約・引数命名でラップされます。
 
 ```
-scripts/tomcat/
-├── common/                        # OS 非依存の資産
-│   ├── server.xml.template        # 設定テンプレート
-│   └── healthcheck-logic.md       # 検証手順の真の定義
-├── powershell/                    # PowerShell 実装（直下にファイル）
-│   ├── Deploy-War.ps1
-│   ├── Start-Tomcat.ps1
-│   ├── Stop-Tomcat.ps1
-│   └── Get-ThreadDump.ps1
-└── bash/                          # Bash 実装（直下にファイル）
-    ├── deploy_war.sh
-    ├── start_tomcat.sh
-    ├── stop_tomcat.sh
-    └── get_thread_dump.sh
-```
-
-`common/` に **OS 非依存の真の手順** を置くのがコツです。
-
-- SQL Server の `.sql` ファイル（T-SQL）は OS に依存しないので `sqlserver/common/` に集約し、Windows / Linux のラッパは中身を呼び出すだけにする。
-- Tomcat の `server.xml` テンプレや JVM 引数表も `tomcat/common/` に置けば、PowerShell と Bash の二重管理を避けられる。
-
-**アクションはディレクトリではなくファイル名で表現する**（`Deploy-War.ps1`、`Start-Tomcat.ps1` のように `Verb-Noun`）。ファイル数が増えて視認性が落ちた段階で、対象別サブディレクトリ（`tomcat/powershell/lifecycle/` など）を再導入する余地は残しておきます。
-
-##### パターン B：OS 固有の運用（AD、systemd 等）
-
-ミドル名で括れないもの（その OS にしか存在しない概念）は `scripts/windows/powershell/` または `scripts/linux/bash/` に置きます。
-
-```
-scripts/windows/
-└── powershell/
-    ├── Disable-AdUser.ps1         # Active Directory
-    ├── Restart-IisAppPool.ps1     # IIS
-    ├── Export-EventLog.ps1        # Windows イベントログ
-    ├── Invoke-WindowsPatch.ps1    # WSUS / Windows Update
-    └── Rotate-Log.ps1             # ログローテーション
-
-scripts/linux/
-└── bash/
-    ├── restart_systemd_service.sh # systemd
-    ├── invoke_yum_patch.sh        # yum / apt
-    └── rotate_log.sh              # ログローテーション
-```
-
-##### パターン C：ミドル横断の汎用処理
-
-通知や監査送信のように、すべてのスクリプトから呼ばれる横串の処理は `scripts/common/` に置きます。
-
-```
-scripts/common/
-├── Send-Slack.ps1                 # Slack 通知
-├── Send-Email.ps1                 # メール通知
-├── Send-AuditLog.ps1              # SIEM への監査ログ送信
-└── Test-Healthcheck.ps1           # 横串ヘルスチェック
+scripts_linux/postgresql/postgresqlctl.sh   ↔   scripts_windows/postgresql/PostgreSQLCtl.ps1
+scripts_linux/tomcat/tomcatctl.sh          ↔   scripts_windows/tomcat/TomcatCtl.ps1
+scripts_linux/os/rotate_log.sh             ↔   scripts_windows/os/Rotate-Log.ps1
 ```
 
 #### ファイル命名規約
 
-各 OS の慣習に揃えます。OS はディレクトリ構造ですでに分かっているので、ファイル名に `_win` のような接尾辞は不要です。アクション（Backup / Rotate / Invoke 等）は **動詞** で表現します。
-
-| OS | 形式 | 例 |
+| 種別 | 形式 | 例 |
 |---|---|---|
-| PowerShell | `Verb-Noun.ps1`（PascalCase + ハイフン、動詞は[承認済み](https://learn.microsoft.com/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)） | `Deploy-War.ps1`、`Invoke-FullBackup.ps1`、`Backup-Ami.ps1` |
-| Bash | `verb_noun.sh`（snake_case） | `deploy_war.sh`、`invoke_full_backup.sh`、`backup_ami.sh` |
-| T-SQL | `snake_case.sql` | `full_backup.sql`、`reindex.sql` |
+| PowerShell | `Verb-Noun.ps1`（[承認動詞](https://learn.microsoft.com/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)） | `Backup-Ami.ps1`、`Rotate-Log.ps1`、`PostgreSQLCtl.ps1` |
+| Bash | `verb_noun.sh`（snake_case） | `backup_ami.sh`、`rotate_log.sh`、`postgresqlctl.sh` |
+| T-SQL | `snake_case.sql` | `full_backup.sql` |
 
----
+#### 共通の構造（5-phase）
 
-### 3.5 `lib/` — 共通ライブラリ
+すべての制御スクリプトは `tools/templates/` のテンプレに沿って **5 つのフェーズ** で書きます。詳細は `shell-specification.md` を参照。
 
-**セキュリティ統制とコード再利用の中核** です。すべてのスクリプトはここを経由してログ・監査・シークレットを扱います。
+1. **シバン / ヘッダコメント**: 用途・引数・終了コード規約を必ず記載
+2. **引数 / 設定読み込み**: `lib/config.sh` / `lib/Config.psm1` 経由
+3. **事前検査**: 引数バリデーション、前提コマンド存在確認
+4. **本処理**: 冪等に実装（既に目的状態ならスキップ）
+5. **後始末 / 結果出力**: 構造化ログ + 規約に従った終了コード
 
-```
-lib/
-├── powershell/
-│   ├── Logging.psm1               # 構造化ログ（JSON 形式）
-│   ├── Secrets.psm1               # Key Vault / CyberArk から取得
-│   ├── Audit.psm1                 # who / what / when / from を記録
-│   ├── ErrorHandling.psm1         # 例外と終了コードの規約
-│   └── Validation.psm1            # 入力検証、ホワイトリスト
-├── bash/
-│   ├── logging.sh
-│   ├── secrets.sh                 # Vault CLI ラッパ
-│   ├── audit.sh
-│   ├── retry.sh                   # 冪等性とリトライ
-│   └── safety.sh                  # set -euo pipefail 等を強制
-└── sql/
-    └── helpers/                   # 共通 T-SQL スニペット
-```
+### 3.3 `scripts_*/lib/` — 共通ライブラリ
 
-**ポイント**
-
-- スクリプトが `Get-Secret` を直接呼ぶのではなく、必ず `Secrets.psm1` 経由で取得 → 取得操作も自動で監査ログに残る。
-- `Logging.psm1` に統一することで、ログのフォーマットが揃い、SIEM のパースが簡単になる。
-- 「セキュリティ機能を毎回個別実装しない」＝**間違える余地を構造的に消す**。
-
----
-
-### 3.6 `playbooks/` — 業務手順
-
-「やりたいこと（業務要求）」を表現する高レベルなワークフロー。複数の単機能スクリプトを束ねます。
+**セキュリティ統制とコード再利用の中核**。すべての制御スクリプトはここを経由してログ・設定を扱います。
 
 ```
-playbooks/
-├── monthly-patching/              # 月次パッチ適用
-│   ├── README.md                  # 手順の概要・前提・ロールバック方針
-│   └── run.yml                    # 実行定義
-├── dr-failover/                   # 災対切替
-├── tomcat-blue-green/
-└── new-server-provisioning/
+scripts_linux/lib/
+├── logging.sh                     # JST 固定タイムスタンプ + key=value 構造化ログ
+└── config.sh                      # 環境別 .conf 読み込み + 検証
+
+scripts_windows/lib/
+├── Logging.psm1                   # 同上（PS5.1 互換）
+└── Config.psm1                    # 同上
 ```
 
-**OS 差はここで吸収する**
+ロギング API（`log_info` / `Write-OpsLog`）と設定 API（`load_ops_config` / `Get-OpsConfig`）は Linux / Windows で **同等の意味論** を持ち、ログ書式・JST タイムスタンプ・優先順位（CLI > config > default）が揃っています。
 
-```yaml
-# playbooks/tomcat-rolling-restart/run.yml の例（イメージ）
-target_group: tomcat_prod          # inventory のグループを指定
-steps:
-  - name: 停止
-    action: tomcat/lifecycle/stop  # OS は inventory の os 属性で自動分岐
-  - name: 起動
-    action: tomcat/lifecycle/start
-  - name: ヘルスチェック
-    action: tomcat/healthcheck
+### 3.4 `docs_linux/` / `docs_windows/` — スクリプト仕様書
+
+各スクリプトについて、用途・前提・引数・終了コード・実行例を Markdown で記述します。OS ごとに分け、対応するスクリプトと 1:1 で対応させます。
+
+### 3.5 `tools/` — 運用補助ツール
+
+各サーバへ単体配布して使う **スタンドアロンの運用補助ツール** を集めています。`scripts_*/lib/` には依存せず、自己完結します。
+
+| ツール | 説明 |
+|---|---|
+| `perf-monitor/`    | 負荷テスト中のリソース監視＋HTML レポート |
+| `network-check/`   | DNS / Ping / TCP 疎通チェック |
+| `change-detect/`   | サーバ情報の現新差分検出ワークフロー |
+| `server-compare/`  | サーバ情報収集と差分検出 |
+| `templates/`       | 新規スクリプト雛形（5-phase 構造の動くデモ） |
+
+各ツールは `.ps1` + `.bat`（Windows）と `.sh`（Linux）を同梱し、`README.md` を持ちます。
+
+### 3.6 `deploy/` — 別リポジトリへの自動同期
+
+```
+deploy/
+├── servers.yaml                   # 配備先リポジトリ一覧
+├── sync.py                        # GitLab API 経由で MR を作成
+└── SPEC.md                        # 同期仕様書
 ```
 
-業務担当は **OS の違いを意識せず**「Tomcat をローリング再起動する」と表現できます。
-
----
+詳細は `deploy/SPEC.md`、CI 連携は `ci/deploy/sync.gitlab-ci.yml`。
 
 ### 3.7 `tests/` — 自動テスト
 
 ```
 tests/
-├── pester/                        # PowerShell（Pester フレームワーク）
-├── bats/                          # Bash（bats-core フレームワーク）
-└── fixtures/                      # テスト用データ
+├── pester/                        # PowerShell ユニットテスト（Pester）
+├── bats/                          # Bash ユニットテスト（bats-core）
+└── docker/                        # Docker コンテナで実環境テスト
+    ├── Dockerfile.linux
+    ├── Dockerfile.powershell
+    ├── linux_tests.sh
+    ├── powershell_tests.ps1
+    └── run_tests.{ps1,sh}
 ```
 
 **何をテストするか**
 
-- スクリプトが想定どおりの引数検証を行うか。
-- 異常系で正しい終了コードを返すか。
-- 監査ログが正しく出力されるか。
-- 冪等性（同じスクリプトを 2 回流しても安全か）。
+- 引数バリデーションと終了コードの規約遵守
+- 冪等性（再実行で副作用が増えない）
+- 構造化ログが規約どおりに出力されるか
+- 設定優先順位（CLI > config > default）が正しく働くか
 
----
+### 3.8 `ci/` — GitLab CI 定義
 
-### 3.8 `ci/` — CI/CD 定義
-
-プルリクエスト時に走らせるチェックを定義します。
-
-```
-ci/
-├── lint/
-│   ├── psscriptanalyzer.json      # PowerShell の規約チェック
-│   ├── shellcheck.config          # Bash の静的解析
-│   └── sqlfluff.cfg               # SQL の整形・規約
-├── security-scan/
-│   ├── gitleaks.toml              # シークレット混入チェック
-│   ├── trivy.yml                  # 依存ライブラリの脆弱性
-│   └── semgrep.yml                # コード規約・脆弱性パターン
-└── pipelines/
-    ├── pr.yml                     # PR チェック
-    └── release.yml                # リリース時の署名・配布
-```
-
-**必須化すべきチェック**
-
-1. lint：書式・規約違反
-2. シークレットスキャン：パスワードや API キーの混入
-3. テスト：上記 `tests/` 配下を実行
-4. 依存スキャン：使っているモジュール・パッケージの脆弱性
-
----
-
-### 3.9 `tools/` — 開発支援ツール
-
-```
-tools/
-├── bootstrap.ps1                  # 開発環境のセットアップ（モジュールインストール 等）
-├── new-script.ps1                 # スクリプトのスケルトン自動生成
-└── pre-commit/                    # コミット前フック
-```
-
-**`new-script.ps1` の役割**
-
-新規スクリプトのテンプレート（ヘッダコメント、`lib/` の import、引数検証の雛形）を強制生成します。これにより、
-
-- 用途・所有者・対象環境・冪等性の有無 がヘッダに必ず書かれる
-- 共通ライブラリの読み込みを忘れない
-- 命名規約から逸脱しない
-
-という品質が、**人間の注意力に頼らず保たれます**。
+| ステージ | ジョブ | 内容 |
+|---|---|---|
+| lint | psscriptanalyzer | PowerShell の規約・潜在バグ |
+| lint | shellcheck | Bash の規約・潜在バグ |
+| lint | sqlfluff | SQL の整形・規約 |
+| lint | yamllint | YAML 構文 |
+| lint | template-check | テンプレ準拠検査（`#Requires -Version 5.1` 等） |
+| security | gitleaks | シークレット混入 |
+| security | trivy-fs | 依存脆弱性 |
+| test | pester | PS ユニットテスト |
+| test | bats | Bash ユニットテスト |
+| deploy | sync | 別リポジトリへの自動同期 |
 
 ---
 
 ## 4. 命名と配置のクイックリファレンス
 
-迷ったときの判定フロー。
-
 ```
 そのスクリプトは何を操作する？
 │
-├─ 特定のミドルウェア（Tomcat / SQL Server / Nginx / Redis / AWS 等）
-│   └─ scripts/<middleware>/<lang>/<file>     (lang = powershell / bash)
-│       例: scripts/tomcat/bash/deploy_war.sh
-│           scripts/aws/powershell/Backup-Ami.ps1
+├─ ミドルウェア（Tomcat / SQL Server / PostgreSQL / MySQL / HANA / SAP 等）
+│   └─ scripts_{linux,windows}/<middleware>/<file>
+│       例: scripts_linux/postgresql/postgresqlctl.sh
+│           scripts_windows/postgresql/PostgreSQLCtl.ps1
 │
-├─ ミドル中の OS 非依存資産（T-SQL、設定テンプレ等）
-│   └─ scripts/<middleware>/common/<file>
-│       例: scripts/sqlserver/common/full_backup.sql
+├─ クラウド（AWS）
+│   └─ scripts_{linux,windows}/aws/<file>
+│       例: scripts_linux/aws/backup_ami.sh
+│           scripts_windows/aws/Backup-Ami.ps1
 │
-├─ OS にしか存在しない概念（AD / systemd / イベントログ / ログローテ 等）
-│   └─ scripts/<os>/<lang>/<file>
-│       例: scripts/windows/powershell/Disable-AdUser.ps1
-│           scripts/linux/bash/rotate_log.sh
+├─ OS 共通（ログローテ・情報収集等）
+│   └─ scripts_{linux,windows}/os/<file>
+│       例: scripts_linux/os/rotate_log.sh
+│           scripts_windows/os/Rotate-Log.ps1
 │
-├─ ミドル横断の汎用処理（通知 / 監査送信 等）
-│   └─ scripts/common/<file>
-│       例: scripts/common/Send-Slack.ps1
-│
-└─ 業務手順（複数スクリプトの組み合わせ）
-    └─ playbooks/<業務名>/
-        例: playbooks/monthly-patching/
+└─ スタンドアロンの運用補助ツール
+    └─ tools/<tool-name>/
+        例: tools/perf-monitor/, tools/network-check/
 ```
 
 **アクションはディレクトリではなくファイル名で表現する**（`Backup-Ami.ps1` の `Backup-`、`rotate_log.sh` の `rotate_` 等）。
@@ -411,22 +271,21 @@ tools/
 
 ## 5. セキュリティ・運用上のチェックリスト
 
-このディレクトリ構成を活かすために、以下を運用ルールとして守ります。
-
 ### コード側
 
-- [ ] スクリプトは必ず `lib/` の Logging / Audit / Secrets を経由する
+- [ ] スクリプトは必ず `lib/` の Logging / Config を経由する
 - [ ] 引数検証（ホワイトリスト方式）を冒頭で実施する
-- [ ] 終了コードを規約に従って返す（成功 0、業務エラー 1、システムエラー 2 等）
+- [ ] 終了コードを規約に従って返す（0 成功 / 1 引数エラー / 2 業務エラー / 10 前提不足 / 20 一時障害）
 - [ ] 冪等性を確保する（再実行で副作用が増えない）
-- [ ] PowerShell は `#Requires` と `[CmdletBinding()]` を必須に
+- [ ] PowerShell は `#Requires -Version 5.1` と `[CmdletBinding()]` を必須に
 - [ ] Bash は `set -euo pipefail` を必須に
+- [ ] PowerShell スクリプトは UTF-8 BOM 付きで保存（PS5.1 + CP932 環境の文字化け回避）
 
 ### リポジトリ運用
 
 - [ ] `config/<env>/secrets.ref.yml` 以外にシークレット参照を書かない
 - [ ] 本番設定の変更は別ブランチ＋承認者レビュー必須
-- [ ] CI の lint / シークレットスキャン / テストをすべてグリーンに
+- [ ] CI の lint / シークレットスキャン / テスト / template-check をすべてグリーンに
 - [ ] リリースタグに署名する（改ざん検知）
 
 ### 実行環境
@@ -434,7 +293,6 @@ tools/
 - [ ] スクリプト実行アカウントは最小権限
 - [ ] 本番実行は踏み台サーバ経由のみ許可
 - [ ] 監査ログは中央 SIEM に集約し、改ざん不可の領域に保存
-- [ ] 緊急時の手動実行も `lib/Audit` 経由で必ず記録される設計にする
 
 ---
 
@@ -442,36 +300,34 @@ tools/
 
 | やりたいこと | やるべきこと |
 |---|---|
-| 新しいミドル（例：Redis）を追加 | `scripts/redis/{common,windows,linux}/` を作成 |
-| 既存ミドルに新しい操作を追加 | 該当 `<middleware>/<os>/<action>/` 配下に新ファイル |
-| 新しい業務手順を追加 | `playbooks/<業務名>/` を作成し、既存スクリプトを呼び出す |
-| 新しい環境（例：QA）を追加 | `config/qa/` と `inventory/` のグループを追加 |
-| 新しい OS（例：macOS）を追加 | 各 `<middleware>/macos/` を追加し、`lib/bash/` を共有 or `lib/macos/` 新設 |
+| 新しいミドルを追加 | `scripts_linux/<mw>/` と `scripts_windows/<mw>/` を作成し、テンプレ (`tools/templates/`) からコピーして編集 |
+| 既存ミドルに新しい操作を追加 | 該当 `scripts_<os>/<mw>/` 配下に新ファイルを追加 |
+| 新しい運用補助ツールを追加 | `tools/<name>/` を作成（`.ps1` + `.bat` + `.sh` + `README.md`） |
+| 新しい環境（例：QA）を追加 | `config/qa/` を追加し、各 `.conf` を必要分だけ用意 |
+| 配備先を増やす | `deploy/servers.yaml` に 1 エントリ追加するだけ |
 
 **してはいけないこと**
 
 - 共通処理を各スクリプトに直接書く（→ `lib/` に集約する）
-- ミドルに紐づく操作を `scripts/<os>/<lang>/` 直下に置く（→ `scripts/<middleware>/<lang>/` に置く）
 - シークレットを `config/` の YAML に直接書く（→ Vault 参照にする）
-- Playbook を経由せず本番スクリプトを直接叩くことを常態化する（→ 監査ログが分散する）
+- `tools/*/` から `scripts_*/lib/` に依存する（→ ツールは自己完結であるべき）
+- 配備先のリポジトリで手修正する（→ テンプレ側に反映してから sync で配る）
 
 ---
 
 ## 付録：最小構成の起点
 
-ゼロから立ち上げるとき、最初に作るべきは次の最小セットです。
+ゼロから立ち上げる際の最小セットです。
 
 ```
-ops-scripts/
+ops-scripts-template/
 ├── README.md
-├── lib/powershell/Logging.psm1
-├── lib/powershell/Audit.psm1
-├── lib/powershell/Secrets.psm1
-├── lib/bash/logging.sh
-├── lib/bash/audit.sh
-├── lib/bash/secrets.sh
-├── tools/new-script.ps1
-└── ci/lint/
+├── shell-specification.md
+├── development-rules.md
+├── scripts_linux/lib/{config.sh,logging.sh}
+├── scripts_windows/lib/{Config.psm1,Logging.psm1}
+├── tools/templates/{Template-Script.ps1,template_script.sh,README.md}
+└── ci/{lint,security,test,template-check}/
 ```
 
-この **「共通ライブラリ + テンプレート生成 + lint」** さえ最初に固めておけば、その後追加されるスクリプトは自然と品質が揃います。順序を逆にして個別スクリプトから書き始めると、後からのガバナンス導入が極めて困難になるので注意してください。
+この **「共通ライブラリ + テンプレート + lint + テスト枠」** を最初に固めれば、その後追加されるスクリプトは自然と品質が揃います。順序を逆にして個別スクリプトから書き始めると、後からのガバナンス導入が極めて困難になるので注意してください。

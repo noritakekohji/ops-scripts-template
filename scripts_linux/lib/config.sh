@@ -102,4 +102,11 @@ load_ops_config() {
             fi
         done < "$f"
     done
+
+    # logging.sh が読み込まれていれば、LogFile/LogLevel を自動で反映する。
+    # PowerShell 版の Apply-LogConfig と対応（こちらは bash でも同じ挙動を実現）。
+    if declare -f apply_ops_log_config_from_env >/dev/null 2>&1; then
+        # 相対パスは repo_root 起点で解決する
+        apply_ops_log_config_from_env "$repo_root"
+    fi
 }

@@ -69,6 +69,39 @@ load_conf() {
     done < "$conf_file"
 }
 
+# セッション検索の起点ディレクトリ。perf_monitor.conf を最低限読んで OutputDir を返す。
+# 既に load_conf 済みなら CFG[OutputDir] が反映されている。
+_session_search_root() {
+    if [[ -z "${CFG[OutputDir]:-}" || "${CFG[OutputDir]}" == "." ]]; then
+        # 未ロードのケースに備えて conf を一時読み出し（副作用を避けるためサブシェル）
+        if [[ -f "$DEFAULT_CONF" ]]; then
+            local v
+            v=$(awk -F= '/^[[:space:]]*OutputDir[[:space:]]*=/ {sub(/#.*$/,""); gsub(/[[:space:]]/,"",$2); print $2; exit}' "$DEFAULT_CONF")
+            [[ -n "$v" ]] && { echo "$v"; return; }
+        fi
+        echo "."
+    else
+        echo "${CFG[OutputDir]}"
+    fi
+}
+
+# 検索範囲を OutputDir 配下に限定して最新セッションを返す。
+# 旧コードはカレント全体を再帰 (`find . -maxdepth 2`) しており、
+# 別プロジェクトのセッションを誤検出する恐れがあった。
+_find_latest_session() {
+    local root
+    root=$(_session_search_root)
+    [[ -d "$root" ]] || root="."
+    local hit
+    hit=$(find "$root" -maxdepth 2 -name "collector.pid" 2>/dev/null \
+          | sort -r | head -1 | xargs -r dirname 2>/dev/null || true)
+    if [[ -z "$hit" ]]; then
+        hit=$(find "$root" -maxdepth 2 -name "data.jsonl" 2>/dev/null \
+              | sort -r | head -1 | xargs -r dirname 2>/dev/null || true)
+    fi
+    echo "$hit"
+}
+
 usage() {
     sed -n '2,18p' "$0" >&2
     exit 1
@@ -388,9 +421,10 @@ cmd_stop() {
     local session_dir="${1:-}"
 
     # セッションディレクトリが指定されていない場合は最新を探す
+    # 検索範囲は perf_monitor.conf の OutputDir 配下に限定する
+    # （カレント全体を再帰すると別プロジェクトのセッションを誤検出するため）
     if [[ -z "$session_dir" ]]; then
-        session_dir=$(find . -maxdepth 2 -name "collector.pid" -newer /proc/1 2>/dev/null \
-                      | sort -r | head -1 | xargs dirname 2>/dev/null || true)
+        session_dir=$(_find_latest_session)
         if [[ -z "$session_dir" ]]; then
             log_error "No active session found. Specify session directory."
             exit 4
@@ -485,10 +519,9 @@ cmd_report() {
 cmd_status() {
     local session_dir="${1:-}"
 
-    # 指定がなければ最新セッションを探す
+    # 指定がなければ最新セッションを探す（OutputDir 配下に限定）
     if [[ -z "$session_dir" ]]; then
-        session_dir=$(find . -maxdepth 2 -name "data.jsonl" 2>/dev/null \
-                      | sort -r | head -1 | xargs dirname 2>/dev/null || true)
+        session_dir=$(_find_latest_session)
         if [[ -z "$session_dir" ]]; then
             echo "アクティブなセッションが見つかりません"; exit 0
         fi
@@ -548,7 +581,7 @@ cmd_list() {
         [[ -f "${d}/data.jsonl" ]] && count=$(wc -l < "${d}/data.jsonl")
         printf "  [%-6s] %s  (%d サンプル)\n" "$active" "$d" "$count"
         found=1
-    done < <(find . -maxdepth 3 -name "collector.pid" 2>/dev/null | sort)
+    done < <(find "$(_session_search_root)" -maxdepth 3 -name "collector.pid" 2>/dev/null | sort)
     [[ $found -eq 0 ]] && echo "  (なし)"
     echo ""
 }

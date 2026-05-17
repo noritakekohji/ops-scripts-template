@@ -42,29 +42,27 @@
 
 ## 2. ディレクトリ配置ルール
 
-階層は浅く保つ。アクション（Backup / Rotate / Invoke 等）は **ファイル名** で表現し、ディレクトリでは表現しない。
+階層は浅く保つ。アクション（Backup / Rotate / Invoke 等）は **ファイル名** で表現し、ディレクトリでは表現しない。本リポジトリは **OS-first** のレイアウトを採用しています。
 
 | 操作対象 | 配置先 |
 |---|---|
-| クロスプラットフォームなミドル（Tomcat、SQL Server、Nginx、AWS 等） | `scripts/<middleware>/<lang>/<file>`（lang = `powershell` / `bash`） |
-| クロスプラットフォームミドルの OS 非依存資産 | `scripts/<middleware>/common/<file>` |
-| OS にしか存在しない概念（AD、systemd、IIS、cron 等） | `scripts/<os>/<lang>/<file>` |
-| ミドル横断の汎用処理（通知、監査送信） | `scripts/common/<file>` |
-| 業務手順（複数スクリプトの組み合わせ） | `playbooks/<業務名>/` |
+| Linux / Bash 制御スクリプト | `scripts_linux/<domain>/<file>.sh`（domain = `aws` / `os` / `postgresql` / `mysql` / `tomcat` / `sqlserver` / `hana` / `sap` ほか） |
+| Windows / PowerShell 制御スクリプト | `scripts_windows/<domain>/<File>.ps1`（domain は Linux 側と同じ命名） |
+| OS 共通の運用補助ツール（スタンドアロン配布物） | `tools/<tool-name>/`（`.ps1` + `.bat` + `.sh` + `README.md`） |
+| 共通ライブラリ | `scripts_linux/lib/*.sh` / `scripts_windows/lib/*.psm1` |
 
 ### 配置例
 
 ```
-scripts/aws/powershell/Backup-Ami.ps1                # AWS は middleware 扱い、3 階層
-scripts/aws/bash/backup_ebs_snapshot.sh
-scripts/sqlserver/common/full_backup.sql          # T-SQL は OS 非依存
-scripts/sqlserver/powershell/Invoke-FullBackup.ps1
-scripts/windows/Disable-AdUser.ps1                # AD は Windows 固有、2 階層
-scripts/linux/restart_systemd_service.sh          # systemd は Linux 固有
-scripts/common/Send-Slack.ps1                     # 横串
+scripts_linux/aws/backup_ami.sh                ↔   scripts_windows/aws/Backup-Ami.ps1
+scripts_linux/aws/backup_ebs_snapshot.sh       ↔   scripts_windows/aws/Backup-EbsSnapshot.ps1
+scripts_linux/postgresql/postgresqlctl.sh      ↔   scripts_windows/postgresql/PostgreSQLCtl.ps1
+scripts_linux/tomcat/tomcatctl.sh              ↔   scripts_windows/tomcat/TomcatCtl.ps1
+scripts_linux/os/rotate_log.sh                 ↔   scripts_windows/os/Rotate-Log.ps1
+tools/perf-monitor/{PerfMonitor.ps1, perf_monitor.bat, perf_monitor.sh, ...}
 ```
 
-ファイル数が増えて視認性が落ちた時点で、対象別のサブディレクトリ（例：`scripts/aws/powershell/ami/`）を再導入する余地は残してあります。
+OS の差はディレクトリ構造で表現します。同名ドメインは Linux 側と Windows 側で 1:1 に対応し、同じコマンド体系・終了コード規約・引数命名を持ちます。
 
 詳細は [`ops-scripts-structure.md`](ops-scripts-structure.md) を参照。
 
@@ -268,10 +266,10 @@ fi
 
 ### API
 
-#### PowerShell（`lib/powershell/Logging.psm1`）
+#### PowerShell（`scripts_windows/lib/Logging.psm1`）
 
 ```powershell
-$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1')
 Import-Module (Resolve-Path $libPath).Path -Force
 
 Write-OpsLog -Level INFO  -Message "AMI backup start: instanceId=$id retention=$days"
@@ -286,10 +284,10 @@ Write-OpsLog -Level DEBUG -Message "Polling state: amiId=$id state=$state"
 - **構造化プロパティ引数（`-Properties` 等）はサポートしない**
 - 構造化情報は呼び出し側で `key=value` 形式に整形して `-Message` に埋め込む
 
-#### Bash（`lib/bash/logging.sh`）
+#### Bash（`scripts_linux/lib/logging.sh`）
 
 ```bash
-source "$(dirname "$0")/../../../../lib/bash/logging.sh"
+source "$(dirname "$0")/../lib/logging.sh"
 
 log_info  "AMI backup start: instance=$instance_id retention=$retention_days"
 log_warn  "Snapshot delete failed: snapshot=$snap (in use?)"
@@ -382,18 +380,18 @@ per-run の対象を config に書くと、運用スクリプトが「環境ご�
 
 ### スクリプト側の使い方
 
-#### PowerShell（`lib/powershell/Config.psm1`）
+#### PowerShell（`scripts_windows/lib/Config.psm1`）
 ```powershell
-Import-Module (Resolve-Path "<repo>/lib/powershell/Config.psm1").Path -Force
+Import-Module (Join-Path $PSScriptRoot '..\lib\Config.psm1') -Force
 $cfg = Get-OpsConfig -Name 'backup_ami'
 if (-not $PSBoundParameters.ContainsKey('Region') -and $cfg.ContainsKey('Region')) {
     $Region = [string]$cfg['Region']
 }
 ```
 
-#### Bash（`lib/bash/config.sh`）
+#### Bash（`scripts_linux/lib/config.sh`）
 ```bash
-source "<repo>/lib/bash/config.sh"
+source "$(dirname "$0")/../lib/config.sh"
 load_ops_config "backup_ami"
 [[ "$region_set" -eq 0 && -n "${OPS_CONFIG[Region]:-}" ]] && region="${OPS_CONFIG[Region]}"
 ```

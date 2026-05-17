@@ -35,11 +35,13 @@ param(
     [string]$Action,
 
     # --- BySID ---
-    [Parameter(Mandatory, ParameterSetName = 'BySID')]
+    # SID / InstanceNumber は CLI 未指定でも config/<env>/sapctl.conf の
+    # SID / InstanceNumber キーから補完される（Linux 版 sapctl.sh と同じ挙動）。
+    [Parameter(ParameterSetName = 'BySID')]
     [ValidatePattern('^[A-Z][A-Z0-9]{2}$')]
     [string]$SID,
 
-    [Parameter(Mandatory, ParameterSetName = 'BySID')]
+    [Parameter(ParameterSetName = 'BySID')]
     [ValidatePattern('^\d{2}$')]
     [string]$InstanceNumber,
 
@@ -81,6 +83,22 @@ Set-OpsLogConfig -LogFile $logFile -LogLevel $logLevel
 if (-not $PSBoundParameters.ContainsKey('WaitTimeoutSec') -and $cfg.ContainsKey('WaitTimeoutSec')) { $WaitTimeoutSec = [int]$cfg['WaitTimeoutSec'] }
 if (-not $PSBoundParameters.ContainsKey('Wait')           -and $cfg.ContainsKey('Wait')) {
     if ([System.Convert]::ToBoolean($cfg['Wait'])) { $Wait = $true }
+}
+
+# BySID パラメータセットで CLI 未指定なら config から SID / InstanceNumber を補完
+# （Linux 版 sapctl.sh と同じ挙動: -s/-n を省略時は OPS_CONFIG[SID] / [InstanceNumber] を使う）
+if ($PSCmdlet.ParameterSetName -eq 'BySID') {
+    if (-not $PSBoundParameters.ContainsKey('SID')            -and $cfg.ContainsKey('SID')) {
+        $SID = [string]$cfg['SID']
+    }
+    if (-not $PSBoundParameters.ContainsKey('InstanceNumber') -and $cfg.ContainsKey('InstanceNumber')) {
+        $InstanceNumber = [string]$cfg['InstanceNumber']
+    }
+    if (-not $SID -or -not $InstanceNumber) {
+        throw "SAPCtl: SID and InstanceNumber are required (CLI -SID/-InstanceNumber or sapctl.conf SID=/InstanceNumber=)."
+    }
+    if ($SID            -notmatch '^[A-Z][A-Z0-9]{2}$') { throw "SAPCtl: invalid SID '$SID' (expect 3-char [A-Z][A-Z0-9]{2})" }
+    if ($InstanceNumber -notmatch '^\d{2}$')            { throw "SAPCtl: invalid InstanceNumber '$InstanceNumber' (expect 2 digits)" }
 }
 
 # --- SID/NN から必要な値を解決 -----------------------------------------------

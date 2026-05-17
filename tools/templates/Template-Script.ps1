@@ -47,11 +47,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # Import shared logger.
-# TEMPLATE: adjust the number of '..' segments to your script depth.
-#   scripts/aws/powershell/Foo.ps1       -> 3 ups (../../../lib/...)
-#   scripts/windows/powershell/Bar.ps1   -> 3 ups
-#   scripts/sqlserver/powershell/Baz.ps1 -> 3 ups
-$libPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Logging.psm1')
+# TEMPLATE: adjust path to match where you place your final script. The lib
+# lives at scripts_windows/lib/.
+#   scripts_windows/aws/Foo.ps1         -> '..\lib\Logging.psm1'  (1 up)
+#   scripts_windows/postgresql/Bar.ps1  -> '..\lib\Logging.psm1'  (1 up)
+#   tools/<your-tool>/Foo.ps1           -> tools should be self-contained
+$libPath = [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1')
 if (-not (Test-Path $libPath)) {
     throw "Logging module not found at $libPath"
 }
@@ -62,7 +63,7 @@ Import-Module (Resolve-Path $libPath).Path -Force
 #           > config/default/<Name>.conf > config/default/global.conf > script default.
 # TEMPLATE: change 'template_script' to your feature's snake_case name.
 # The same name is shared between the PS and Bash pair (config/<env>/<name>.conf).
-$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'lib', 'powershell', 'Config.psm1')
+$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Config.psm1')
 Import-Module (Resolve-Path $configModulePath).Path -Force
 $cfg = Get-OpsConfig -Name 'template_script'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'common' }

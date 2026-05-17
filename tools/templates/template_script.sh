@@ -41,14 +41,15 @@ set -euo pipefail
 # ----------------------------------------------------------------------------
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
-# TEMPLATE: adjust the number of '..' segments to your script depth.
-#   scripts/aws/bash/foo.sh         -> 3 ups (../../../lib/...)
-#   scripts/linux/bash/bar.sh       -> 3 ups
-#   scripts/sqlserver/bash/baz.sh   -> 3 ups
+# TEMPLATE: adjust the number of '..' segments to match the depth at which
+# you finally place your script. The lib lives at scripts_linux/lib/.
+#   scripts_linux/aws/foo.sh         -> 1 up    (../lib/...)
+#   scripts_linux/postgresql/bar.sh  -> 1 up
+#   tools/<your-tool>/foo.sh         -> tools should be self-contained (not depend on scripts_linux/lib)
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../../../lib/bash/logging.sh"
+source "${SCRIPT_DIR}/../lib/logging.sh"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../../../lib/bash/config.sh"
+source "${SCRIPT_DIR}/../lib/config.sh"
 
 # State for Phase 5 cleanup
 tmp_file=""

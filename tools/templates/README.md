@@ -136,7 +136,7 @@ bash tools/templates/template_script.sh -p demo
 
 ## 新規スクリプトを書く手順
 
-1. 適切な配置先にコピー（例：`scripts/aws/powershell/Backup-Foo.ps1`）
+1. 適切な配置先にコピー（例：`scripts_windows/aws/Backup-Foo.ps1` または `scripts_linux/aws/backup_foo.sh`）
 2. ファイル名と内部のヘッダ（`SYNOPSIS` / `DESCRIPTION` / `Usage` 等）を実際の用途に書き換え
 3. **lib のインポートパスを配置深さに合わせて調整**（テンプレ内に "TEMPLATE: adjust ..." コメントあり）
 4. **config 名を変更**：`Get-OpsConfig -Name 'Template-Script'` / `load_ops_config "template_script"` の引数を実際のスクリプト名に
@@ -155,19 +155,21 @@ bash tools/templates/template_script.sh -p demo
 
 `ci/template-check/check_template.sh` が走査して以下を検証します。
 
-### PowerShell（`scripts/**/*.ps1`）
+### PowerShell（`scripts_windows/**/*.ps1`）
 - `#Requires -Version 5.1` の宣言（以上）
 - コメントベースヘルプ（`<# ... #>`）の存在
 - `[CmdletBinding(...)]` 属性
 - `$ErrorActionPreference = 'Stop'` の設定
 - `Set-StrictMode -Version Latest` の設定
-- `lib/powershell/Logging.psm1` の import
+- `Logging.psm1` の import
 
-### Bash（`scripts/**/*.sh`）
+### Bash（`scripts_linux/**/*.sh`）
 - 1 行目が `#!/usr/bin/env bash`
 - `set -euo pipefail` の設定
-- `lib/bash/logging.sh` の source
+- `lib/logging.sh` の source
 - 実行ビット（`100755`）が立っていること
+
+> 注意: `tools/` 配下のスタンドアロンツールはこれらのライブラリに依存しない自己完結スクリプトであることを意図しているため、library-import ルールの対象外です。
 
 > 5 フェーズ構造の存在自体は CI では検証していません（運用で守る）。コードレビュー時にレビュアが見てください。
 
@@ -184,6 +186,6 @@ bash ci/template-check/check_template.sh
 | メッセージ例 | 対処 |
 |---|---|
 | `PS: must declare #Requires -Version 5.1` | スクリプトの 1 行目に `#Requires -Version 5.1` を追加 |
-| `PS: must import lib/powershell/Logging.psm1` | `lib` の Import-Module ブロックをテンプレートからコピー |
+| `PS: must import Logging.psm1` | `Logging.psm1` の Import-Module ブロックをテンプレートからコピー |
 | `Bash: first non-empty line must be the bash shebang` | 1 行目を `#!/usr/bin/env bash` に変更（`#!/bin/sh` や `#!/bin/bash` は NG） |
 | `Bash: must be executable` | `git update-index --chmod=+x <file>` で実行ビット付与 |

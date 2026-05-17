@@ -49,7 +49,8 @@ param(
     [double]$_ThrDiskW  = 0,
     [double]$_ThrNetRx  = 0,
     [double]$_ThrNetTx  = 0,
-    [double]$_ThrLoad   = 0
+    [double]$_ThrLoad   = 0,
+    [string]$_Metrics   = 'all'    # 収集メトリクス: 'all' / 'cpu,mem,disk,net' 等
 )
 
 $ErrorActionPreference = 'Continue'   # collector ループ内のエラーでも継続
@@ -91,6 +92,44 @@ function Stop-PidSafe([int]$ProcId) {
 function Log-Info([string]$m)  { Write-Log 'INFO ' $m }
 function Log-Warn([string]$m)  { Write-Log 'WARN ' $m }
 function Log-Error([string]$m) { Write-Log 'ERROR' $m }
+
+# セッション検索ルート: CLI で OutputDir を指定していればそこ、
+# なければ perf_monitor.conf の OutputDir、それも未指定ならカレント。
+# 旧コードはカレントを Recurse -Depth 2/3 で再帰していたため、別プロジェクトの
+# セッションを誤検出する恐れがあった。検索範囲を明示する。
+function Get-SessionSearchRoot {
+    $root = if ($OutputDir) {
+        $OutputDir
+    } else {
+        # まだ Load-Conf されていないこともあるため一時的に読み出す
+        $confPath = if ($Config) { $Config } else { $DefaultConf }
+        if (Test-Path $confPath) {
+            $tmp = @{}
+            Get-Content $confPath | ForEach-Object {
+                $line = ($_ -replace '#.*$', '').Trim()
+                if ($line -match '^([^=]+)=(.*)$') {
+                    $tmp[$Matches[1].Trim()] = $Matches[2].Trim()
+                }
+            }
+            if ($tmp.ContainsKey('OutputDir') -and $tmp['OutputDir']) { $tmp['OutputDir'] } else { '.' }
+        } else { '.' }
+    }
+    if (-not (Test-Path $root)) { return '.' }
+    return $root
+}
+
+# 最新セッションを検出するヘルパ。Stop / Status から共通利用。
+function Find-LatestSession {
+    $root = Get-SessionSearchRoot
+    $hit = Get-ChildItem -Path $root -Filter 'collector.pid' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($hit) { return $hit.DirectoryName }
+    # collector.pid が無いセッション（既に stop 済み）も含めて data.jsonl で再検索
+    $hit = Get-ChildItem -Path $root -Filter 'data.jsonl' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($hit) { return $hit.DirectoryName }
+    return $null
+}
 
 function Log-File([string]$LogFile, [string]$Level, [string]$Msg) {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
@@ -139,6 +178,22 @@ function Invoke-Collect {
     $LogFile    = Join-Path $sesDir 'collector.log'
     $enc        = [System.Text.UTF8Encoding]::new($false)
 
+    # 収集対象メトリクスをパース（Linux 版 sh と同じ仕様）。
+    # 'all' または空はすべて収集、それ以外は cpu,mem,disk,net,load をカンマ区切り。
+    # PS5.1 は null-coalescing (??) 非対応のため明示的に if 分岐する。
+    $metricsRaw = if ($null -eq $_Metrics -or $_Metrics -eq '') { 'all' } else { $_Metrics }
+    if ([string]::IsNullOrWhiteSpace($metricsRaw) -or $metricsRaw -ieq 'all') {
+        $collectCpu = $true; $collectMem = $true; $collectDisk = $true
+        $collectNet = $true; $collectLoad = $true
+    } else {
+        $items = $metricsRaw.ToLower().Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+        $collectCpu  = $items -contains 'cpu'
+        $collectMem  = $items -contains 'mem'  -or $items -contains 'memory'
+        $collectDisk = $items -contains 'disk' -or $items -contains 'io'
+        $collectNet  = $items -contains 'net'  -or $items -contains 'network'
+        $collectLoad = $items -contains 'load' -or $items -contains 'loadavg'
+    }
+
     # stdout は Start-Process の -RedirectStandardOutput で collector.log へ書かれる
     # Out-File は同ファイルと競合するため Write-Host (stdout) でログ出力する
     function CLog($lvl, $msg) {
@@ -159,17 +214,19 @@ function Invoke-Collect {
             # ── CPU (Get-Counter 代替: Win32_PerfFormattedData_PerfOS_Processor) ──
             # Get-Counter はGPOで制限される場合があるため CIM を使用する
             $cpu_pct = $null
-            try {
-                $cp = Get-CimInstance -ClassName Win32_PerfFormattedData_PerfOS_Processor `
-                    -Filter "Name='_Total'" -ErrorAction Stop
-                if ($cp) { $cpu_pct = [math]::Round($cp.PercentProcessorTime, 1) }
-            } catch {}
+            if ($collectCpu) {
+                try {
+                    $cp = Get-CimInstance -ClassName Win32_PerfFormattedData_PerfOS_Processor `
+                        -Filter "Name='_Total'" -ErrorAction Stop
+                    if ($cp) { $cpu_pct = [math]::Round($cp.PercentProcessorTime, 1) }
+                } catch {}
+            }
 
             # ── メモリ (Win32_OperatingSystem は従来通り) ──────────────────────
             $mem_used_pct = $null; $mem_used_gb = $null
             $mem_free_gb  = $null; $mem_total_gb = $null
             $swap_used_pct = $null; $swap_used_gb = $null
-            try {
+            if ($collectMem) { try {
                 $oi = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
                 $total = [math]::Round($oi.TotalVisibleMemorySize / 1MB, 2)
                 $free  = [math]::Round($oi.FreePhysicalMemory / 1MB, 2)
@@ -185,22 +242,22 @@ function Invoke-Collect {
                         $swap_used_pct = [math]::Round(100 * $pu / $pa, 1)
                     } else { $swap_used_gb = 0; $swap_used_pct = 0 }
                 }
-            } catch {}
+            } catch {} }
 
             # ── ディスク (Win32_PerfFormattedData_PerfDisk_PhysicalDisk) ────────
             $disk_read_mbps = $null; $disk_write_mbps = $null
-            try {
+            if ($collectDisk) { try {
                 $dk = Get-CimInstance -ClassName Win32_PerfFormattedData_PerfDisk_PhysicalDisk `
                     -Filter "Name='_Total'" -ErrorAction Stop
                 if ($dk) {
                     $disk_read_mbps  = [math]::Round($dk.DiskReadBytesPerSec  / 1MB, 2)
                     $disk_write_mbps = [math]::Round($dk.DiskWriteBytesPerSec / 1MB, 2)
                 }
-            } catch {}
+            } catch {} }
 
             # ── ネットワーク (Win32_PerfFormattedData_Tcpip_NetworkInterface) ──
             $net_rx_mbps = $null; $net_tx_mbps = $null
-            try {
+            if ($collectNet) { try {
                 $nics = Get-CimInstance -ClassName Win32_PerfFormattedData_Tcpip_NetworkInterface `
                     -ErrorAction Stop | Where-Object { $_.Name -notmatch 'Loopback|isatap' }
                 if ($nics) {
@@ -209,14 +266,15 @@ function Invoke-Collect {
                     $net_rx_mbps = [math]::Round($rx_bps * 8 / 1MB, 2)
                     $net_tx_mbps = [math]::Round($tx_bps * 8 / 1MB, 2)
                 }
-            } catch {}
+            } catch {} }
 
             # ── プロセス数 (Win32_OperatingSystem.NumberOfProcesses) ────────────
+            # メモリ取得と同じ Win32_OperatingSystem なので mem 収集と連動させる
             $proc_count = $null
-            try {
+            if ($collectMem) { try {
                 $os2 = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
                 if ($os2) { $proc_count = [int]$os2.NumberOfProcesses }
-            } catch {}
+            } catch {} }
 
             # JSON 出力（BOM なし UTF-8 で追記）
             $row = [ordered]@{
@@ -313,7 +371,8 @@ function Invoke-Start {
         '-_ThrDiskW',  [double]$CFG['ThresholdDiskWriteMBps'],
         '-_ThrNetRx',  [double]$CFG['ThresholdNetRxMbps'],
         '-_ThrNetTx',  [double]$CFG['ThresholdNetTxMbps'],
-        '-_ThrLoad',   [double]$CFG['ThresholdLoadAvg1']
+        '-_ThrLoad',   [double]$CFG['ThresholdLoadAvg1'],
+        '-_Metrics',   "`"$([string]$CFG['Metrics'])`""
     )
     $proc = Start-Process powershell.exe -ArgumentList $psArgs `
         -WindowStyle Hidden -PassThru `
@@ -337,10 +396,7 @@ function Invoke-Start {
 # stop コマンド
 # ════════════════════════════════════════════════════════════
 function Invoke-Stop {
-    $sd = if ($SessionDir) { $SessionDir } else {
-        Get-ChildItem -Path '.' -Filter 'collector.pid' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty DirectoryName
-    }
+    $sd = if ($SessionDir) { $SessionDir } else { Find-LatestSession }
     if (-not $sd) { Log-Error "No active session found."; exit 4 }
 
     $pidFile = Join-Path $sd 'collector.pid'
@@ -659,10 +715,7 @@ $alertSection
 # status コマンド
 # ════════════════════════════════════════════════════════════
 function Invoke-Status {
-    $sd = if ($SessionDir) { $SessionDir } else {
-        Get-ChildItem -Path '.' -Filter 'data.jsonl' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty DirectoryName
-    }
+    $sd = if ($SessionDir) { $SessionDir } else { Find-LatestSession }
     if (-not $sd) { Write-Host "アクティブなセッションが見つかりません"; return }
 
     Write-Host ""; Write-Host "  セッション: $sd"
@@ -691,7 +744,9 @@ function Invoke-Status {
 function Invoke-List {
     Write-Host ""; Write-Host "  セッション一覧:"
     $found = $false
-    Get-ChildItem -Path '.' -Filter 'collector.pid' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+    # 検出範囲は OutputDir 配下に限定（誤って別プロジェクトのセッションを表示しないため）
+    $searchRoot = Get-SessionSearchRoot
+    Get-ChildItem -Path $searchRoot -Filter 'collector.pid' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | ForEach-Object {
             $d = $_.DirectoryName
             $collectorPid = [int](Get-Content $_.FullName)
