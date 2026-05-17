@@ -530,7 +530,8 @@ ops-scripts-template/
 ├── docs_windows/           # Windows スクリプト仕様書
 ├── tests/
 │   ├── docker/            # Docker テストスイート
-│   └── pester/            # PowerShell ユニットテスト
+│   ├── pester/            # PowerShell ユニットテスト
+│   └── bats/              # Bash ユニットテスト
 │
 ├── deploy/                 # ターゲットリポジトリへの自動配布
 │   ├── servers.yaml       # サーバー台帳

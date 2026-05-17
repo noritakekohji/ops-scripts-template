@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Capture server state before/after a change and compare the difference.
@@ -101,7 +101,7 @@ function Invoke-CollectSnapshot([string]$SnapType, [string]$SnapFile) {
 
     # Build category array for Get-ServerInfo.ps1
     $catArgs = @('-Category', $Category, '-OutputPath', $SnapFile)
-    & powershell.exe -ExecutionPolicy Bypass -NoLogo -File $GetInfoPs1 @catArgs
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -NoLogo -File $GetInfoPs1 @catArgs
 
     if (-not (Test-Path $SnapFile)) {
         Write-Error "Snapshot not created: $SnapFile"
@@ -134,7 +134,7 @@ function Invoke-RunComparison([string]$Bf, [string]$Af, [string]$Html) {
     $compareArgs = @('-Before', $Bf, '-After', $Af)
     if ($Html) { $compareArgs += @('-HtmlReport', $Html) }
 
-    & powershell.exe -ExecutionPolicy Bypass -NoLogo -File $ComparePs1 @compareArgs
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -NoLogo -File $ComparePs1 @compareArgs
 }
 
 # ============================================================

@@ -3,15 +3,18 @@
 .SYNOPSIS
     Tomcat ライフサイクル統合制御：start / stop / restart / status を 1 本で。Windows / Linux 共通仕様。
 .DESCRIPTION
+    Tomcat ライフサイクル統合制御：start / stop / restart / status を 1 本で行います。
+    Windows サービス（sc.exe 経由）として登録された Tomcat を制御することを前提と
+    します。Linux 版 (tomcatctl.sh) と同じコマンド体系・終了コード規約を持ちます。
 
-    Tomcat ライフサイクル統合制御：start / stop / restart / status を 1 本で。Windows / Linux 共通仕様。
-    Usage: TomcatCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
+    Usage:
+      TomcatCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
 
-
-      start    skip if Running
-      stop     skip if Stopped
-      restart  always perform (no idempotent skip)
-      status   read-only state report
+    アクション:
+      start    既に Running ならスキップ（冪等）
+      stop     既に Stopped ならスキップ（冪等）
+      restart  常に実行（冪等スキップなし）
+      status   状態のみ参照（副作用なし）
 
     Behavior parameters (Wait / WaitTimeoutSec) can be set in
     config/<env>/tomcatctl.conf.

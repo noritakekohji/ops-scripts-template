@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/aws/powershell/Backup-EbsSnapshot.ps1
+scripts_windows/aws/Backup-EbsSnapshot.ps1
 ```
 
 | 項目 | 値 |

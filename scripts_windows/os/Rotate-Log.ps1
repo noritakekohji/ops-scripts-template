@@ -3,17 +3,21 @@
 .SYNOPSIS
     サイズまたは経過時間でログをローテートする（Windows / PowerShell 版）。リストファイルによる一括処理、gzip 圧縮、世代保持に対応。
 .DESCRIPTION
+    サイズまたは経過時間でログをローテートします。リストファイル (-PathList)
+    を指定すれば複数ターゲットを 1 度の実行でまとめて処理できます。
+    対象が rotate 不要なら何もせず正常終了する冪等動作です。
 
+    リストファイル例:
+        C:\logs\myapp\app.log
+        C:\logs\critical\audit.log MaxSizeMB=200 RetentionCount=90
+        C:\tomcat\logs\catalina.out MaxSizeMB=500 CopyTruncate=true RetentionCount=14
+        C:\logs\nginx Pattern=access*.log MaxAgeDays=1 RetentionCount=30
 
-    サイズまたは経過時間でログをローテートする（Windows / PowerShell 版）。リストファイルによる一括処理、gzip 圧縮、世代保持に対応。
-
-        /var/log/myapp/app.log
-        /var/log/critical/audit.log MaxSizeMB=200 RetentionCount=90
-        /opt/tomcat/logs/catalina.out MaxSizeMB=500 CopyTruncate=true RetentionCount=14
-        /var/log/nginx Pattern=access*.log MaxAgeDays=1 RetentionCount=30
-
-
-
+    各行の右側に `Key=Value` で個別オプションを指定できます。
+.EXAMPLE
+    .\Rotate-Log.ps1 -Path C:\logs\app.log -MaxSizeMB 100 -RetentionCount 30
+.EXAMPLE
+    .\Rotate-Log.ps1 -PathList C:\config\rotate_log.lst -Compress
 
 
 

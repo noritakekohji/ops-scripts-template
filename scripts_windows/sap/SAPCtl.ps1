@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     SAP システム（S/4HANA / NetWeaver / ECC）ライフサイクル統合制御：start / stop / restart / status を 1 本で。

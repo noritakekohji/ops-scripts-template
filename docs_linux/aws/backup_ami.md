@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/aws/bash/backup_ami.sh
+scripts_linux/aws/backup_ami.sh
 ```
 
 | 項目 | 値 |
@@ -64,7 +64,7 @@ scripts/aws/bash/backup_ami.sh
 
 ### 基本
 ```bash
-./scripts/aws/bash/backup_ami.sh -i i-0abcdef0123456789 -p prod-web
+./scripts_linux/aws/backup_ami.sh -i i-0abcdef0123456789 -p prod-web
 ```
 
 ### 完了待ち + 7 世代保持
@@ -79,7 +79,7 @@ scripts/aws/bash/backup_ami.sh
 
 ### cron 例（毎日 03:00 に実行）
 ```cron
-0 3 * * *  /opt/ops-scripts/scripts/aws/bash/backup_ami.sh -i i-0abc -p prod-web-daily -d 14 -w >> /var/log/ops/backup-ami.log 2>&1
+0 3 * * *  /opt/ops-scripts/scripts_linux/aws/backup_ami.sh -i i-0abc -p prod-web-daily -d 14 -w >> /var/log/ops/backup-ami.log 2>&1
 ```
 
 ## 8. 出力例

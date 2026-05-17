@@ -42,7 +42,9 @@ if "%~1"=="" (
     set "ENV_NAME=default"
     goto :run_noshift
 )
-if "%~1:~0,1%"=="-" (
+:: cmd.exe では %~1 を直接 substring 展開できないため、いったん変数化する。
+set "ARG1=%~1"
+if "%ARG1:~0,1%"=="-" (
     set "ENV_NAME=default"
     goto :run_noshift
 )

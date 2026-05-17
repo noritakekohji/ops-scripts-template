@@ -1,66 +1,53 @@
-# GitLab CI テンプレート（ops-scripts 用）
+# ops-scripts-template
 
-エンタープライズ向け運用シェル（PowerShell / Bash / SQL 混在）リポジトリのための、GitLab CI / GitLab Runner 向けテンプレートです。**別リポジトリにコピーするだけで動く**ように、設定ファイル・実行スクリプト・除外ルールを一式まとめてあります。
+エンタープライズ向け運用スクリプト（PowerShell / Bash / SQL 混在）の **共通テンプレートリポジトリ**です。GitLab CI 設定一式に加えて、AWS / OS / 各種ミドルウェア（PostgreSQL / MySQL / SAP HANA / S4HANA / SQL Server / Tomcat）の **制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / change-detect / server-compare）、**仕様書**を同梱しています。
+
+別リポジトリへの配備は `deploy/sync.py` または GitLab CI（`ci/deploy/sync.gitlab-ci.yml`）で行います。
 
 ---
 
 ## 1. 含まれるもの
 
 ```
-ci-template/
+ops-scripts-template/
 ├── .gitlab-ci.yml                # メインパイプライン（include で各モジュールを読み込む）
 ├── .gitleaks.toml                # gitleaks 除外ルール
 ├── .yamllint                     # yamllint 設定
 ├── .sqlfluff                     # sqlfluff 設定（既定: T-SQL）
-├── .gitignore                    # シークレット混入防止 + CI 成果物の除外
-└── ci/
-    ├── lint/
-    │   ├── powershell.gitlab-ci.yml      # PSScriptAnalyzer
-    │   ├── run-psscriptanalyzer.ps1
-    │   ├── shell.gitlab-ci.yml           # ShellCheck
-    │   ├── sql.gitlab-ci.yml             # sqlfluff
-    │   └── yaml.gitlab-ci.yml            # yamllint
-    ├── security/
-    │   ├── secrets.gitlab-ci.yml         # gitleaks（シークレット混入検査）
-    │   └── deps.gitlab-ci.yml            # Trivy（依存脆弱性）
-    └── test/
-        ├── pester.gitlab-ci.yml          # Pester（PowerShell）
-        ├── run-pester.ps1
-        └── bats.gitlab-ci.yml            # bats-core（Bash）
+├── .gitattributes / .gitignore   # 改行・エンコーディング統制
+├── README.md / install.md / shell-specification.md / development-rules.md
+├── ops-scripts-structure.md      # 全体ディレクトリ構成の詳細
+├── ci/
+│   ├── lint/        # PSScriptAnalyzer / ShellCheck / sqlfluff / yamllint / template-check
+│   ├── security/    # gitleaks / Trivy
+│   ├── test/        # Pester / bats
+│   ├── deploy/      # 別リポジトリへの自動同期
+│   └── template-check/
+├── config/          # default / dev / staging / production の .conf
+├── scripts_linux/   # bash スクリプト本体 (aws/hana/mysql/os/postgresql/sap/sqlserver/tomcat/lib)
+├── scripts_windows/ # PowerShell スクリプト本体 (同上 + lib)
+├── docs_linux/      # Linux 側スクリプトの仕様書 (.md)
+├── docs_windows/    # Windows 側スクリプトの仕様書 (.md)
+├── tools/           # 運用補助ツール
+│   ├── perf-monitor/      # 負荷テスト中のリソース監視＋HTML レポート
+│   ├── network-check/     # DNS/Ping/TCP 接続性チェック
+│   ├── change-detect/     # サーバ情報の前後比較
+│   ├── server-compare/    # サーバ情報収集と差分検出
+│   └── templates/         # 新規スクリプト用テンプレート
+├── deploy/          # 別リポジトリへの同期スクリプト (sync.py / servers.yaml)
+└── tests/
+    ├── pester/      # PowerShell ユニットテスト
+    ├── bats/        # Bash ユニットテスト
+    └── docker/      # Docker でのエンドツーエンドテスト
 ```
+
+詳細な構成は `ops-scripts-structure.md` を参照。
 
 ---
 
-## 2. 別リポジトリへのコピー手順
+## 2. 別リポジトリへの配備
 
-新しいリポジトリのルートで、`ci-template/` の中身を**そのままコピー**します。
-
-```powershell
-# 例：PowerShell
-Copy-Item -Recurse ci-template\* C:\path\to\new-repo\
-Copy-Item ci-template\.gitlab-ci.yml C:\path\to\new-repo\
-Copy-Item ci-template\.gitleaks.toml,ci-template\.yamllint,ci-template\.sqlfluff,ci-template\.gitignore C:\path\to\new-repo\
-```
-
-```bash
-# 例：Bash
-cp -r ci-template/. /path/to/new-repo/
-```
-
-コピー後、**コピー先のリポジトリルートで** 以下のレイアウトになっていれば OK です。
-
-```
-new-repo/
-├── .gitlab-ci.yml
-├── .gitleaks.toml
-├── .yamllint
-├── .sqlfluff
-├── .gitignore
-└── ci/
-    ├── lint/
-    ├── security/
-    └── test/
-```
+`deploy/sync.py` で別リポジトリへスクリプト・ドキュメント・CI 設定を同期できます。詳細は `deploy/SPEC.md`。CI 経由で自動同期する場合は `ci/deploy/sync.gitlab-ci.yml` を include してください。
 
 ---
 

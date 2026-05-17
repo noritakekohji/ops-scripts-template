@@ -1,13 +1,17 @@
 # Server Compare Tools
 
-サーバー設定の現新比較ツール。**このフォルダの 3 ファイルだけコピーすれば動きます。**
+サーバー設定の現新比較ツール。**このフォルダ一式をコピーするだけで動きます。**
 
 ```
 tools/server-compare/
 ├── Get-ServerInfo.ps1     # Windows 情報収集
+├── Get-ServerInfo.bat     # Windows 起動用バッチ
 ├── get_server_info.sh     # Linux  情報収集
-└── Compare-ServerInfo.ps1 # 比較（コンソール + HTML）
+├── Compare-ServerInfo.ps1 # 比較（コンソール + HTML）
+└── Compare-ServerInfo.bat # Windows 起動用バッチ
 ```
+
+> Linux 単体での比較は `tools/change-detect/change_detect.sh compare` を利用してください（内部で Python 比較器を呼び出します）。
 
 ---
 

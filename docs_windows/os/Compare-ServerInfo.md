@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/windows/powershell/Compare-ServerInfo.ps1
+scripts_windows/os/Compare-ServerInfo.ps1
 ```
 
 Windows・Linux どちらの JSON も読み取れる（PowerShell 5.1+）。

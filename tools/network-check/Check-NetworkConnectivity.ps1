@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Check network connectivity (DNS / Ping / TCP port) for multiple targets.

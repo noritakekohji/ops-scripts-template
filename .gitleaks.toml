@@ -8,8 +8,8 @@ useDefault = true
 description = "Allowlist for ops-scripts repo"
 paths = [
     '''(.*?)(README|CHANGELOG)\.md''',
-    '''docs/.*\.md''',
-    '''tests/fixtures/.*''',
+    '''docs_(linux|windows)/.*\.md''',
+    '''tests/docker/fixtures/.*''',
     '''config/.*/secrets\.ref\.ya?ml''',
 ]
 regexes = [

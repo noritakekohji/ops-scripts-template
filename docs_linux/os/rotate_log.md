@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/linux/bash/rotate_log.sh
+scripts_linux/os/rotate_log.sh
 ```
 
 | 項目 | 値 |
@@ -121,7 +121,7 @@ scripts/linux/bash/rotate_log.sh
 
 ### 単一ファイル：100MB 超で rotate、gzip、7 世代保持
 ```bash
-./scripts/linux/bash/rotate_log.sh -p /var/log/myapp/app.log -s 100 -c -k 7
+./scripts_linux/os/rotate_log.sh -p /var/log/myapp/app.log -s 100 -c -k 7
 ```
 
 ### ディレクトリ一括：1 日経過で全 *.log を rotate
@@ -165,7 +165,7 @@ scripts/linux/bash/rotate_log.sh
 
 ### cron 例（毎日 03:00）
 ```cron
-0 3 * * *  /opt/ops-scripts/scripts/linux/bash/rotate_log.sh -L /etc/ops-scripts/logs.txt -a 1 -c -k 30 >> /var/log/ops/rotate.log 2>&1
+0 3 * * *  /opt/ops-scripts/scripts_linux/os/rotate_log.sh -L /etc/ops-scripts/logs.txt -a 1 -c -k 30 >> /var/log/ops/rotate.log 2>&1
 ```
 
 ### systemd timer 例
@@ -176,7 +176,7 @@ Description=ops-scripts log rotation
 
 [Service]
 Type=oneshot
-ExecStart=/opt/ops-scripts/scripts/linux/bash/rotate_log.sh -L /etc/ops-scripts/logs.txt -a 1 -c -k 30
+ExecStart=/opt/ops-scripts/scripts_linux/os/rotate_log.sh -L /etc/ops-scripts/logs.txt -a 1 -c -k 30
 ```
 
 ```ini

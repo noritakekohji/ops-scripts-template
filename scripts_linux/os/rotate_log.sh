@@ -118,6 +118,8 @@ log_info "Pre-check start"
 
 
 # <path>\t<pattern>\t<maxSizeMB>\t<maxAgeDays>\t<compress>\t<retention>\t<copyTruncate>
+# set -u 下で `+=`/参照を行うため、明示的に初期化しておく。
+targets_text=""
 
 
 parse_list_line() {
@@ -306,7 +308,11 @@ while IFS=$'\t' read -r t_path t_pattern t_size t_age t_compress t_retention t_c
             peers=( "${f}".[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]* )
             shopt -u nullglob
             if [[ "${#peers[@]}" -gt "$t_retention" ]]; then
-                IFS=$'\n' read -r -d '' -a sorted < <(printf '%s\n' "${peers[@]}" | sort -r && printf '\0')
+                # mapfile を使って sort -r 出力を 1 要素 1 行で配列化する。
+                # 旧コード `IFS=$'\n' read -r -d ''` は -d '' が NUL 区切りのため、
+                # 改行混じりの出力全体が 1 要素にまとまってしまい複数ファイルの
+                # 一括 rm に "改行入り 1 引数" を渡してしまう（古いログが消えない）。
+                mapfile -t sorted < <(printf '%s\n' "${peers[@]}" | sort -r)
                 for ((i=t_retention; i<${#sorted[@]}; i++)); do
                     p="${sorted[$i]}"
                     if rm -f -- "$p"; then

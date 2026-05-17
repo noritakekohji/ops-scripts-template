@@ -10,8 +10,8 @@
 
 | OS | スクリプト |
 |---|---|
-| Linux | `scripts/linux/bash/deploy_scripts.sh` |
-| Windows | `scripts/windows/powershell/Deploy-Scripts.ps1` |
+| Linux | `scripts_linux/os/deploy_scripts.sh` |
+| Windows | `scripts_windows/os/Deploy-Scripts.ps1` |
 
 設定ファイル `config/<env>/deploy_scripts.conf`（PS / Bash 共有、小文字）。
 
@@ -142,7 +142,7 @@ SRC, aws/powershell/Backup-Ami.ps1
 
 ### Bash：production 環境に配備
 ```bash
-sudo /path/to/repo/scripts/linux/bash/deploy_scripts.sh \
+sudo /path/to/repo/scripts_linux/os/deploy_scripts.sh \
     -L /etc/ops/deploy.list \
     -e production \
     -b
@@ -187,7 +187,7 @@ install.bat staging -WhatIf
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../config/default/ec2ctl.conf dst=/opt/ops/config/ec2ctl.conf mode=644
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Unchanged: dst=/opt/ops/config/backup_ami.conf
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Backed up: from=/opt/ops/bin/ec2ctl.sh to=/opt/ops/.backup/ec2ctl.sh.20260510-100002
-[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../scripts/aws/bash/ec2ctl.sh dst=/opt/ops/bin/ec2ctl.sh mode=755
+[2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Deployed: src=.../scripts_linux/aws/ec2ctl.sh dst=/opt/ops/bin/ec2ctl.sh mode=755
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Main complete
 [2026-05-10 10:00:02] [INFO ] (deploy_scripts.sh:1234) Script end: status=success exitCode=0 deployed=4 unchanged=1 backedUp=1 failed=0
 ```

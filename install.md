@@ -134,4 +134,5 @@ env を指定した場合、`config\default\` はマージされません。
 
 ## 8. 詳細仕様
 
-→ [`docs/scripts/Deploy-Scripts.md`](docs/scripts/Deploy-Scripts.md)
+- Windows: [`docs_windows/os/Deploy-Scripts.md`](docs_windows/os/Deploy-Scripts.md)
+- Linux:   [`docs_linux/os/rotate_log.md`](docs_linux/os/rotate_log.md)（関連スクリプトの一例）

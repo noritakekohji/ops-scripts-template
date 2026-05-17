@@ -20,7 +20,7 @@
 ::   perf_monitor.bat status
 ::   perf_monitor.bat list
 ::
-:: Requirements: PowerShell 5.1+, python3 in PATH
+:: Requirements: PowerShell 5.1+ (python3 optional; PS-native renderer is used if absent)
 :: Exit codes  : forwarded from PerfMonitor.ps1
 :: ============================================================================
 setlocal
@@ -125,7 +125,7 @@ echo    stop   [session_dir]
 echo           Stop collection (omit to auto-detect latest session)
 echo.
 echo    report ^<session_dir^> [-Config file]
-echo           Generate HTML report (requires python3)
+echo           Generate HTML report (python3 optional; PS-native fallback)
 echo.
 echo    status [session_dir]
 echo           Show collection state and latest metric snapshot

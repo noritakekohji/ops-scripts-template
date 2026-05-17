@@ -10,8 +10,8 @@
 
 | OS | スクリプト |
 |---|---|
-| Windows | `scripts/aws/powershell/Ec2Ctl.ps1` |
-| Linux | `scripts/aws/bash/ec2ctl.sh` |
+| Windows | `scripts_windows/aws/Ec2Ctl.ps1` |
+| Linux | `scripts_linux/aws/ec2ctl.sh` |
 
 > Windows のケース非依存 FS で衝突するため、本仕様書 1 本で PS / Bash 両方を兼ねます。設定ファイル `config/<env>/ec2ctl.conf` も PS / Bash 共有（小文字統一）。
 
@@ -96,8 +96,8 @@
 
 ### cron（業務時間に合わせて起動・停止）
 ```cron
-0  9 * * 1-5  OPS_ENV=production /opt/ops-scripts/scripts/aws/bash/ec2ctl.sh start i-0abc,i-0def -w
-0 21 * * 1-5  OPS_ENV=production /opt/ops-scripts/scripts/aws/bash/ec2ctl.sh stop  i-0abc,i-0def -w
+0  9 * * 1-5  OPS_ENV=production /opt/ops-scripts/scripts_linux/aws/ec2ctl.sh start i-0abc,i-0def -w
+0 21 * * 1-5  OPS_ENV=production /opt/ops-scripts/scripts_linux/aws/ec2ctl.sh stop  i-0abc,i-0def -w
 ```
 
 ## 8. 出力例

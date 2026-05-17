@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     PowerShell test suite (runs INSIDE the PowerShell Docker container)

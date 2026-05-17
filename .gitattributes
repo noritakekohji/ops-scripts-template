@@ -34,6 +34,7 @@
 *.toml  text eol=lf
 *.cfg   text eol=lf
 *.ini   text eol=lf
+*.py    text eol=lf
 
 # ---------- バイナリ: 変換しない ----------
 *.zip   binary

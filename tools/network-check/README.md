@@ -1,11 +1,12 @@
 # Network Connectivity Check Tools
 
 サーバーから複数の接続先に対し、DNS / Ping / TCPポート の疎通確認をまとめて行うツールです。
-**このフォルダの 3 ファイルをコピーするだけで動きます。**
+**このフォルダ一式をコピーするだけで動きます。**
 
 ```
 tools/network-check/
-├── Check-NetworkConnectivity.ps1   # Windows PowerShell
+├── Check-NetworkConnectivity.ps1   # Windows PowerShell 本体
+├── Check-NetworkConnectivity.bat   # Windows 起動用バッチ
 ├── check_network_connectivity.sh   # Linux Bash
 └── targets.lst                     # 接続先リストファイル（サンプル）
 ```
@@ -33,14 +34,27 @@ tools/network-check/
 
 ## リストファイル形式
 
+2 形式をサポートします（混在可）。同じホスト名を持つ行は DNS / Ping を 1 回だけ実行し、TCP のみサービス単位で繰り返します。
+
+### 4-field 形式（期待値付き評価）
+
+```
+# <host>, <port>, <expected>, <description>
+#   expected: ok (到達するはず) / ng (到達しないはず) / - (評価しない)
+#   port:     TCP ポート番号、または '-' で Ping のみ
+
+8.8.8.8,    -, ok, Google DNS Primary (ping)
+google.com, 443, ok, HTTPS
+google.com,  22, ng, SSH (should be blocked)
+```
+
+### 3-field 形式（評価なし、後方互換）
+
 ```
 # <host>, <port>, <description>
-#   port に '-' または空白 → Ping のみ（ポートチェックなし）
 
-8.8.8.8,       53,  Google DNS
-example.com,   80,  HTTP
-example.com,  443,  HTTPS
-192.168.1.1,    -,  Default Gateway
+example.com,  443, HTTPS
+192.168.1.1,    -, Default Gateway
 ```
 
 ---
@@ -49,8 +63,13 @@ example.com,  443,  HTTPS
 
 ### Windows
 
+```cmd
+:: バッチ起動（推奨。ログは <スクリプト名>_<日時>.log に Transcript されます）
+Check-NetworkConnectivity.bat -TargetList targets.lst
+```
+
 ```powershell
-# 基本実行
+# PowerShell 直接実行
 .\Check-NetworkConnectivity.ps1 -TargetList targets.lst
 
 # HTML レポートも生成
@@ -84,25 +103,20 @@ chmod +x check_network_connectivity.sh
 
 ---
 
-## コンソール出力例
+## コンソール出力例（実装イメージ）
+
+ホスト単位のヘッダ行に DNS / Ping、続いてサービスごとの TCP 行を出力します。
 
 ```
-=== Network Connectivity Check ===
-  List    : targets.lst
-  Targets : 5
-
-[OK  ] 8.8.8.8                   Google DNS Primary
-         DNS  : ─  N/A (IP address)
-         Ping : ✓  6ms avg (3/3)
-         Port : ✓  53/TCP connected
-
-[FAIL] db.internal               MySQL
-         DNS  : ✗  Name or service not known
-         Ping : ✗  (0/3)
-         Port : ✗  3306/TCP - Timeout
+[HOST] google.com
+  DNS  : OK  142.250.196.110
+  Ping : OK  21ms avg (4/4)
+  [443/TCP] HTTPS         : OK   expected=ok  -> OK
+  [80/TCP ] HTTP          : OK   expected=ok  -> OK
+  [22/TCP ] SSH           : NG   expected=ng  -> OK (unreachable as expected)
 
 ──────────────────────────────────────────────────
-  Total: 5   OK: 3   Warning: 1   Failed: 1
+  Hosts: 3   Services: 5   OK: 4   NG: 1   Warning: 0
 ```
 
 ---

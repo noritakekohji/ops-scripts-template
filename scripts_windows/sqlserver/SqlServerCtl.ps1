@@ -3,20 +3,23 @@
 .SYNOPSIS
     SQL Server ライフサイクル統合制御：start / stop / restart / status を 1 本で。Windows / Linux 共通仕様。
 .DESCRIPTION
+    SQL Server ライフサイクル統合制御：start / stop / restart / status を 1 本で行います。
+    Windows サービスとして登録された SQL Server インスタンスを制御することを前提とし、
+    Linux 版 (sqlserverctl.sh) と同じコマンド体系・終了コード規約を持ちます。
 
-    SQL Server ライフサイクル統合制御：start / stop / restart / status を 1 本で。Windows / Linux 共通仕様。
-
+    サービス名の例:
       - default instance: MSSQLSERVER
       - named instance:   MSSQL$<INSTANCE>
       - SQL Agent:        SQLSERVERAGENT (default) or SQLAgent$<INSTANCE>
 
-    Usage: SqlServerCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
+    Usage:
+      SqlServerCtl.ps1 <action> <service_name> [-Wait] [-WaitTimeoutSec N]
 
-
-      start    skip if Running
-      stop     skip if Stopped
-      restart  always perform
-      status   read-only state report
+    アクション:
+      start    既に Running ならスキップ（冪等）
+      stop     既に Stopped ならスキップ（冪等）
+      restart  常に実行（冪等スキップなし）
+      status   状態のみ参照（副作用なし）
 
 .EXAMPLE
     .\SqlServerCtl.ps1 start MSSQLSERVER -Wait

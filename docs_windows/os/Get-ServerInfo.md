@@ -10,8 +10,8 @@
 
 | OS | スクリプト |
 |---|---|
-| Windows | `scripts/windows/powershell/Get-ServerInfo.ps1` |
-| Linux | `scripts/linux/bash/get_server_info.sh` |
+| Windows | `scripts_windows/os/Get-ServerInfo.ps1` |
+| Linux | `scripts_linux/os/get_server_info.sh` |
 
 設定ファイル: `config/<env>/get_server_info.conf`
 

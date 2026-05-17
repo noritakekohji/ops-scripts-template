@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     MySQL / MariaDB ライフサイクル統合制御：start / stop / restart / status を 1 本で。Windows / Linux 共通仕様。

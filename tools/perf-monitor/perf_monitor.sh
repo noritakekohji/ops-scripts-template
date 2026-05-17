@@ -433,6 +433,8 @@ cmd_report() {
     local conf_file="$DEFAULT_CONF"
 
     shift 2>/dev/null || true
+    # OPTIND は前回呼び出しの値を引き継ぐので明示的にリセット
+    OPTIND=1
     while getopts "c:h" opt; do
         case "$opt" in c) conf_file="$OPTARG" ;; h|*) usage ;; esac
     done
@@ -458,17 +460,16 @@ cmd_report() {
     local output_html="${session_dir}/report.html"
     log_info "Generating report: $output_html"
 
-    # しきい値を環境変数で渡す
-    PERF_THR_CPU="${CFG[ThresholdCpuPct]}"       \
-    PERF_THR_MEM="${CFG[ThresholdMemPct]}"       \
-    PERF_THR_DISK_R="${CFG[ThresholdDiskReadMBps]}"  \
-    PERF_THR_DISK_W="${CFG[ThresholdDiskWriteMBps]}" \
-    PERF_THR_NET_RX="${CFG[ThresholdNetRxMbps]}" \
-    PERF_THR_NET_TX="${CFG[ThresholdNetTxMbps]}" \
-    PERF_THR_LOAD="${CFG[ThresholdLoadAvg1]}"    \
-    python3 "$RENDER_PY" "$data_file" "$output_html"
-
-    if [[ $? -eq 0 ]]; then
+    # set -e 下では python3 が失敗した時点で停止するため、if 文の中で実行して
+    # 成否で分岐する（旧コードの `if [[ $? -eq 0 ]]` は意味を持たなかった）。
+    if PERF_THR_CPU="${CFG[ThresholdCpuPct]}"           \
+       PERF_THR_MEM="${CFG[ThresholdMemPct]}"           \
+       PERF_THR_DISK_R="${CFG[ThresholdDiskReadMBps]}"  \
+       PERF_THR_DISK_W="${CFG[ThresholdDiskWriteMBps]}" \
+       PERF_THR_NET_RX="${CFG[ThresholdNetRxMbps]}"     \
+       PERF_THR_NET_TX="${CFG[ThresholdNetTxMbps]}"     \
+       PERF_THR_LOAD="${CFG[ThresholdLoadAvg1]}"        \
+       python3 "$RENDER_PY" "$data_file" "$output_html"; then
         log_info "Report generated: $output_html"
         echo ""
         echo "  レポート生成完了: ${output_html}"

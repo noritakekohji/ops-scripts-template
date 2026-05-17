@@ -9,7 +9,7 @@
 ## 1. 配置
 
 ```
-scripts/windows/powershell/Rotate-Log.ps1
+scripts_windows/os/Rotate-Log.ps1
 ```
 
 | 項目 | 値 |

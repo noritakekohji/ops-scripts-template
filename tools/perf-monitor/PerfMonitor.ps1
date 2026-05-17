@@ -297,9 +297,11 @@ function Invoke-Start {
         Out-File (Join-Path $sesDir 'session.conf') -Encoding utf8
 
     # コレクターを独立プロセスとして起動
-    # Start-Job は親プロセス終了時にキャンセルされるため Start-Process を使用
-    $args = @(
-        '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    # Start-Job は親プロセス終了時にキャンセルされるため Start-Process を使用。
+    # $args は PowerShell 自動変数なので $psArgs にリネーム。
+    # -NoProfile を付けて環境差異（プロファイル経由の Set-StrictMode 等）を排除。
+    $psArgs = @(
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', "`"$ScriptPath`"",
         '_collect',
         '-_Session',   "`"$sesDir`"",
@@ -313,8 +315,10 @@ function Invoke-Start {
         '-_ThrNetTx',  [double]$CFG['ThresholdNetTxMbps'],
         '-_ThrLoad',   [double]$CFG['ThresholdLoadAvg1']
     )
-    $proc = Start-Process powershell.exe -ArgumentList $args `
-        -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $sesDir 'collector.log')
+    $proc = Start-Process powershell.exe -ArgumentList $psArgs `
+        -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput (Join-Path $sesDir 'collector.log') `
+        -RedirectStandardError  (Join-Path $sesDir 'collector.err.log')
     $proc.Id | Out-File (Join-Path $sesDir 'collector.pid') -Encoding utf8
 
     Log-Info "Collector started: PID=$($proc.Id) session=$sesDir"
@@ -350,7 +354,7 @@ function Invoke-Stop {
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
     $df = Join-Path $sd 'data.jsonl'
-    $count = if (Test-Path $df) { (Get-Content $df).Count } else { 0 }
+    $count = if (Test-Path $df) { @(Get-Content $df).Count } else { 0 }
     Log-Info "Collector stopped: session=$sd samples=$count"
     Write-Host ""; Write-Host "  停止完了: $sd  ($count サンプル)"
     Write-Host "  レポート生成: .\PerfMonitor.ps1 report $sd"
@@ -440,7 +444,13 @@ function New-PerfHtmlReport {
     # タイムスタンプラベル
     function Get-TsLabel([string]$Ts) {
         try   { return ([datetime]::Parse($Ts)).ToString('HH:mm:ss') }
-        catch { return $Ts.Substring([math]::Max(0,$Ts.Length-8), [math]::Min(8,$Ts.Length)) }
+        catch {
+            # フォーマット不明な場合は末尾最大 8 文字を返す（境界式バグ修正）
+            $len   = if ($Ts) { $Ts.Length } else { 0 }
+            $take  = [math]::Min(8, $len)
+            $start = $len - $take
+            return $Ts.Substring($start, $take)
+        }
     }
 
     # JS 配列文字列生成
@@ -658,13 +668,13 @@ function Invoke-Status {
     Write-Host ""; Write-Host "  セッション: $sd"
     $pf = Join-Path $sd 'collector.pid'
     if (Test-Path $pf) {
-        $pid_ = [int](Get-Content $pf)
-        $running = Test-PidRunning $pid_
-        Write-Host "  状態: $(if($running){'収集中 (PID='+$pid_+')'}else{'停止済み'})"
+        $collectorPid = [int](Get-Content $pf)
+        $running = Test-PidRunning $collectorPid
+        Write-Host "  状態: $(if($running){'収集中 (PID='+$collectorPid+')'}else{'停止済み'})"
     } else { Write-Host "  状態: 停止済み" }
 
     $df = Join-Path $sd 'data.jsonl'
-    $count = if (Test-Path $df) { (Get-Content $df).Count } else { 0 }
+    $count = if (Test-Path $df) { @(Get-Content $df).Count } else { 0 }
     Write-Host "  サンプル数: $count"
 
     $sf = Join-Path $sd 'status.txt'
@@ -684,10 +694,10 @@ function Invoke-List {
     Get-ChildItem -Path '.' -Filter 'collector.pid' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | ForEach-Object {
             $d = $_.DirectoryName
-            $pid_ = [int](Get-Content $_.FullName)
-            $active = if (Test-PidRunning $pid_) { '収集中' } else { '停止済み' }
+            $collectorPid = [int](Get-Content $_.FullName)
+            $active = if (Test-PidRunning $collectorPid) { '収集中' } else { '停止済み' }
             $df = Join-Path $d 'data.jsonl'
-            $count = if (Test-Path $df) { (Get-Content $df).Count } else { 0 }
+            $count = if (Test-Path $df) { @(Get-Content $df).Count } else { 0 }
             Write-Host ("  [{0,-6}] {1}  ({2} サンプル)" -f $active, $d, $count)
             $found = $true
         }

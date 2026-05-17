@@ -120,7 +120,7 @@ if ! [[ "$wait_timeout" =~ ^[0-9]+$ ]] || [[ "$wait_timeout" -lt 60 ]] || [[ "$w
     status="failed"; exit 1
 fi
 
-adm_user="${sap_sid,,}adm"   # 小文字 SID + "adm"  例: s4hadm, eccdadm
+adm_user="${sap_sid,,}adm"   # 小文字 SID + "adm"  例: s4hadm, eccadm
 
 log_info "Config loaded: env=${OPS_CONFIG_ENV:-default} keys=${#OPS_CONFIG[@]}"
 log_info "Args validated: action=$action SID=$sap_sid NR=$inst_nr adm=$adm_user wait=$wait_for_completion timeoutSec=$wait_timeout"
@@ -150,8 +150,10 @@ log_info "Control method: $ctrl_method"
 sap_get_state() {
     local rc=0
     if [[ "$ctrl_method" == "sapcontrol" ]]; then
-        local out exit_code
-        out=$(sapcontrol -nr "$inst_nr" -function GetSystemInstanceList 2>/dev/null) || exit_code=$?
+        local out
+        # set -e 下では sapcontrol 失敗で関数が落ちるのを避けるため `|| true`。
+        # 旧コードは $exit_code を取得していたが未使用だったので削除。
+        out=$(sapcontrol -nr "$inst_nr" -function GetSystemInstanceList 2>/dev/null) || true
         # sapcontrol の戻り値: 0=成功, 1=エラー
         if echo "$out" | grep -qiE 'GREEN|RUNNING'; then echo "running"
         elif echo "$out" | grep -qiE 'GRAY|STOPPED'; then echo "stopped"

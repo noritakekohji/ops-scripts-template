@@ -10,8 +10,8 @@
 
 | OS | スクリプト |
 |---|---|
-| Windows | `scripts/aws/powershell/S3Upload.ps1` |
-| Linux | `scripts/aws/bash/s3upload.sh` |
+| Windows | `scripts_windows/aws/S3Upload.ps1` |
+| Linux | `scripts_linux/aws/s3upload.sh` |
 
 設定ファイル `config/<env>/s3upload.conf`（PS / Bash 共有、小文字）。
 
@@ -127,7 +127,7 @@
 
 ### Bash：リスト一括（cron）
 ```cron
-0 4 * * *  OPS_ENV=production /opt/ops-scripts/scripts/aws/bash/s3upload.sh -L /etc/ops-scripts/s3-list.txt >> /var/log/ops/s3upload.log 2>&1
+0 4 * * *  OPS_ENV=production /opt/ops-scripts/scripts_linux/aws/s3upload.sh -L /etc/ops-scripts/s3-list.txt >> /var/log/ops/s3upload.log 2>&1
 ```
 
 ### rotate_log との組み合わせ
