@@ -206,6 +206,13 @@ function Invoke-Collect {
     $SampleCount = 0
     $SleepSec    = [math]::Max(1, $interval - 1)
 
+    # ── 前回の累積値（差分計算用、Linux 版 sh と同じ意味論）─────────────────
+    # PerfFormattedData は CIM 内部の 1 秒サンプル基準の「瞬時値」になるため、
+    # 同じ interval 平均にするには PerfRawData（累積値）を間隔で差分する必要がある。
+    # 1 回目はベースラインのみ採るので null を出力する。
+    $prevDiskRead  = $null; $prevDiskWrite = $null; $prevDiskTime  = $null
+    $prevNetRx     = $null; $prevNetTx     = $null; $prevNetTime   = $null
+
     while ($true) {
         try {
             $ts = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
@@ -244,27 +251,50 @@ function Invoke-Collect {
                 }
             } catch {} }
 
-            # ── ディスク (Win32_PerfFormattedData_PerfDisk_PhysicalDisk) ────────
+            # ── ディスク (Win32_PerfRawData_PerfDisk_PhysicalDisk: 累積バイト) ──
+            # interval 平均にするため累積値を差分する（Linux sh と同じ計算方式）
             $disk_read_mbps = $null; $disk_write_mbps = $null
             if ($collectDisk) { try {
-                $dk = Get-CimInstance -ClassName Win32_PerfFormattedData_PerfDisk_PhysicalDisk `
+                $dk = Get-CimInstance -ClassName Win32_PerfRawData_PerfDisk_PhysicalDisk `
                     -Filter "Name='_Total'" -ErrorAction Stop
                 if ($dk) {
-                    $disk_read_mbps  = [math]::Round($dk.DiskReadBytesPerSec  / 1MB, 2)
-                    $disk_write_mbps = [math]::Round($dk.DiskWriteBytesPerSec / 1MB, 2)
+                    $now = Get-Date
+                    $curRead  = [double]$dk.DiskReadBytesPerSec    # raw counter は実は累積バイト
+                    $curWrite = [double]$dk.DiskWriteBytesPerSec
+                    if ($null -ne $prevDiskRead -and $null -ne $prevDiskTime) {
+                        $dt = ($now - $prevDiskTime).TotalSeconds
+                        if ($dt -gt 0) {
+                            $rd = [math]::Max(0, $curRead  - $prevDiskRead)
+                            $wr = [math]::Max(0, $curWrite - $prevDiskWrite)
+                            $disk_read_mbps  = [math]::Round($rd / $dt / 1MB, 2)
+                            $disk_write_mbps = [math]::Round($wr / $dt / 1MB, 2)
+                        }
+                    }
+                    $prevDiskRead  = $curRead
+                    $prevDiskWrite = $curWrite
+                    $prevDiskTime  = $now
                 }
             } catch {} }
 
-            # ── ネットワーク (Win32_PerfFormattedData_Tcpip_NetworkInterface) ──
+            # ── ネットワーク (Win32_PerfRawData_Tcpip_NetworkInterface: 累積バイト) ──
             $net_rx_mbps = $null; $net_tx_mbps = $null
             if ($collectNet) { try {
-                $nics = Get-CimInstance -ClassName Win32_PerfFormattedData_Tcpip_NetworkInterface `
+                $nics = Get-CimInstance -ClassName Win32_PerfRawData_Tcpip_NetworkInterface `
                     -ErrorAction Stop | Where-Object { $_.Name -notmatch 'Loopback|isatap' }
                 if ($nics) {
-                    $rx_bps = ($nics | Measure-Object BytesReceivedPerSec -Sum).Sum
-                    $tx_bps = ($nics | Measure-Object BytesSentPerSec     -Sum).Sum
-                    $net_rx_mbps = [math]::Round($rx_bps * 8 / 1MB, 2)
-                    $net_tx_mbps = [math]::Round($tx_bps * 8 / 1MB, 2)
+                    $now = Get-Date
+                    $curRx = [double](($nics | Measure-Object BytesReceivedPerSec -Sum).Sum)
+                    $curTx = [double](($nics | Measure-Object BytesSentPerSec     -Sum).Sum)
+                    if ($null -ne $prevNetRx -and $null -ne $prevNetTime) {
+                        $dt = ($now - $prevNetTime).TotalSeconds
+                        if ($dt -gt 0) {
+                            $rx = [math]::Max(0, $curRx - $prevNetRx)
+                            $tx = [math]::Max(0, $curTx - $prevNetTx)
+                            $net_rx_mbps = [math]::Round($rx * 8 / $dt / 1MB, 2)
+                            $net_tx_mbps = [math]::Round($tx * 8 / $dt / 1MB, 2)
+                        }
+                    }
+                    $prevNetRx = $curRx; $prevNetTx = $curTx; $prevNetTime = $now
                 }
             } catch {} }
 
@@ -466,6 +496,7 @@ function Invoke-Report {
         disk_write_mbps= [double]$CFG['ThresholdDiskWriteMBps']
         net_rx_mbps    = [double]$CFG['ThresholdNetRxMbps']
         net_tx_mbps    = [double]$CFG['ThresholdNetTxMbps']
+        load_avg_1     = [double]$CFG['ThresholdLoadAvg1']
     }
     if (New-PerfHtmlReport -DataFile $df -OutputFile $outHtml -Thresholds $thr) {
         Log-Info "Report generated via PS renderer: $outHtml"
@@ -497,11 +528,10 @@ function New-PerfHtmlReport {
     )
     if ($records.Count -eq 0) { Write-Log 'ERROR' "No records in $DataFile"; return $false }
 
-    # タイムスタンプラベル
+    # ── ヘルパー ─────────────────────────────────────────────────
     function Get-TsLabel([string]$Ts) {
         try   { return ([datetime]::Parse($Ts)).ToString('HH:mm:ss') }
         catch {
-            # フォーマット不明な場合は末尾最大 8 文字を返す（境界式バグ修正）
             $len   = if ($Ts) { $Ts.Length } else { 0 }
             $take  = [math]::Min(8, $len)
             $start = $len - $take
@@ -509,152 +539,316 @@ function New-PerfHtmlReport {
         }
     }
 
-    # JS 配列文字列生成
+    function To-JsValue($v) {
+        if ($null -eq $v) { return 'null' }
+        # 数値であることを確認できれば数値、それ以外は文字列化（JSON 用にダブルクオート）
+        if ($v -is [bool])                       { return ([bool]$v).ToString().ToLower() }
+        if ($v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [decimal]) { return "$v" }
+        return "`"$v`""
+    }
+
     function To-JsArr([string]$Key) {
-        $parts = $records | ForEach-Object {
-            $v = $_.$Key
-            if ($null -eq $v) { 'null' } else { "$v" }
-        }
+        $parts = $records | ForEach-Object { To-JsValue $_.$Key }
         return '[' + ($parts -join ',') + ']'
     }
 
-    $labels_js = '[' + (($records | ForEach-Object { '"' + (Get-TsLabel $_.ts) + '"' }) -join ',') + ']'
+    function JsStr([string]$s) { return "`"" + ($s -replace '\\','\\\\' -replace '"','\"') + "`"" }
 
-    # 統計計算
     function Measure-Stats([string]$Key) {
         $vals = @($records | Where-Object { $null -ne $_.$Key } | ForEach-Object { [double]$_.$Key })
         if ($vals.Count -eq 0) { return $null }
         $sorted = @($vals | Sort-Object)
-        $p95i   = [math]::Min([int]($vals.Count * 0.95), $vals.Count - 1)
+        $p95i   = [math]::Min([int]($vals.Count * 95 / 100), $vals.Count - 1)
         return [PSCustomObject]@{
-            min = [math]::Round(($vals | Measure-Object -Min).Minimum, 2)
-            max = [math]::Round(($vals | Measure-Object -Max).Maximum, 2)
-            avg = [math]::Round(($vals | Measure-Object -Average).Average, 2)
-            p95 = [math]::Round($sorted[$p95i], 2)
+            min   = [math]::Round(($vals | Measure-Object -Min).Minimum, 2)
+            max   = [math]::Round(($vals | Measure-Object -Max).Maximum, 2)
+            avg   = [math]::Round(($vals | Measure-Object -Average).Average, 2)
+            p95   = [math]::Round($sorted[$p95i], 2)
+            count = $vals.Count
         }
     }
 
-    # しきい値超過チェック
-    function Get-AlertCount([string]$Key) {
-        $tv = $Thresholds[$Key]
-        if (-not $tv -or $tv -le 0) { return 0 }
-        return @($records | Where-Object { $null -ne $_.$Key -and [double]$_.$Key -ge $tv }).Count
-    }
-
+    # ── メタ情報 ─────────────────────────────────────────────────
     $tsFirst = $records[0].ts;  $tsLast = $records[-1].ts
     $hn      = $records[0].hostname
-    try { $dur = [math]::Round(([datetime]::Parse($tsLast) - [datetime]::Parse($tsFirst)).TotalSeconds) } catch { $dur = 0 }
+    $osName  = if ($records[0].PSObject.Properties.Match('os').Count) { [string]$records[0].os } else { 'unknown' }
+    $isLinux = ($osName -eq 'linux')
+    try {
+        $dur     = [math]::Round(([datetime]::Parse($tsLast) - [datetime]::Parse($tsFirst)).TotalSeconds)
+        $startStr = ([datetime]::Parse($tsFirst)).ToString('yyyy-MM-dd HH:mm:ss')
+        $endStr   = ([datetime]::Parse($tsLast)).ToString('yyyy-MM-dd HH:mm:ss')
+    } catch { $dur = 0; $startStr = $tsFirst; $endStr = $tsLast }
+    if ($dur -ge 3600) {
+        $durStr = "$([int]($dur/3600))時間$([int]($dur%3600/60))分$([int]($dur%60))秒"
+    } elseif ($dur -ge 60) {
+        $durStr = "$([int]($dur/60))分$([int]($dur%60))秒"
+    } else {
+        $durStr = "${dur}秒"
+    }
     $genTime = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $nSam    = $records.Count
 
-    $st_cpu  = Measure-Stats 'cpu_pct'
-    $st_mem  = Measure-Stats 'mem_used_pct'
-    $st_dr   = Measure-Stats 'disk_read_mbps'
-    $st_dw   = Measure-Stats 'disk_write_mbps'
-    $st_rx   = Measure-Stats 'net_rx_mbps'
-    $st_tx   = Measure-Stats 'net_tx_mbps'
+    # ── 統計（全メトリクス） ──────────────────────────────────────
+    $stKeys = @('cpu_pct','mem_used_pct','mem_used_gb','mem_free_gb','mem_total_gb',
+                'swap_used_pct','swap_used_gb',
+                'disk_read_mbps','disk_write_mbps',
+                'net_rx_mbps','net_tx_mbps',
+                'load_avg_1','load_avg_5','load_avg_15',
+                'proc_count')
+    $st = @{}
+    foreach ($k in $stKeys) { $st[$k] = Measure-Stats $k }
 
-    $totalAlerts = 0
-    foreach ($k in $Thresholds.Keys) { $totalAlerts += Get-AlertCount $k }
-
-    function Stat-Row([string]$Label, $St, [string]$Unit, [string]$Key) {
-        if (-not $St) { return "<tr><td>$Label</td><td colspan='4' class='na'>N/A</td></tr>" }
-        $tv  = $Thresholds[$Key]
-        $mcls = if ($tv -gt 0 -and $St.max -ge $tv) { " class='alert'" } else { "" }
-        return "<tr><td>$Label</td><td>$($St.min)$Unit</td><td>$($St.avg)$Unit</td><td$mcls>$($St.max)$Unit</td><td>$($St.p95)$Unit</td></tr>"
-    }
-
-    $statRows = (
-        (Stat-Row 'CPU 使用率'     $st_cpu '%'    'cpu_pct') +
-        (Stat-Row 'メモリ使用率'   $st_mem '%'    'mem_used_pct') +
-        (Stat-Row 'Disk Read'     $st_dr  'MB/s' 'disk_read_mbps') +
-        (Stat-Row 'Disk Write'    $st_dw  'MB/s' 'disk_write_mbps') +
-        (Stat-Row 'Net Rx'        $st_rx  'Mbps' 'net_rx_mbps') +
-        (Stat-Row 'Net Tx'        $st_tx  'Mbps' 'net_tx_mbps')
-    )
-
-    # アラートテーブル行生成（最大 200 行）
-    $alertRows = ''
-    $alertLines = [System.Collections.Generic.List[string]]::new()
+    # ── アラート検出 ─────────────────────────────────────────────
+    $alerts = New-Object System.Collections.Generic.List[object]
     foreach ($r in $records) {
+        $violations = New-Object System.Collections.Generic.List[object]
         foreach ($k in $Thresholds.Keys) {
-            $tv = $Thresholds[$k]
+            $tv = [double]$Thresholds[$k]
             if ($tv -le 0) { continue }
-            $v  = $r.$k
+            $v = $r.$k
             if ($null -ne $v -and [double]$v -ge $tv) {
-                $tl = Get-TsLabel $r.ts
-                $alertLines.Add("<tr><td>$tl</td><td>$k</td><td class='alert'>$v</td><td>$tv</td></tr>")
-                if ($alertLines.Count -ge 200) { break }
+                $violations.Add([PSCustomObject]@{ metric=$k; value=[double]$v; threshold=$tv })
             }
         }
-        if ($alertLines.Count -ge 200) { break }
+        if ($violations.Count -gt 0) {
+            $alerts.Add([PSCustomObject]@{ ts=$r.ts; violations=$violations })
+        }
     }
-    $alertRows = $alertLines -join "`n"
-    $alertSection = if ($totalAlerts -gt 0) { @"
-<div class="section">
-  <div class="section-title">&#x26A0; しきい値超過一覧 ($totalAlerts 件)</div>
-  <table><thead><tr><th>時刻</th><th>メトリクス</th><th>値</th><th>しきい値</th></tr></thead>
-  <tbody>$alertRows</tbody></table>
-</div>
-"@ } else { '' }
+    $alertCount = $alerts.Count
 
-    # Chart.js 関数定義
-    $cpu_js   = To-JsArr 'cpu_pct'
-    $mem_js   = To-JsArr 'mem_used_pct'
-    $dr_js    = To-JsArr 'disk_read_mbps'
-    $dw_js    = To-JsArr 'disk_write_mbps'
-    $rx_js    = To-JsArr 'net_rx_mbps'
-    $tx_js    = To-JsArr 'net_tx_mbps'
-    $ld1_js   = To-JsArr 'load_avg_1'
+    # ── サマリーカード ───────────────────────────────────────────
+    function Get-PeakText([string]$key, [string]$unit) {
+        $s = $st[$key]
+        if (-not $s) { return 'N/A' }
+        return "$($s.max)$unit (avg $($s.avg)$unit)"
+    }
+    function Build-Card([string]$title, [string]$value, [string]$color) {
+        return "<div class=`"card`" style=`"border-top:3px solid $color`"><div class=`"card-title`">$title</div><div class=`"card-value`">$value</div></div>"
+    }
+    $alertColor = if ($alertCount -gt 0) { '#ef4444' } else { '#16a34a' }
+    $loadPeak = if ($isLinux) { Get-PeakText 'load_avg_1' '' } else { 'N/A (Windows)' }
+    $cardsHtml = (
+        (Build-Card 'CPU ピーク'        (Get-PeakText 'cpu_pct'         '%')    '#3b82f6') +
+        (Build-Card 'メモリ ピーク'      (Get-PeakText 'mem_used_pct'    '%')    '#8b5cf6') +
+        (Build-Card 'Disk Read ピーク'  (Get-PeakText 'disk_read_mbps'  'MB/s') '#f59e0b') +
+        (Build-Card 'Disk Write ピーク' (Get-PeakText 'disk_write_mbps' 'MB/s') '#f97316') +
+        (Build-Card 'Net Rx ピーク'     (Get-PeakText 'net_rx_mbps'     'Mbps') '#06b6d4') +
+        (Build-Card 'Net Tx ピーク'     (Get-PeakText 'net_tx_mbps'     'Mbps') '#0891b2') +
+        (Build-Card 'Load Avg ピーク'   $loadPeak                              '#22c55e') +
+        (Build-Card 'しきい値超過'       "$alertCount 回"                        $alertColor)
+    )
 
-    $thr_cpu = $Thresholds['cpu_pct']; $thr_mem = $Thresholds['mem_used_pct']
-    $thr_dr  = $Thresholds['disk_read_mbps']; $thr_dw = $Thresholds['disk_write_mbps']
-    $thr_rx  = $Thresholds['net_rx_mbps'];    $thr_tx = $Thresholds['net_tx_mbps']
+    # ── Chart.js 生成 ────────────────────────────────────────────
+    # 共通ラベル JS 配列
+    $labelsJs = '[' + (($records | ForEach-Object { JsStr (Get-TsLabel $_.ts) }) -join ',') + ']'
 
-    function Make-Chart([string]$id, [string]$title, [string]$y_label, [string]$data_js,
-                        [string]$color, [double]$threshold = 0, [string]$data2_js = '',
-                        [string]$color2 = '', [string]$label1 = '', [string]$label2 = '') {
-        $lbl1  = if ($label1) { $label1 } else { $title }
-        $thr_ds = if ($threshold -gt 0) {
-            ",{label:'しきい値 ($threshold)',data:Array($nSam).fill($threshold),borderColor:'#ef4444',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false,spanGaps:true}"
-        } else { '' }
-        $ds2 = if ($data2_js) {
-            ",{label:'$label2',data:$data2_js,borderColor:'$color2',backgroundColor:'${color2}26',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false,spanGaps:true}"
-        } else { '' }
+    function Make-Chart {
+        param(
+            [string]$ChartId,
+            [string]$Title,
+            [array]$Datasets,    # @{ Label; Data; Color; Fill }
+            [string]$YLabel = '',
+            [double]$Threshold = 0,
+            [string]$ThresholdLabel = '',
+            [Nullable[double]]$YMax = $null,
+            [int]$Height = 220
+        )
+        $dsJson = New-Object System.Collections.Generic.List[string]
+        foreach ($d in $Datasets) {
+            $dataJs = $d.Data
+            $fillJs = if ($d.Fill) { "'origin'" } else { 'false' }
+            $dsJson.Add(@"
+{label:$(JsStr $d.Label),data:$dataJs,borderColor:'$($d.Color)',backgroundColor:'$($d.Color)26',borderWidth:1.5,pointRadius:0,tension:0.3,fill:$fillJs,spanGaps:true}
+"@)
+        }
+        if ($Threshold -gt 0) {
+            $thrData = '[' + ((1..$nSam | ForEach-Object { $Threshold }) -join ',') + ']'
+            $thrLabel = if ($ThresholdLabel) { $ThresholdLabel } else { "しきい値 ($Threshold)" }
+            $dsJson.Add("{label:$(JsStr $thrLabel),data:$thrData,borderColor:'#ef4444',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false,spanGaps:true}")
+        }
+        $datasetsJs = $dsJson -join ','
+        $yMaxOpt = if ($null -ne $YMax) { "max: $YMax," } else { '' }
+        $titleDisplay = if ($YLabel) { 'true' } else { 'false' }
+        $yLabelJs = JsStr $YLabel
         return @"
 <div class="chart-box">
-  <div class="chart-title">$title</div>
-  <canvas id="$id" height="220"></canvas>
+  <div class="chart-title">$Title</div>
+  <canvas id="$ChartId" height="$Height"></canvas>
 </div>
 <script>
-(function(){var ctx=document.getElementById('$id').getContext('2d');
-new Chart(ctx,{type:'line',data:{labels:$labels_js,datasets:[
-  {label:'$lbl1',data:$data_js,borderColor:'$color',backgroundColor:'${color}26',borderWidth:1.5,pointRadius:0,tension:0.3,fill:true,spanGaps:true}
-  $ds2$thr_ds]},
-options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},
-  plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},
-  tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+(c.parsed.y??'-')+' $y_label'}}}},
-  scales:{x:{ticks:{maxTicksLimit:12,font:{size:10}},grid:{color:'#f1f5f9'}},
-          y:{beginAtZero:true,title:{display:true,text:'$y_label',font:{size:11}},ticks:{font:{size:10}},grid:{color:'#f1f5f9'}}}}});
-})();</script>
+(function(){
+  var ctx = document.getElementById('$ChartId').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: { labels: $labelsJs, datasets: [$datasetsJs] },
+    options: {
+      responsive: true, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: function(c){ return c.dataset.label + ': ' + (c.parsed.y == null ? '-' : c.parsed.y) + ' $YLabel'; } } }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 12, font: { size: 10 } }, grid: { color: '#f1f5f9' } },
+        y: { beginAtZero: true, $yMaxOpt
+             title: { display: $titleDisplay, text: $yLabelJs, font: { size: 11 } },
+             ticks: { font: { size: 10 } }, grid: { color: '#f1f5f9' } }
+      }
+    }
+  });
+})();
+</script>
 "@
     }
 
-    $charts = (
-        (Make-Chart 'ch_cpu'  'CPU 使用率'            '%'    $cpu_js  '#3b82f6' $thr_cpu) +
-        (Make-Chart 'ch_mem'  'メモリ使用率'           '%'    $mem_js  '#8b5cf6' $thr_mem) +
-        (Make-Chart 'ch_disk' 'ディスク I/O'          'MB/s' $dr_js   '#f59e0b' ([math]::Max($thr_dr,$thr_dw)) '' $dw_js '#f97316' 'Read (MB/s)' 'Write (MB/s)') +
-        (Make-Chart 'ch_net'  'ネットワーク'           'Mbps' $rx_js   '#06b6d4' ([math]::Max($thr_rx,$thr_tx)) '' $tx_js '#0891b2' 'Rx (Mbps)' 'Tx (Mbps)') +
-        (Make-Chart 'ch_load' 'ロードアベレージ'       ''     $ld1_js  '#22c55e')
+    $thrCpu = [double]$Thresholds['cpu_pct']
+    $thrMem = [double]$Thresholds['mem_used_pct']
+    $thrDr  = [double]$Thresholds['disk_read_mbps']; $thrDw = [double]$Thresholds['disk_write_mbps']
+    $thrRx  = [double]$Thresholds['net_rx_mbps'];    $thrTx = [double]$Thresholds['net_tx_mbps']
+    $thrLoad = if ($Thresholds.ContainsKey('load_avg_1')) { [double]$Thresholds['load_avg_1'] } else { 0.0 }
+
+    $chartsHtml = ''
+    # 1. CPU
+    $chartsHtml += Make-Chart -ChartId 'chartCpu' -Title 'CPU 使用率' `
+        -Datasets @(@{Label='CPU (%)'; Data=(To-JsArr 'cpu_pct'); Color='#3b82f6'; Fill=$true}) `
+        -YLabel '%' -Threshold $thrCpu -ThresholdLabel "しきい値 ($thrCpu%)" -YMax 100
+    # 2. メモリ使用率
+    $chartsHtml += Make-Chart -ChartId 'chartMem' -Title 'メモリ使用率' `
+        -Datasets @(
+            @{Label='Memory (%)'; Data=(To-JsArr 'mem_used_pct'); Color='#8b5cf6'; Fill=$true},
+            @{Label='Swap (%)';   Data=(To-JsArr 'swap_used_pct'); Color='#c084fc'; Fill=$false}
+        ) `
+        -YLabel '%' -Threshold $thrMem -ThresholdLabel "しきい値 ($thrMem%)" -YMax 100
+    # 3. メモリ容量 (GB)
+    $yMaxMem = if ($st['mem_total_gb']) { [double]$st['mem_total_gb'].max } else { $null }
+    $chartsHtml += Make-Chart -ChartId 'chartMemGB' -Title 'メモリ容量 (GB)' `
+        -Datasets @(
+            @{Label='使用 (GB)';     Data=(To-JsArr 'mem_used_gb'); Color='#7c3aed'; Fill=$true},
+            @{Label='空き (GB)';     Data=(To-JsArr 'mem_free_gb'); Color='#a78bfa'; Fill=$false},
+            @{Label='スワップ (GB)'; Data=(To-JsArr 'swap_used_gb'); Color='#c084fc'; Fill=$false}
+        ) `
+        -YLabel 'GB' -Threshold 0 -YMax $yMaxMem
+    # 4. ディスク I/O
+    $chartsHtml += Make-Chart -ChartId 'chartDisk' -Title 'ディスク I/O' `
+        -Datasets @(
+            @{Label='Read (MB/s)';  Data=(To-JsArr 'disk_read_mbps');  Color='#f59e0b'; Fill=$false},
+            @{Label='Write (MB/s)'; Data=(To-JsArr 'disk_write_mbps'); Color='#f97316'; Fill=$false}
+        ) `
+        -YLabel 'MB/s' -Threshold ([math]::Max($thrDr,$thrDw)) -ThresholdLabel 'しきい値'
+    # 5. ネットワーク
+    $chartsHtml += Make-Chart -ChartId 'chartNet' -Title 'ネットワークスループット' `
+        -Datasets @(
+            @{Label='Rx (Mbps)'; Data=(To-JsArr 'net_rx_mbps'); Color='#06b6d4'; Fill=$false},
+            @{Label='Tx (Mbps)'; Data=(To-JsArr 'net_tx_mbps'); Color='#0891b2'; Fill=$false}
+        ) `
+        -YLabel 'Mbps' -Threshold ([math]::Max($thrRx,$thrTx)) -ThresholdLabel 'しきい値'
+    # 6. ロードアベレージ（Linux のみ）
+    if ($isLinux) {
+        $chartsHtml += Make-Chart -ChartId 'chartLoad' -Title 'ロードアベレージ' `
+            -Datasets @(
+                @{Label='Load 1min';  Data=(To-JsArr 'load_avg_1');  Color='#22c55e'; Fill=$false},
+                @{Label='Load 5min';  Data=(To-JsArr 'load_avg_5');  Color='#4ade80'; Fill=$false},
+                @{Label='Load 15min'; Data=(To-JsArr 'load_avg_15'); Color='#86efac'; Fill=$false}
+            ) `
+            -YLabel '' -Threshold $thrLoad -ThresholdLabel "しきい値 ($thrLoad)"
+    }
+    # 7. プロセス数
+    $hasProc = @($records | Where-Object { $null -ne $_.proc_count }).Count -gt 0
+    if ($hasProc) {
+        $chartsHtml += Make-Chart -ChartId 'chartProc' -Title 'プロセス数' `
+            -Datasets @(@{Label='Processes'; Data=(To-JsArr 'proc_count'); Color='#64748b'; Fill=$false}) `
+            -YLabel ''
+    }
+
+    # ── 統計サマリーテーブル ─────────────────────────────────────
+    function Stat-Row([string]$Label, [string]$Key, [string]$Unit) {
+        $s = $st[$Key]
+        if (-not $s) { return "<tr><td>$Label</td><td colspan=`"4`" class=`"na`">N/A</td></tr>" }
+        $tv = if ($Thresholds.ContainsKey($Key)) { [double]$Thresholds[$Key] } else { 0.0 }
+        $maxCls = if ($tv -gt 0 -and $s.max -ge $tv)        { ' class="alert"' } else { '' }
+        $avgCls = if ($tv -gt 0 -and $s.avg -ge $tv * 0.8)  { ' class="warn"'  } else { '' }
+        return "<tr><td>$Label</td><td>$($s.min)$Unit</td><td$avgCls>$($s.avg)$Unit</td><td$maxCls>$($s.max)$Unit</td><td>$($s.p95)$Unit</td></tr>"
+    }
+    $statRows = (
+        (Stat-Row 'CPU 使用率'        'cpu_pct'         '%') +
+        (Stat-Row 'メモリ使用率'      'mem_used_pct'    '%') +
+        (Stat-Row 'メモリ使用量'      'mem_used_gb'     'GB') +
+        (Stat-Row 'スワップ使用率'    'swap_used_pct'   '%') +
+        (Stat-Row 'ディスク Read'     'disk_read_mbps'  'MB/s') +
+        (Stat-Row 'ディスク Write'    'disk_write_mbps' 'MB/s') +
+        (Stat-Row 'ネット受信'        'net_rx_mbps'     'Mbps') +
+        (Stat-Row 'ネット送信'        'net_tx_mbps'     'Mbps')
     )
+    if ($isLinux) {
+        $statRows += (Stat-Row 'ロードアベレージ 1min' 'load_avg_1' '')
+        $statRows += (Stat-Row 'ロードアベレージ 5min' 'load_avg_5' '')
+    }
+    $statRows += (Stat-Row 'プロセス数' 'proc_count' '')
 
-    $peakCpu = if ($st_cpu) { "$($st_cpu.max)% (avg $($st_cpu.avg)%)" } else { 'N/A' }
-    $peakMem = if ($st_mem) { "$($st_mem.max)% (avg $($st_mem.avg)%)" } else { 'N/A' }
-    $alertBadge = if ($totalAlerts -gt 0) { "<span class='alert-badge'>$totalAlerts 回</span>" } else { "<span class='ok-badge'>なし</span>" }
-    $durStr = "$([int]($dur/60))分$([int]($dur%60))秒"
+    # ── しきい値超過テーブル（最大 200 行） ──────────────────────
+    $alertSection = ''
+    if ($alertCount -gt 0) {
+        $rows = New-Object System.Collections.Generic.List[string]
+        $shown = 0
+        foreach ($a in $alerts) {
+            $tsDisp = Get-TsLabel $a.ts
+            foreach ($v in $a.violations) {
+                if ($shown -ge 200) { break }
+                $rows.Add("<tr><td>$tsDisp</td><td>$($v.metric)</td><td class=`"alert`">$($v.value)</td><td>$($v.threshold)</td></tr>")
+                $shown++
+            }
+            if ($shown -ge 200) { break }
+        }
+        if ($alertCount -gt 200) {
+            $rows.Add("<tr><td colspan=`"4`">... 他 $($alertCount - 200) 件</td></tr>")
+        }
+        $alertRows = $rows -join "`n"
+        $alertSection = @"
+<div class="section">
+  <div class="section-title">しきい値超過一覧（$alertCount 件）</div>
+  <table>
+    <thead><tr><th>時刻</th><th>メトリクス</th><th>値</th><th>しきい値</th></tr></thead>
+    <tbody>$alertRows</tbody>
+  </table>
+</div>
+"@
+    }
 
+    # ── しきい値設定テーブル ─────────────────────────────────────
+    $thrMap = @(
+        @{label='CPU 使用率';            key='cpu_pct';         unit='%'},
+        @{label='メモリ使用率';          key='mem_used_pct';    unit='%'},
+        @{label='ディスク Read';         key='disk_read_mbps';  unit='MB/s'},
+        @{label='ディスク Write';        key='disk_write_mbps'; unit='MB/s'},
+        @{label='ネット受信';            key='net_rx_mbps';     unit='Mbps'},
+        @{label='ネット送信';            key='net_tx_mbps';     unit='Mbps'},
+        @{label='ロードアベレージ 1min'; key='load_avg_1';      unit=''}
+    )
+    $thrRows = ''
+    foreach ($t in $thrMap) {
+        $tv = if ($Thresholds.ContainsKey($t.key)) { [double]$Thresholds[$t.key] } else { 0.0 }
+        if ($tv -gt 0) { $thrRows += "<tr><td>$($t.label)</td><td>$tv$($t.unit)</td></tr>" }
+    }
+    $thrSection = if ($thrRows) { @"
+<div class="section">
+  <div class="section-title">しきい値設定</div>
+  <table style="max-width:400px">
+    <thead><tr><th>メトリクス</th><th>しきい値</th></tr></thead>
+    <tbody>$thrRows</tbody>
+  </table>
+</div>
+"@ } else { '' }
+
+    $alertBadge = if ($alertCount -gt 0) {
+        "<span class=`"alert-badge`">$alertCount 回</span>"
+    } else { "<span class=`"ok-badge`">なし</span>" }
+
+    # ── HTML 組み立て ───────────────────────────────────────────
     $html = @"
-<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
 <title>Performance Monitor Report</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
@@ -664,47 +858,63 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;background:#f0f2f5;c
 .header h1{font-size:22px;font-weight:700}
 .header .sub{font-size:12px;color:#94a3b8;margin-top:4px}
 .meta-bar{display:flex;gap:12px;padding:14px 24px;flex-wrap:wrap;background:#fff;border-bottom:1px solid #e2e8f0}
-.meta-item{font-size:12px;color:#475569}.meta-item span{font-weight:600;color:#1e293b;margin-left:4px}
+.meta-item{font-size:12px;color:#475569}
+.meta-item span{font-weight:600;color:#1e293b;margin-left:4px}
 .section{padding:16px 24px}
 .section-title{font-size:14px;font-weight:700;color:#1e293b;margin-bottom:12px;padding-left:8px;border-left:3px solid #3b82f6}
 .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 .card{background:#fff;border-radius:8px;padding:14px 18px;min-width:160px;box-shadow:0 1px 3px rgba(0,0,0,.1);flex:1}
-.card-title{font-size:11px;color:#64748b;margin-bottom:6px}.card-value{font-size:14px;font-weight:700;color:#1e293b}
+.card-title{font-size:11px;color:#64748b;margin-bottom:6px}
+.card-value{font-size:14px;font-weight:700;color:#1e293b}
 .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:16px}
 .chart-box{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .chart-title{font-size:13px;font-weight:600;color:#1e293b;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 th{background:#f1f5f9;padding:8px 12px;text-align:left;font-weight:600;color:#475569;font-size:12px;border-bottom:2px solid #e2e8f0}
-td{padding:7px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}tr:last-child td{border-bottom:none}
-td.alert{color:#dc2626;font-weight:700}td.na{color:#94a3b8}
-.alert-badge{background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
-.ok-badge{background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+td{padding:7px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}
+tr:last-child td{border-bottom:none}
+td.alert{color:#dc2626;font-weight:700}
+td.warn{color:#d97706;font-weight:600}
+td.na{color:#94a3b8}
+.alert-badge{display:inline-block;background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.ok-badge{display:inline-block;background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
 .footer{text-align:center;padding:16px;font-size:11px;color:#94a3b8}
-</style></head><body>
-<div class="header"><h1>&#128200; Performance Monitor Report</h1>
-<div class="sub">Generated: $genTime (PowerShell renderer)</div></div>
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#128200; Performance Monitor Report</h1>
+  <div class="sub">Generated: $genTime (PowerShell renderer)</div>
+</div>
 <div class="meta-bar">
   <div class="meta-item">ホスト<span>$hn</span></div>
-  <div class="meta-item">開始<span>$tsFirst</span></div>
-  <div class="meta-item">終了<span>$tsLast</span></div>
+  <div class="meta-item">OS<span>$osName</span></div>
+  <div class="meta-item">開始<span>$startStr</span></div>
+  <div class="meta-item">終了<span>$endStr</span></div>
   <div class="meta-item">計測時間<span>$durStr</span></div>
   <div class="meta-item">サンプル数<span>$nSam 件</span></div>
   <div class="meta-item">しきい値超過<span>$alertBadge</span></div>
 </div>
-<div class="section"><div class="section-title">サマリー</div>
-<div class="cards">
-  <div class="card" style="border-top:3px solid #3b82f6"><div class="card-title">CPU ピーク</div><div class="card-value">$peakCpu</div></div>
-  <div class="card" style="border-top:3px solid #8b5cf6"><div class="card-title">メモリ ピーク</div><div class="card-value">$peakMem</div></div>
-  <div class="card" style="border-top:3px solid $(if($totalAlerts -gt 0){'#ef4444'}else{'#16a34a'})"><div class="card-title">しきい値超過</div><div class="card-value">$totalAlerts 回</div></div>
-</div></div>
-<div class="section"><div class="section-title">リソース推移グラフ</div>
-<div class="charts-grid">$charts</div></div>
-<div class="section"><div class="section-title">統計サマリー</div>
-<table><thead><tr><th>メトリクス</th><th>最小</th><th>平均</th><th>最大</th><th>95パーセンタイル</th></tr></thead>
-<tbody>$statRows</tbody></table></div>
+<div class="section">
+  <div class="section-title">サマリー</div>
+  <div class="cards">$cardsHtml</div>
+</div>
+<div class="section">
+  <div class="section-title">リソース推移グラフ</div>
+  <div class="charts-grid">$chartsHtml</div>
+</div>
+<div class="section">
+  <div class="section-title">統計サマリー</div>
+  <table>
+    <thead><tr><th>メトリクス</th><th>最小</th><th>平均</th><th>最大</th><th>95パーセンタイル</th></tr></thead>
+    <tbody>$statRows</tbody>
+  </table>
+</div>
 $alertSection
+$thrSection
 <div class="footer">Performance Monitor &bull; PerfMonitor.ps1 (PS renderer) &bull; $genTime</div>
-</body></html>
+</body>
+</html>
 "@
 
     [System.IO.File]::WriteAllText($OutputFile, $html, $enc)
