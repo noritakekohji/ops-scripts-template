@@ -55,6 +55,7 @@ ops-scripts-template/
 │   ├── aws/                       # backup_ami / backup_ebs_snapshot / ec2ctl / s3upload
 │   ├── hana/                      # hanactl
 │   ├── mysql/                     # mysqlctl
+│   ├── nginx/                     # nginxctl
 │   ├── os/                        # deploy_scripts / get_server_info / rotate_log
 │   ├── postgresql/                # postgresqlctl
 │   ├── sap/                       # sapctl
@@ -65,6 +66,7 @@ ops-scripts-template/
 │   ├── lib/                       # Config.psm1 / Logging.psm1（必須経路）
 │   ├── aws/                       # Backup-Ami / Backup-EbsSnapshot / Ec2Ctl / S3Upload
 │   ├── mysql/                     # MySQLCtl
+│   ├── nginx/                     # NginxCtl
 │   ├── os/                        # Compare-ServerInfo / Deploy-Scripts / Get-ServerInfo / Rotate-Log
 │   ├── postgresql/                # PostgreSQLCtl
 │   ├── sap/                       # SAPCtl
