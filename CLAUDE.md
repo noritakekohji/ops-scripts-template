@@ -207,7 +207,6 @@ DRY_RUN=true python deploy/sync.py
 
 - `/template-check` — CI と同じテンプレ準拠検査をローカルで実行
 - `/docker-test` — Docker テストスイートを起動（Linux / Windows 両方）
-- `/perf-session` — perf-monitor の最新セッションを表示
 - `/encoding-audit` — `.ps1` の BOM 欠落と `.sh` の CRLF を検査
 - `/new-controller` — 新規制御スクリプト（XXXCtl.ps1 / xxxctl.sh）の雛形を作成
 
