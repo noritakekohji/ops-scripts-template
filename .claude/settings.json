@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(git update-index --chmod=+x:*)",
+
+      "Bash(bash -n:*)",
+      "Bash(bash ci/template-check/check_template.sh)",
+      "Bash(bash tests/docker/run_tests.sh:*)",
+
+      "Bash(python -c:*)",
+      "Bash(python -m:*)",
+      "Bash(python tools/server-compare/compare_server_info.py:*)",
+      "Bash(python deploy/sync.py:*)",
+      "Bash(python3 -c:*)",
+      "Bash(python3 -m:*)",
+      "Bash(python3 tools/server-compare/compare_server_info.py:*)",
+      "Bash(python3 deploy/sync.py:*)",
+
+      "Bash(ls:*)",
+      "Bash(wc -l:*)",
+      "Bash(mkdir -p:*)",
+
+      "PowerShell(Get-ChildItem:*)",
+      "PowerShell(Get-Content:*)",
+      "PowerShell(Test-Path:*)",
+      "PowerShell(Resolve-Path:*)",
+      "PowerShell(Join-Path:*)",
+      "PowerShell(Split-Path:*)",
+
+      "PowerShell(powershell -NoProfile -Command:*)",
+      "PowerShell(powershell -NoProfile -File:*)",
+
+      "PowerShell(./tools/perf-monitor/perf_monitor.bat status)",
+      "PowerShell(./tools/perf-monitor/perf_monitor.bat list)",
+      "PowerShell(./tools/perf-monitor/perf_monitor.bat report:*)"
+    ],
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(git rebase:*)",
+      "Bash(rm:*)",
+      "Bash(./tools/perf-monitor/perf_monitor.sh start:*)",
+      "Bash(./tools/perf-monitor/perf_monitor.sh stop:*)",
+      "PowerShell(./tools/perf-monitor/perf_monitor.bat start:*)",
+      "PowerShell(./tools/perf-monitor/perf_monitor.bat stop:*)",
+      "PowerShell(Stop-Service:*)",
+      "PowerShell(Start-Service:*)",
+      "PowerShell(Restart-Service:*)",
+      "Bash(systemctl:*)",
+      "Bash(taskkill:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -f:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(:(?i)password|secret|token|api_?key)",
+      "Read(./config/**/secrets.yml)",
+      "Read(./config/**/secrets.yaml)"
+    ]
+  }
+}
