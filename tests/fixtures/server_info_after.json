@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "hostname": "host01",
+    "collected_at": "2026-05-01T11:00:00+09:00",
+    "os": "linux"
+  },
+  "os": {
+    "kernel": "5.15.0-101-generic",
+    "distro": "Ubuntu 22.04",
+    "hostname": "host01",
+    "uptime_sec": 200000,
+    "free_memory_gb": 4.2,
+    "used_memory_gb": 3.8,
+    "swap_free_gb": 2.0
+  },
+  "services": [
+    {"name": "ssh",       "status": "active",   "start_type": "enabled"},
+    {"name": "cron",      "status": "inactive", "start_type": "enabled"},
+    {"name": "new-svc",   "status": "active",   "start_type": "enabled"}
+  ],
+  "packages": [
+    {"name": "openssh-server", "version": "1:8.9p1-4"},
+    {"name": "curl",           "version": "7.81.0-1"},
+    {"name": "vim",            "version": "2:8.2.3995"}
+  ],
+  "filesystem": {
+    "drives": [
+      {"drive": "/",     "total_gb": 50, "fstype": "ext4", "used_gb": 25, "free_gb": 25, "used_pct": 50}
+    ]
+  },
+  "network": {
+    "interfaces": [
+      {"name": "eth0", "address": "10.0.0.2", "prefix": 24}
+    ],
+    "dns_servers": [
+      {"interface": "eth0", "servers": "1.1.1.1"}
+    ]
+  }
+}
