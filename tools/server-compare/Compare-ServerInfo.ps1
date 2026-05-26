@@ -413,8 +413,10 @@ function filterRows(mode,btn){
 # Main
 # ============================================================
 try {
-    if (-not (Test-Path -LiteralPath $Before)) { Write-Error "Before file not found: $Before"; exit 2 }
-    if (-not (Test-Path -LiteralPath $After))  { Write-Error "After file not found: $After";  exit 2 }
+    # ErrorActionPreference=Stop 下では Write-Error が throw して
+    # 後続の exit が実行されないため、stderr へ直接書く。
+    if (-not (Test-Path -LiteralPath $Before)) { [Console]::Error.WriteLine("[ERROR] Before file not found: $Before"); exit 2 }
+    if (-not (Test-Path -LiteralPath $After))  { [Console]::Error.WriteLine("[ERROR] After file not found: $After");  exit 2 }
 
     $bRaw  = Get-Content -LiteralPath $Before -Encoding UTF8 -Raw | ConvertFrom-Json
     $aRaw  = Get-Content -LiteralPath $After  -Encoding UTF8 -Raw | ConvertFrom-Json

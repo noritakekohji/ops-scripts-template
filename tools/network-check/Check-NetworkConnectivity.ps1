@@ -538,7 +538,13 @@ function Invoke-Investigation($hostResults, $outFile, $timeoutSec) {
 # Main
 # ============================================================
 try {
-    if (-not (Test-Path -LiteralPath $TargetList)) { Write-Error "Target list not found: $TargetList"; exit 2 }
+    if (-not (Test-Path -LiteralPath $TargetList)) {
+        # $ErrorActionPreference = 'Stop' 下で Write-Error は throw するため、
+        # 後続の exit 2 が実行されず終了コードが 1 になってしまう。
+        # 直接 stderr に書いて exit 2 を確実に返す。
+        [Console]::Error.WriteLine("[ERROR] Target list not found: $TargetList")
+        exit 2
+    }
 
     $hostEntries = Read-TargetList $TargetList
     if ($hostEntries.Count -eq 0) { Write-Warning "No targets found in $TargetList"; exit 0 }

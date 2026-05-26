@@ -175,8 +175,10 @@ switch ($Mode) {
     }
 
     'compare' {
-        if (-not $BeforePath) { Write-Error '-BeforePath is required in compare mode'; exit 1 }
-        if (-not $AfterPath)  { Write-Error '-AfterPath is required in compare mode';  exit 1 }
+        # ErrorActionPreference=Stop 下では Write-Error が throw して
+        # 後続の exit が実行されないため、stderr へ直接書く。
+        if (-not $BeforePath) { [Console]::Error.WriteLine('[ERROR] -BeforePath is required in compare mode'); exit 1 }
+        if (-not $AfterPath)  { [Console]::Error.WriteLine('[ERROR] -AfterPath is required in compare mode');  exit 1 }
         Invoke-RunComparison $BeforePath $AfterPath $HtmlReport
     }
 }
