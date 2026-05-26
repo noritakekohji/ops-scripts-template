@@ -19,6 +19,6 @@ Describe 'PostgreSQLCtl' {
     }
     It 'restart always runs' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('restart', 'postgresql') -InitialStatus 'Stopped'
-        ($r.Calls | Where-Object { $_ -match 'Restart-Service' }).Count | Should -BeGreaterThan 0
+        @($r.Calls | Where-Object { $_ -match 'Restart-Service' }).Count | Should -BeGreaterThan 0
     }
 }

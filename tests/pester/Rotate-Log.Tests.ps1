@@ -51,7 +51,8 @@ Describe 'Rotate-Log: integration with real files (tmpdir)' {
         $r.ExitCode | Should -Be 0
         # original is truncated or replaced
         (Get-Item $f -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
-        $rotated = Get-ChildItem $script:work -Filter 'app.log.*' -ErrorAction SilentlyContinue
+        # PS5.1 strict mode: 単一要素のときは .Count が無いので @() で配列化
+        $rotated = @(Get-ChildItem $script:work -Filter 'app.log.*' -ErrorAction SilentlyContinue)
         $rotated.Count | Should -BeGreaterOrEqual 1
     }
 
@@ -71,8 +72,8 @@ Describe 'Rotate-Log: integration with real files (tmpdir)' {
         $r = Invoke-Controller -ScriptPath $script:ctl -Arguments @('-Path', $f, '-MaxSizeMB', '1', '-Compress')
         $r.ExitCode | Should -Be 0
         # Windows side may produce .zip via Compress-Archive instead of .gz
-        $compressed = Get-ChildItem $script:work -Filter 'comp.log.*' |
-                      Where-Object { $_.Name -match '\.(gz|zip)$' }
+        $compressed = @(Get-ChildItem $script:work -Filter 'comp.log.*' |
+                        Where-Object { $_.Name -match '\.(gz|zip)$' })
         $compressed.Count | Should -BeGreaterOrEqual 1
     }
 

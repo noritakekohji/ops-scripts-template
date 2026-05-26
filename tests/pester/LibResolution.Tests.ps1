@@ -59,7 +59,7 @@ exit `$LASTEXITCODE
     }
 }
 
-Describe 'PS lib resolution: flat deploy layout (bin\<script>, lib\Logging.psm1)' {
+Describe 'PS lib resolution: flat deploy layout (bin/[script], lib/Logging.psm1)' {
     It 'finds lib one level up' {
         $work = New-TempWorkdir
         try {
@@ -76,8 +76,8 @@ Describe 'PS lib resolution: flat deploy layout (bin\<script>, lib\Logging.psm1)
     }
 }
 
-Describe 'PS lib resolution: OS-split deploy layout (lib\windows\Logging.psm1)' {
-    It 'finds lib at lib\windows' {
+Describe 'PS lib resolution: OS-split deploy layout (lib/windows/Logging.psm1)' {
+    It 'finds lib at lib/windows' {
         $work = New-TempWorkdir
         try {
             New-Item -ItemType Directory -Path (Join-Path $work 'bin')         | Out-Null
@@ -93,7 +93,7 @@ Describe 'PS lib resolution: OS-split deploy layout (lib\windows\Logging.psm1)' 
     }
 }
 
-Describe 'PS lib resolution: domain subdir deploy layout (bin\<dom>\<script>)' {
+Describe 'PS lib resolution: domain subdir deploy layout (bin/[dom]/[script])' {
     It 'walks 2 levels up to find lib' {
         $work = New-TempWorkdir
         try {
@@ -154,7 +154,7 @@ Describe 'PS config resolution: OPS_CONFIG_DIR override + deployed flat layout' 
         } finally { Remove-TempPath $work }
     }
 
-    It 'picks up deployed flat config (<root>\config\tomcatctl.conf)' {
+    It 'picks up deployed flat config ([root]/config/tomcatctl.conf)' {
         $work = New-TempWorkdir
         try {
             New-Item -ItemType Directory -Path (Join-Path $work 'bin')    | Out-Null

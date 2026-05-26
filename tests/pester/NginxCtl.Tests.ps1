@@ -26,10 +26,10 @@ Describe 'NginxCtl: behaviour' {
     }
     It 'restart always runs' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('restart', 'nginx') -InitialStatus 'Stopped'
-        ($r.Calls | Where-Object { $_ -match 'Restart-Service' }).Count | Should -BeGreaterThan 0
+        @($r.Calls | Where-Object { $_ -match 'Restart-Service' }).Count | Should -BeGreaterThan 0
     }
     It 'status is read-only' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('status', 'nginx') -InitialStatus 'Running'
-        ($r.Calls | Where-Object { $_ -match 'Start-Service|Stop-Service|Restart-Service' }).Count | Should -Be 0
+        @($r.Calls | Where-Object { $_ -match 'Start-Service|Stop-Service|Restart-Service' }).Count | Should -Be 0
     }
 }

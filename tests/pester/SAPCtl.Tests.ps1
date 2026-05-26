@@ -26,13 +26,13 @@ Describe 'SAPCtl: argument validation' {
 }
 
 Describe 'SAPCtl: behaviour with mocked service' {
-    It 'service named SAP<SID>_<NN> not found -> exit 2' {
+    It 'service named SAP[SID]_[NN] not found -> exit 2' {
         (Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('status','-SID','S4H','-InstanceNumber','00') -InitialStatus 'None').ExitCode | Should -Be 2
     }
     It 'status is read-only' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('status','-SID','S4H','-InstanceNumber','00') -InitialStatus 'Running'
         $r.ExitCode | Should -Be 0
-        ($r.Calls | Where-Object { $_ -match 'Start-Service|Stop-Service|Restart-Service' }).Count | Should -Be 0
+        @($r.Calls | Where-Object { $_ -match 'Start-Service|Stop-Service|Restart-Service' }).Count | Should -Be 0
     }
     It 'start when Running -> skipped' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('start','-SID','S4H','-InstanceNumber','00') -InitialStatus 'Running'

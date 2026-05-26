@@ -40,7 +40,7 @@ Describe 'Get-OpsConfig' {
         $cfg['Wait']   | Should -Be 'true'
     }
 
-    It 'env 未指定: default/<name>.conf が default/global.conf を上書きする' {
+    It 'env 未指定: default/[name].conf が default/global.conf を上書きする' {
         Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'global.conf')) -Value 'Region = ap-northeast-1'
         Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'default', 'foo.conf'))    -Value 'Region = us-east-1'
         $cfg = Get-OpsConfig -Name 'foo' -RepoRoot $script:TestRoot
@@ -51,7 +51,7 @@ Describe 'Get-OpsConfig' {
     # env 指定 → config/<env>/ のみ（default は読まない）
     # ------------------------------------------------------------------------
 
-    It 'env 指定: config/<env>/ のキーを読み込む' {
+    It 'env 指定: config/[env]/ のキーを読み込む' {
         Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'foo.conf')) -Value 'Region = eu-west-1'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Region'] | Should -Be 'eu-west-1'
@@ -71,13 +71,13 @@ Describe 'Get-OpsConfig' {
         $cfg.Count | Should -Be 0
     }
 
-    It 'env 指定: <env>/global.conf のキーを読み込む' {
+    It 'env 指定: [env]/global.conf のキーを読み込む' {
         Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'global.conf')) -Value 'Wait = true'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot
         $cfg['Wait'] | Should -Be 'true'
     }
 
-    It 'env 指定: <env>/<name>.conf が <env>/global.conf を上書きする' {
+    It 'env 指定: [env]/[name].conf が [env]/global.conf を上書きする' {
         Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'global.conf')) -Value 'Region = eu-west-1'
         Set-Content -Encoding UTF8 -Path([IO.Path]::Combine($script:TestRoot, 'config', 'dev', 'foo.conf'))    -Value 'Region = ap-south-1'
         $cfg = Get-OpsConfig -Name 'foo' -Env 'dev' -RepoRoot $script:TestRoot

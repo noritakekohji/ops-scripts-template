@@ -38,28 +38,28 @@ Describe 'TomcatCtl: behaviour with mocked Get-Service' {
     It 'status is read-only (no Start/Stop/Restart calls)' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('status', 'Tomcat10') -InitialStatus 'Running'
         $r.ExitCode | Should -Be 0
-        ($r.Calls | Where-Object { $_ -match 'Start-Service|Stop-Service|Restart-Service' }).Count | Should -Be 0
+        @($r.Calls | Where-Object { $_ -match 'Start-Service|Stop-Service|Restart-Service' }).Count | Should -Be 0
     }
     It 'start when already Running -> skipped (idempotent)' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('start', 'Tomcat10') -InitialStatus 'Running'
         $r.ExitCode | Should -Be 0
         $r.Combined | Should -Match 'Skipped \(idempotent\)'
-        ($r.Calls | Where-Object { $_ -match 'Start-Service' }).Count | Should -Be 0
+        @($r.Calls | Where-Object { $_ -match 'Start-Service' }).Count | Should -Be 0
     }
     It 'stop when already Stopped -> skipped' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('stop', 'Tomcat10') -InitialStatus 'Stopped'
         $r.ExitCode | Should -Be 0
         $r.Combined | Should -Match 'Skipped'
-        ($r.Calls | Where-Object { $_ -match 'Stop-Service' }).Count | Should -Be 0
+        @($r.Calls | Where-Object { $_ -match 'Stop-Service' }).Count | Should -Be 0
     }
     It 'stop from Running -> Stop-Service called' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('stop', 'Tomcat10') -InitialStatus 'Running'
         $r.ExitCode | Should -Be 0
-        ($r.Calls | Where-Object { $_ -match 'Stop-Service' }).Count | Should -BeGreaterThan 0
+        @($r.Calls | Where-Object { $_ -match 'Stop-Service' }).Count | Should -BeGreaterThan 0
     }
     It 'restart always invokes Restart-Service' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('restart', 'Tomcat10') -InitialStatus 'Stopped'
         $r.ExitCode | Should -Be 0
-        ($r.Calls | Where-Object { $_ -match 'Restart-Service' }).Count | Should -BeGreaterThan 0
+        @($r.Calls | Where-Object { $_ -match 'Restart-Service' }).Count | Should -BeGreaterThan 0
     }
 }

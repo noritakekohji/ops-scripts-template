@@ -19,6 +19,6 @@ Describe 'MySQLCtl' {
     }
     It 'stop from Running -> Stop-Service called' {
         $r = Invoke-ControllerWithServiceMock -ScriptPath $script:ctl -Arguments @('stop', 'MySQL') -InitialStatus 'Running'
-        ($r.Calls | Where-Object { $_ -match 'Stop-Service' }).Count | Should -BeGreaterThan 0
+        @($r.Calls | Where-Object { $_ -match 'Stop-Service' }).Count | Should -BeGreaterThan 0
     }
 }
