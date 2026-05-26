@@ -50,13 +50,31 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# --- ライブラリ ---
-$libPath = [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1')
-if (-not (Test-Path $libPath)) { throw "Logging module not found at $libPath" }
-Import-Module (Resolve-Path $libPath).Path -Force
-
-$configModulePath = [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Config.psm1')
-Import-Module (Resolve-Path $configModulePath).Path -Force
+# --- lib resolution -----------------------------------------------------------
+# $env:OPS_LIB takes precedence. Otherwise walk up from $PSScriptRoot looking
+# for lib\Logging.psm1 (flat) or lib\windows\Logging.psm1 (OS-split layout).
+# Stop at .ops-deploy-root marker so we never walk out of the install tree.
+function script:Find-OpsLibDir {
+    param([string]$StartDir)
+    $d = $StartDir
+    while ($d) {
+        $flat = Join-Path $d 'lib\Logging.psm1'
+        $os   = Join-Path $d 'lib\windows\Logging.psm1'
+        if (Test-Path -LiteralPath $flat) { return (Split-Path -Parent $flat) }
+        if (Test-Path -LiteralPath $os)   { return (Split-Path -Parent $os) }
+        if (Test-Path -LiteralPath (Join-Path $d '.ops-deploy-root')) { return $null }
+        $parent = Split-Path -Parent $d
+        if (-not $parent -or $parent -eq $d) { break }
+        $d = $parent
+    }
+    return $null
+}
+$_opsLibDir = if ($env:OPS_LIB) { $env:OPS_LIB } else { script:Find-OpsLibDir $PSScriptRoot }
+if (-not $_opsLibDir -or -not (Test-Path -LiteralPath (Join-Path $_opsLibDir 'Logging.psm1'))) {
+    throw "Logging.psm1 not found from $PSScriptRoot (set OPS_LIB to override)"
+}
+Import-Module (Join-Path $_opsLibDir 'Logging.psm1') -Force
+Import-Module (Join-Path $_opsLibDir 'Config.psm1')  -Force
 
 # -Env 未指定なら OPS_ENV 環境変数を使う
 if (-not $PSBoundParameters.ContainsKey('Env') -and $env:OPS_ENV) { $Env = $env:OPS_ENV }
@@ -258,6 +276,29 @@ try {
                 'CONF' { Invoke-OpsDeployConf -FilePath $entryPaths[$i] }
                 'SRC'  { Invoke-OpsDeploySrc  -FilePath $entryPaths[$i] }
                 'LIB'  { Invoke-OpsDeployLib  -FilePath $entryPaths[$i] }
+            }
+        }
+
+        # --- マーカー作成 ---
+        # 配備が 1 件でも成功（または unchanged）したら、配備ルートに
+        # .ops-deploy-root マーカーを置く。配備先スクリプトの lib / config
+        # 解決はこのマーカーで「配備ルートをどこで止めるか」を判定する。
+        if (-not $PSCmdlet.MyInvocation.BoundParameters.ContainsKey('WhatIf') -and
+            ($script:deployed -gt 0 -or $script:unchanged -gt 0)) {
+            $marker = Join-Path $OptRoot '.ops-deploy-root'
+            $jst = (Get-Date).ToUniversalTime().AddHours(9).ToString('yyyy-MM-ddTHH:mm:ss')
+            try {
+                @(
+                    "deployed_at=$jst"
+                    "env=$cfgEnv"
+                    "deployed_by=$env:USERNAME"
+                    "host=$env:COMPUTERNAME"
+                    "list_file=$PathList"
+                ) | Set-Content -LiteralPath $marker -Encoding UTF8
+                Write-OpsLog -Level INFO -Message "Deploy-root marker: $marker"
+            }
+            catch {
+                Write-OpsLog -Level WARN -Message "Could not write deploy-root marker: $marker error=$($_.Exception.Message)"
             }
         }
 

@@ -26,13 +26,23 @@ ops_repo_root() {
     _ops_find_repo_root "$lib_dir"
 }
 
-# 内部: 与えられた起点から親ディレクトリを辿り、リポジトリ root を検出
+# 内部: 与えられた起点から親ディレクトリを辿り、リポジトリ root を検出。
+#
+# 検出順位:
+#   1. .ops-deploy-root マーカー（install 時に <OptRoot>/.ops-deploy-root が touch される）
+#   2. .git ディレクトリ（ソースリポジトリ作業ツリー）
+#   3. shell-specification.md（テンプレ内ユニットテスト用）
 _ops_find_repo_root() {
     local current="$1"
     while [[ -n "$current" && "$current" != "/" ]]; do
-        if [[ -d "$current/.git" || -f "$current/shell-specification.md" ]]; then
-            printf '%s\n' "$current"
-            return 0
+        if [[ -f "$current/.ops-deploy-root" ]]; then
+            printf '%s\n' "$current"; return 0
+        fi
+        if [[ -d "$current/.git" ]]; then
+            printf '%s\n' "$current"; return 0
+        fi
+        if [[ -f "$current/shell-specification.md" ]]; then
+            printf '%s\n' "$current"; return 0
         fi
         current=$(dirname -- "$current")
     done
@@ -50,8 +60,11 @@ load_ops_config() {
     local repo_root
     if [[ -n "$override_root" ]]; then
         repo_root="$override_root"
+    elif [[ -n "${OPS_CONFIG_DIR:-}" ]]; then
+        # OPS_CONFIG_DIR が明示されていれば、それを config_dir 直下として扱う
+        # （repo_root は OPS_CONFIG_DIR の親と推定。env 階層は無視）
+        repo_root=""  # 後段で config_dir を直接設定
     else
-        # config.sh の位置を起点にリポジトリ root を見つける
         local lib_dir
         lib_dir=$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
         if ! repo_root=$(_ops_find_repo_root "$lib_dir"); then
@@ -64,17 +77,29 @@ load_ops_config() {
     declare -gA OPS_CONFIG=()
     OPS_CONFIG_ENV="${env:-default}"
 
-    # env 指定なし → config/default/、env 指定あり → config/<env>/ のみ読む
-    local config_dir
-    if [[ -n "$env" ]]; then
-        config_dir="$repo_root/config/$env"
-    else
-        config_dir="$repo_root/config/default"
+    # 候補ディレクトリの組み立て:
+    #   1) OPS_CONFIG_DIR 明示時は最優先
+    #   2) <repo_root>/config/<env>/ または <repo_root>/config/default/
+    #   3) <repo_root>/config/                  （配備先のフラット構造用フォールバック）
+    local -a config_dirs=()
+    if [[ -n "${OPS_CONFIG_DIR:-}" ]]; then
+        config_dirs+=( "$OPS_CONFIG_DIR" )
     fi
-    local sources=(
-        "$config_dir/global.conf"
-        "$config_dir/$name.conf"
-    )
+    if [[ -n "$repo_root" ]]; then
+        if [[ -n "$env" ]]; then
+            config_dirs+=( "$repo_root/config/$env" )
+        else
+            config_dirs+=( "$repo_root/config/default" )
+        fi
+        # 配備先のフラットレイアウト（<OptRoot>/config/<name>.conf）
+        config_dirs+=( "$repo_root/config" )
+    fi
+
+    local sources=()
+    local d
+    for d in "${config_dirs[@]}"; do
+        sources+=( "$d/global.conf" "$d/$name.conf" )
+    done
 
     local f line key val
     for f in "${sources[@]}"; do

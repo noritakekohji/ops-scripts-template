@@ -10,6 +10,13 @@
         Env 未指定: config/default/global.conf + config/default/<Name>.conf
         Env 指定時: config/<Env>/global.conf   + config/<Env>/<Name>.conf
 
+    配備済みサーバ（<OptRoot>/config/<Name>.conf がフラットに置かれる構造）
+    にも対応するため、上記に加えて <RepoRoot>/config/<Name>.conf も
+    フォールバックとして参照する。
+
+    明示オーバーライド（テスト・特殊配備用）:
+        $env:OPS_CONFIG_DIR   そのディレクトリ直下を最優先で見る
+
     存在しないファイルは黙ってスキップ。
 
     フォーマット: 1 行 1 設定 (`key=value`)。行頭 `#` の行と空行は無視。
@@ -23,7 +30,7 @@
 
 .PARAMETER RepoRoot
     リポジトリのルートパス。指定なしなら、本モジュールの位置から
-    `.git` または `shell-specification.md` を探して自動検出する。
+    `.ops-deploy-root` / `.git` / `shell-specification.md` を順に探す。
 #>
 function Get-OpsConfig {
     [CmdletBinding()]
@@ -36,17 +43,28 @@ function Get-OpsConfig {
     # OPS_ENV 未設定なら空文字（default のみ読む）
     if (-not $Env) { $Env = if ($env:OPS_ENV) { $env:OPS_ENV } else { '' } }
 
-    if (-not $RepoRoot) {
+    if (-not $RepoRoot -and -not $env:OPS_CONFIG_DIR) {
         $RepoRoot = _Find-OpsRepoRoot
     }
 
-    # env 指定なし → config/default/、env 指定あり → config/<env>/ のみ読む
-    $config = @{}
-    $configDir = if ($Env) { [IO.Path]::Combine($RepoRoot, 'config', $Env) } else { [IO.Path]::Combine($RepoRoot, 'config', 'default') }
-    $sources = @(
-        Join-Path $configDir 'global.conf'
-        Join-Path $configDir "$Name.conf"
-    )
+    # 候補ディレクトリを組み立てる:
+    #   1) $env:OPS_CONFIG_DIR (明示オーバーライド)
+    #   2) <RepoRoot>/config/<env>/ または <RepoRoot>/config/default/
+    #   3) <RepoRoot>/config/ (配備先のフラット構造用フォールバック)
+    $configDirs = @()
+    if ($env:OPS_CONFIG_DIR) { $configDirs += $env:OPS_CONFIG_DIR }
+    if ($RepoRoot) {
+        $sub = if ($Env) { $Env } else { 'default' }
+        $configDirs += [IO.Path]::Combine($RepoRoot, 'config', $sub)
+        $configDirs += [IO.Path]::Combine($RepoRoot, 'config')
+    }
+
+    $config  = @{}
+    $sources = @()
+    foreach ($d in $configDirs) {
+        $sources += Join-Path $d 'global.conf'
+        $sources += Join-Path $d "$Name.conf"
+    }
 
     foreach ($file in $sources) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
@@ -68,14 +86,18 @@ function Get-OpsConfig {
     return $config
 }
 
-# 内部: モジュールの位置から親ディレクトリを辿ってリポジトリ root を検出
+# 内部: モジュールの位置から親ディレクトリを辿ってリポジトリ root を検出。
+#
+# 検出順位:
+#   1. .ops-deploy-root マーカー (deploy 時に <OptRoot>/.ops-deploy-root に作成)
+#   2. .git ディレクトリ          (ソースリポジトリ作業ツリー)
+#   3. shell-specification.md    (テンプレ内ユニットテスト用)
 function _Find-OpsRepoRoot {
     $current = $PSScriptRoot
     while ($current) {
-        if ((Test-Path (Join-Path $current '.git')) -or
-            (Test-Path (Join-Path $current 'shell-specification.md'))) {
-            return $current
-        }
+        if (Test-Path (Join-Path $current '.ops-deploy-root')) { return $current }
+        if (Test-Path (Join-Path $current '.git'))             { return $current }
+        if (Test-Path (Join-Path $current 'shell-specification.md')) { return $current }
         $parent = Split-Path -Parent $current
         if (-not $parent -or $parent -eq $current) { break }
         $current = $parent
@@ -90,8 +112,8 @@ function Get-OpsRepoRoot {
 
     .DESCRIPTION
         config の `PathList` のような相対パスを絶対化したいときに使う。
-        本モジュールの位置を起点に親方向に `.git` または
-        `shell-specification.md` を探す。
+        本モジュールの位置を起点に親方向に
+        `.ops-deploy-root` / `.git` / `shell-specification.md` を探す。
     #>
     [CmdletBinding()]
     param()

@@ -35,10 +35,31 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+# --- lib resolution -----------------------------------------------------------
+# OPS_LIB env var takes precedence. Otherwise walk up from SCRIPT_DIR looking
+# for lib/logging.sh (flat) or lib/linux/logging.sh (OS-split layout). Stop at
+# .ops-deploy-root marker so we never walk out of the install tree.
+_ops_find_lib() {
+    local d="$1"
+    while [[ -n "$d" && "$d" != "/" ]]; do
+        [[ -f "$d/lib/logging.sh" ]]       && { echo "$d/lib";       return 0; }
+        [[ -f "$d/lib/linux/logging.sh" ]] && { echo "$d/lib/linux"; return 0; }
+        [[ -f "$d/.ops-deploy-root" ]] && return 1
+        d=$(dirname -- "$d")
+    done
+    return 1
+}
+if [[ -n "${OPS_LIB:-}" ]]; then
+    _ops_lib="$OPS_LIB"
+elif ! _ops_lib=$(_ops_find_lib "$SCRIPT_DIR"); then
+    echo "[ERROR] lib/logging.sh not found from $SCRIPT_DIR (set OPS_LIB to override)" >&2
+    exit 1
+fi
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../lib/logging.sh"
+source "$_ops_lib/logging.sh"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/../lib/config.sh"
+source "$_ops_lib/config.sh"
 
 # ---------- デフォルト ----------
 list_file=""
@@ -262,6 +283,22 @@ for ((i = 0; i < entry_count; i++)); do
         LIB)  deploy_lib  "$p" ;;
     esac
 done
+
+# ---------- マーカー作成 ----------
+# 配備が 1 件でも成功（または unchanged）したら、配備ルートに
+# .ops-deploy-root マーカーを置く。配備先スクリプトの lib / config
+# 解決はこのマーカーを使って「配備ルートをどこで止めるか」を判定する。
+if [[ "$dry_run" -eq 0 && ( "$deployed" -gt 0 || "$unchanged" -gt 0 ) ]]; then
+    marker="$opt_root/.ops-deploy-root"
+    {
+        echo "deployed_at=$(ops_jst_stamp '%Y-%m-%dT%H:%M:%S')"
+        echo "env=${env_name:-default}"
+        echo "deployed_by=${SUDO_USER:-${USER:-unknown}}"
+        echo "host=$(hostname)"
+        echo "list_file=$list_file"
+    } > "$marker" 2>/dev/null || log_warn "Could not write deploy-root marker: $marker"
+    [[ -f "$marker" ]] && log_info "Deploy-root marker: $marker"
+fi
 
 # ---------- 終了判定 ----------
 if [[ "$failed" -gt 0 && "$deployed" -eq 0 && "$unchanged" -eq 0 ]]; then

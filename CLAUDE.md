@@ -109,6 +109,27 @@ GPO / AppLocker で以下がブロックされることがある。代替手段:
 
 `tools/perf-monitor/PerfMonitor.ps1` がこのパターンの参考実装。
 
+### lib と config の解決メカニズム
+
+各制御スクリプトは **`SCRIPT_DIR` から親方向に上り歩き** して `lib/` と `config/` を探します。
+
+```
+lib 解決:
+  1. $OPS_LIB (環境変数)      ← 明示オーバーライド
+  2. <親>/lib/logging.sh        ← フラットレイアウト (deploy 後)
+  3. <親>/lib/<os>/logging.sh   ← OS-split レイアウト
+  4. .ops-deploy-root マーカーで打ち切る（外部 lib への漏れ防止）
+
+config 解決:
+  1. $OPS_CONFIG_DIR (環境変数) ← 明示オーバーライド
+  2. <root>/config/<env>/<name>.conf
+  3. <root>/config/<name>.conf  ← deploy 後のフラット構造
+  4. <root> は .ops-deploy-root / .git / shell-specification.md で検出
+```
+
+deploy 時に `<install-root>/.ops-deploy-root` が自動で作成されます。配備先サーバ上では
+これがあるおかげで「親方向に `/` まで遡って別プロジェクトの lib を拾う」事故を防げます。
+
 ### 設定の優先順位
 
 すべての制御スクリプトで以下を厳守:

@@ -8,22 +8,30 @@
 # env が指定された場合、CONF は default を配備した後 config/<env>/ で上書き。
 # スペースはカンマの前後で自由に入れてよい。行頭 # はコメント。
 #
-# このサンプルでは全エントリをコメントアウトしている。実運用時は本ファイルを
-# 編集するか、環境別に config/<env>/deploy_scripts.lst を作って
-# deploy_scripts.conf の PathList を上書きすること。
+# 配備するスクリプトを SRC エントリで指定し、共通ライブラリ (LIB) は
+# 必須なのでデフォルトで有効化してある。CONF はサンプルではコメントアウト
+# しているので、利用するスクリプトに応じてアンコメントすること。
+
+# --- 共通ライブラリ（必須・コメントアウトしないこと） ---
+LIB, linux/logging.sh
+LIB, linux/config.sh
+LIB, windows/Logging.psm1
+LIB, windows/Config.psm1
 
 # --- 設定ファイル ---
 # CONF, global.conf
 # CONF, ec2ctl.conf
 # CONF, backup_ami.conf
-# CONF, rotate_log.conf
+# CONF, backup_ebs_snapshot.conf
 # CONF, s3upload.conf
+# CONF, rotate_log.conf
 # CONF, tomcatctl.conf
+# CONF, nginxctl.conf
 # CONF, sqlserverctl.conf
-
-# --- 共通ライブラリ（Linux Bash スクリプトを使う場合は必須） ---
-# LIB, linux/logging.sh
-# LIB, linux/config.sh
+# CONF, mysqlctl.conf
+# CONF, postgresqlctl.conf
+# CONF, sapctl.conf
+# CONF, hanactl.conf
 
 # --- Linux スクリプト ---
 # SRC, scripts_linux/aws/ec2ctl.sh
@@ -31,11 +39,14 @@
 # SRC, scripts_linux/aws/backup_ebs_snapshot.sh
 # SRC, scripts_linux/aws/s3upload.sh
 # SRC, scripts_linux/os/rotate_log.sh
-# SRC, scripts_linux/tomcat/tomcatctl.sh
-# SRC, scripts_linux/sqlserver/sqlserverctl.sh
-
-# --- Linux スクリプト（サーバー情報収集） ---
 # SRC, scripts_linux/os/get_server_info.sh
+# SRC, scripts_linux/tomcat/tomcatctl.sh
+# SRC, scripts_linux/nginx/nginxctl.sh
+# SRC, scripts_linux/sqlserver/sqlserverctl.sh
+# SRC, scripts_linux/mysql/mysqlctl.sh
+# SRC, scripts_linux/postgresql/postgresqlctl.sh
+# SRC, scripts_linux/sap/sapctl.sh
+# SRC, scripts_linux/hana/hanactl.sh
 
 # --- Windows スクリプト ---
 # SRC, scripts_windows/aws/Ec2Ctl.ps1
@@ -43,9 +54,11 @@
 # SRC, scripts_windows/aws/Backup-EbsSnapshot.ps1
 # SRC, scripts_windows/aws/S3Upload.ps1
 # SRC, scripts_windows/os/Rotate-Log.ps1
-# SRC, scripts_windows/tomcat/TomcatCtl.ps1
-# SRC, scripts_windows/sqlserver/SqlServerCtl.ps1
-
-# --- Windows スクリプト（サーバー情報収集・比較） ---
 # SRC, scripts_windows/os/Get-ServerInfo.ps1
 # SRC, scripts_windows/os/Compare-ServerInfo.ps1
+# SRC, scripts_windows/tomcat/TomcatCtl.ps1
+# SRC, scripts_windows/nginx/NginxCtl.ps1
+# SRC, scripts_windows/sqlserver/SqlServerCtl.ps1
+# SRC, scripts_windows/mysql/MySQLCtl.ps1
+# SRC, scripts_windows/postgresql/PostgreSQLCtl.ps1
+# SRC, scripts_windows/sap/SAPCtl.ps1

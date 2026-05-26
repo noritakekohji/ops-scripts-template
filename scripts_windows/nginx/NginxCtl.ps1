@@ -45,21 +45,31 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # --- Phase 2: lib + config --------------------------------------------------
-$libPath = $null
-foreach ($c in @(
-    [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Logging.psm1'),
-    [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'windows', 'Logging.psm1')
-)) { if (Test-Path $c) { $libPath = $c; break } }
-if (-not $libPath) { throw 'Logging.psm1 not found' }
-Import-Module (Resolve-Path $libPath).Path -Force
-
-$configModulePath = $null
-foreach ($c in @(
-    [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'Config.psm1'),
-    [IO.Path]::Combine($PSScriptRoot, '..', 'lib', 'windows', 'Config.psm1')
-)) { if (Test-Path $c) { $configModulePath = $c; break } }
-if (-not $configModulePath) { throw 'Config.psm1 not found' }
-Import-Module (Resolve-Path $configModulePath).Path -Force
+# --- lib resolution -----------------------------------------------------------
+# $env:OPS_LIB takes precedence. Otherwise walk up from $PSScriptRoot looking
+# for lib\Logging.psm1 (flat) or lib\windows\Logging.psm1 (OS-split layout).
+# Stop at .ops-deploy-root marker so we never walk out of the install tree.
+function script:Find-OpsLibDir {
+    param([string]$StartDir)
+    $d = $StartDir
+    while ($d) {
+        $flat = Join-Path $d 'lib\Logging.psm1'
+        $os   = Join-Path $d 'lib\windows\Logging.psm1'
+        if (Test-Path -LiteralPath $flat) { return (Split-Path -Parent $flat) }
+        if (Test-Path -LiteralPath $os)   { return (Split-Path -Parent $os) }
+        if (Test-Path -LiteralPath (Join-Path $d '.ops-deploy-root')) { return $null }
+        $parent = Split-Path -Parent $d
+        if (-not $parent -or $parent -eq $d) { break }
+        $d = $parent
+    }
+    return $null
+}
+$_opsLibDir = if ($env:OPS_LIB) { $env:OPS_LIB } else { script:Find-OpsLibDir $PSScriptRoot }
+if (-not $_opsLibDir -or -not (Test-Path -LiteralPath (Join-Path $_opsLibDir 'Logging.psm1'))) {
+    throw "Logging.psm1 not found from $PSScriptRoot (set OPS_LIB to override)"
+}
+Import-Module (Join-Path $_opsLibDir 'Logging.psm1') -Force
+Import-Module (Join-Path $_opsLibDir 'Config.psm1')  -Force
 $cfg = Get-OpsConfig -Name 'nginxctl'
 $cfgEnv = if ($env:OPS_ENV) { $env:OPS_ENV } else { 'default' }
 $logFile  = if ($cfg.ContainsKey('LogFile'))  { [string]$cfg['LogFile'] }  else { '' }
