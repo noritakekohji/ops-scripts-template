@@ -128,9 +128,19 @@ function Invoke-Controller {
     # 非ゼロ exit に変換する。catch ブロックでメッセージを stderr に流して
     # exit 1 で抜ける。スクリプトが自分で exit したい場合は $LASTEXITCODE を
     # 通す。
+    # $Env のキー/値も同じスクリプト内で $env:KEY='val' として設定する。
+    # ProcessStartInfo.Environment は PS 5.1 / .NET Framework で挙動が
+    # 不安定なため使わない。
     $scriptPathEscaped = $ScriptPath -replace "'", "''"
+    $envSetters = ''
+    foreach ($k in $Env.Keys) {
+        $v = [string]$Env[$k]
+        $vEscaped = $v -replace "'", "''"
+        $envSetters += "`$env:$k = '$vEscaped'`r`n"
+    }
     $command = @"
 `$ErrorActionPreference = 'Stop'
+$envSetters
 try {
     & '$scriptPathEscaped' $argLine
     exit `$LASTEXITCODE
@@ -140,16 +150,18 @@ try {
 }
 "@
 
-    $psArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                '-Command', $command)
+    # ProcessStartInfo.ArgumentList は .NET Core 2.1+ のみ（PS 5.1 不可）。
+    # PS 5.1 でも動かすには Arguments プロパティに単一文字列で渡す必要があるため、
+    # -Command の中身を Base64 エンコードして -EncodedCommand で渡す。
+    # こうすればクオート問題に悩まず、引数も 1 つにまとまる。
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $psExe
-    foreach ($a in $psArgs) { $psi.ArgumentList.Add($a) | Out-Null }
+    $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + $encoded
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.UseShellExecute = $false
     if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
-    foreach ($k in $Env.Keys) { $psi.Environment[$k] = [string]$Env[$k] }
     $p = [System.Diagnostics.Process]::Start($psi)
     $stdout = $p.StandardOutput.ReadToEnd()
     $stderr = $p.StandardError.ReadToEnd()

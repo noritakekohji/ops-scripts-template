@@ -4,7 +4,13 @@
     Get-ServerInfo.ps1 の smoke test (実 Windows API 呼び出しを許可)
 #>
 
-$IsRealWindows = ($PSVersionTable.Platform -eq 'Win32NT') -or ($PSVersionTable.PSEdition -eq 'Desktop')
+# PS 5.1 では $PSVersionTable.Platform プロパティが無いため、
+# PSEdition='Desktop' を Windows と判定（PS Core では Platform を見る）
+$IsRealWindows = if ($PSVersionTable.PSObject.Properties.Name -contains 'Platform') {
+    $PSVersionTable.Platform -eq 'Win32NT'
+} else {
+    $PSVersionTable.PSEdition -eq 'Desktop'
+}
 
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
