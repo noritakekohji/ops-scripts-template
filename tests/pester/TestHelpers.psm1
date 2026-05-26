@@ -163,9 +163,14 @@ try {
     $psi.UseShellExecute = $false
     if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
     $p = [System.Diagnostics.Process]::Start($psi)
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
+    # ReadToEnd() を順次呼ぶと stdout/stderr の OS バッファが片方ずつしか
+    # 排出されず、もう一方が満杯になって子プロセスが書込みでブロック → デッドロックする。
+    # ReadToEndAsync() で同時に並行排出する（PS5.1 / .NET Framework 4.5+ で利用可）。
+    $stdoutTask = $p.StandardOutput.ReadToEndAsync()
+    $stderrTask = $p.StandardError.ReadToEndAsync()
     $p.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
     return [PSCustomObject]@{
         ExitCode = $p.ExitCode
         StdOut   = $stdout
