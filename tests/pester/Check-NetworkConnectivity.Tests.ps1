@@ -4,12 +4,14 @@
     Check-NetworkConnectivity.ps1 の単体 + localhost 結合テスト
 #>
 
+$IsRealWindows = ($PSVersionTable.Platform -eq 'Win32NT') -or ($PSVersionTable.PSEdition -eq 'Desktop')
+
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
-    $script:ctl = Join-Path (Get-RepoRoot) 'tools\network-check\Check-NetworkConnectivity.ps1'
+    $script:ctl = Join-Path (Get-RepoRoot) 'tools/network-check/Check-NetworkConnectivity.ps1'
 }
 
-Describe 'Check-NetworkConnectivity: argument validation' {
+Describe 'Check-NetworkConnectivity: argument validation' -Skip:(-not $IsRealWindows) {
     It 'missing -TargetList -> error' {
         $r = Invoke-Controller -ScriptPath $script:ctl -Arguments @()
         $r.ExitCode | Should -Not -Be 0
@@ -21,7 +23,7 @@ Describe 'Check-NetworkConnectivity: argument validation' {
     }
 }
 
-Describe 'Check-NetworkConnectivity: localhost integration' {
+Describe 'Check-NetworkConnectivity: localhost integration' -Skip:(-not $IsRealWindows) {
     BeforeEach { $script:work = New-TempWorkdir }
     AfterEach  { Remove-TempPath $script:work }
 

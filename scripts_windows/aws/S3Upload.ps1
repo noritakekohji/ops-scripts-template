@@ -51,11 +51,11 @@ function script:Find-OpsLibDir {
     param([string]$StartDir)
     $d = $StartDir
     while ($d) {
-        $flat = Join-Path $d 'lib\Logging.psm1'
-        $os   = Join-Path $d 'lib\windows\Logging.psm1'
+        $flat = [IO.Path]::Combine($d, 'lib', 'Logging.psm1')
+        $os   = [IO.Path]::Combine($d, 'lib', 'windows', 'Logging.psm1')
         if (Test-Path -LiteralPath $flat) { return (Split-Path -Parent $flat) }
         if (Test-Path -LiteralPath $os)   { return (Split-Path -Parent $os) }
-        if (Test-Path -LiteralPath (Join-Path $d '.ops-deploy-root')) { return $null }
+        if (Test-Path -LiteralPath ([IO.Path]::Combine($d, '.ops-deploy-root'))) { return $null }
         $parent = Split-Path -Parent $d
         if (-not $parent -or $parent -eq $d) { break }
         $d = $parent

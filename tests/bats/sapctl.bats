@@ -90,7 +90,10 @@ teardown() { teardown_mock_bin; }
 # usage: su - <user> -c <cmd>
 exit 1
 '
-    PATH="$MOCK_BIN_DIR"
+    PATH="$MOCK_BIN_DIR:/usr/bin:/bin"
+    if command -v sapcontrol >/dev/null 2>&1; then
+        skip "sapcontrol present in system PATH"
+    fi
     run bash "$CTL" status -S S4H -N 00
     [ "$status" -eq 10 ]
 }

@@ -46,7 +46,15 @@ ctl_assert_no_systemctl() {
     local svc="${2:-svc}"
     teardown_mock_bin
     setup_mock_bin
-    PATH="$MOCK_BIN_DIR"
+    # mock bin だけだと dirname / date / cat 等の基本ユーティリティが
+    # 失われて exit 127 になる。/usr/bin と /bin は残す。systemctl は
+    # Docker テスト環境（ubuntu:22.04 with systemd 未導入）には無いので
+    # これで「systemctl が見つからない」状態を再現できる。
+    PATH="$MOCK_BIN_DIR:/usr/bin:/bin"
+    # 念のため: ホストに systemctl が実在する環境では skip
+    if command -v systemctl >/dev/null 2>&1; then
+        skip "systemctl present in system PATH; cannot test missing-systemctl branch"
+    fi
     run bash "$ctl" status "$svc"
     [ "$status" -eq 10 ]
 }

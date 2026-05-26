@@ -9,28 +9,34 @@
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
     $script:repoRoot = Get-RepoRoot
-    $script:realCtl  = Join-Path $script:repoRoot 'scripts_windows\tomcat\TomcatCtl.ps1'
-    $script:realLog  = Join-Path $script:repoRoot 'scripts_windows\lib\Logging.psm1'
-    $script:realCfg  = Join-Path $script:repoRoot 'scripts_windows\lib\Config.psm1'
-}
+    $script:realCtl  = Join-Path $script:repoRoot 'scripts_windows/tomcat/TomcatCtl.ps1'
+    $script:realLog  = Join-Path $script:repoRoot 'scripts_windows/lib/Logging.psm1'
+    $script:realCfg  = Join-Path $script:repoRoot 'scripts_windows/lib/Config.psm1'
 
-# ラッパー: deploy 後構造を作って、その中で Get-Service / Start/Stop/Restart-Service
-# をモック化したラッパースクリプトから本物の TomcatCtl.ps1 を実行する。
-function Invoke-DeployedCtl {
-    param(
-        [Parameter(Mandatory)][string]$WorkDir,
-        [Parameter(Mandatory)][string]$ScriptPath,
-        [string[]]$Arguments = @(),
-        [hashtable]$Env = @{}
-    )
-    $wrapper = Join-Path $WorkDir 'wrapper.ps1'
-    $callLog = Join-Path $WorkDir 'calls.log'
+    # Pester 5 では BeforeAll 内で定義した function は It スコープでも見えるが、
+    # ファイルの top-level function は Discovery 時にしか登録されないため、
+    # ここで明示的に script スコープに置く。
+    function script:Invoke-DeployedCtl {
+        param(
+            [Parameter(Mandatory)][string]$WorkDir,
+            [Parameter(Mandatory)][string]$ScriptPath,
+            [string[]]$Arguments = @(),
+            [hashtable]$Env = @{}
+        )
+        $wrapper = Join-Path $WorkDir 'wrapper.ps1'
+        $callLog = Join-Path $WorkDir 'calls.log'
 
-    $arr = ($Arguments | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ', '
-    $content = @"
+        # -Foo はそのまま、値要素は single-quote で囲む
+        $argTokens = $Arguments | ForEach-Object {
+            if ($_ -match '^-[A-Za-z][A-Za-z0-9]*$') { $_ }
+            else { "'" + ($_ -replace "'", "''") + "'" }
+        }
+        $argLine = $argTokens -join ' '
+        $content = @"
 `$ErrorActionPreference = 'Stop'
 function Get-Service {
-    param([string]`$Name)
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]`$Name)
     Add-Content -Path '$callLog' -Value "Get-Service: `$Name"
     `$obj = [PSCustomObject]@{ Name=`$Name; Status='Running'; StartType='Automatic'; DisplayName=`$Name }
     Add-Member -InputObject `$obj -MemberType ScriptMethod -Name WaitForStatus -Value { param(`$t, `$to) }
@@ -39,16 +45,17 @@ function Get-Service {
 function Start-Service   { param([string]`$Name) Add-Content -Path '$callLog' -Value "Start-Service: `$Name" }
 function Stop-Service    { param([string]`$Name, [switch]`$Force) Add-Content -Path '$callLog' -Value "Stop-Service: `$Name" }
 function Restart-Service { param([string]`$Name, [switch]`$Force) Add-Content -Path '$callLog' -Value "Restart-Service: `$Name" }
-& '$ScriptPath' $arr
+Invoke-Expression "& '$ScriptPath' $argLine"
 exit `$LASTEXITCODE
 "@
-    Set-Content -LiteralPath $wrapper -Value $content -Encoding UTF8
-    $r = Invoke-Controller -ScriptPath $wrapper -Env $Env
-    $calls = if (Test-Path $callLog) { Get-Content $callLog } else { @() }
-    return [PSCustomObject]@{
-        ExitCode = $r.ExitCode
-        Combined = $r.Combined
-        Calls    = $calls
+        Set-Content -LiteralPath $wrapper -Value $content -Encoding UTF8
+        $r = Invoke-Controller -ScriptPath $wrapper -Env $Env
+        $calls = if (Test-Path $callLog) { Get-Content $callLog } else { @() }
+        return [PSCustomObject]@{
+            ExitCode = $r.ExitCode
+            Combined = $r.Combined
+            Calls    = $calls
+        }
     }
 }
 

@@ -7,9 +7,12 @@
     まで実 PowerShell プロセスで実行する。
 #>
 
+# Discovery 時に評価する（-Skip: は BeforeAll より先に実行される）
+$IsRealWindows = ($PSVersionTable.Platform -eq 'Win32NT') -or ($PSVersionTable.PSEdition -eq 'Desktop')
+
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
-    $script:ps1 = Join-Path (Get-RepoRoot) 'tools\perf-monitor\PerfMonitor.ps1'
+    $script:ps1 = Join-Path (Get-RepoRoot) 'tools/perf-monitor/PerfMonitor.ps1'
 }
 
 Describe 'PerfMonitor: argument validation' {
@@ -34,7 +37,7 @@ Describe 'PerfMonitor: argument validation' {
     }
 }
 
-Describe 'PerfMonitor: end-to-end (start -> stop -> report)' {
+Describe 'PerfMonitor: end-to-end (start -> stop -> report)' -Skip:(-not $IsRealWindows) {
     It 'collects samples and produces report.html' {
         $work = New-TempWorkdir
         try {

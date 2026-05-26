@@ -64,8 +64,11 @@ teardown() {
 
 @test "tomcatctl: systemctl が PATH に無いと exit 10" {
     teardown_mock_bin
-    setup_mock_bin  # 空の bin を再セット（systemctl なし）
-    PATH="$MOCK_BIN_DIR"  # systemctl が無い PATH に絞る
+    setup_mock_bin
+    PATH="$MOCK_BIN_DIR:/usr/bin:/bin"
+    if command -v systemctl >/dev/null 2>&1; then
+        skip "systemctl present in system PATH"
+    fi
     run bash "$CTL" status Tomcat10
     [ "$status" -eq 10 ]
     [[ "$output" =~ "systemctl not installed" ]]

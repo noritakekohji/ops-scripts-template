@@ -4,12 +4,14 @@
     Get-ServerInfo.ps1 の smoke test (実 Windows API 呼び出しを許可)
 #>
 
+$IsRealWindows = ($PSVersionTable.Platform -eq 'Win32NT') -or ($PSVersionTable.PSEdition -eq 'Desktop')
+
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
-    $script:ctl = Join-Path (Get-RepoRoot) 'scripts_windows\os\Get-ServerInfo.ps1'
+    $script:ctl = Join-Path (Get-RepoRoot) 'scripts_windows/os/Get-ServerInfo.ps1'
 }
 
-Describe 'Get-ServerInfo: smoke' {
+Describe 'Get-ServerInfo: smoke' -Skip:(-not $IsRealWindows) {
     BeforeEach { $script:work = New-TempWorkdir }
     AfterEach  { Remove-TempPath $script:work }
 

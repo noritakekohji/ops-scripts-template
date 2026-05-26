@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core shells / interpreters
     bash \
     python3 \
+    # Bash test runner
+    bats \
     # Network tools (for check_network_connectivity.sh)
     iputils-ping \
     iproute2 \
@@ -22,6 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     # File tools
     gzip \
+    findutils \
+    coreutils \
+    # Timezone data (TZ=Asia/Tokyo を有効にするため必須)
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8

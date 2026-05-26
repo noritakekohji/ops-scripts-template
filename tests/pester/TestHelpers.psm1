@@ -105,10 +105,45 @@ function Invoke-Controller {
         [string]$WorkingDirectory = '',
         [hashtable]$Env = @{}
     )
+    # Linux/Docker でも実行できるよう、PowerShell ホストを動的に解決する。
+    # Windows: powershell.exe (5.1) → pwsh の順
+    # Linux:   pwsh のみ
+    $psExe = $null
+    foreach ($candidate in @('powershell.exe', 'powershell', 'pwsh')) {
+        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($cmd) { $psExe = $cmd.Source; break }
+    }
+    if (-not $psExe) { throw 'No PowerShell host found in PATH (powershell.exe / pwsh).' }
+
+    # -File は Mandatory でない ValidateSet パラメータに不正値が来ると pwsh が
+    # コマンドラインエラーとみなして help を出し exit 0 で抜けてしまう（テスト
+    # としては失敗扱いにしたい）。-Command + `& <path> args` で呼び出すと
+    # ValidateSet 違反などのスクリプトエラーが正しく非ゼロ exit で返る。
+    $argTokens = $Arguments | ForEach-Object {
+        if ($_ -match '^-[A-Za-z][A-Za-z0-9]*$') { $_ }
+        else { "'" + ($_ -replace "'", "''") + "'" }
+    }
+    $argLine = $argTokens -join ' '
+    # ErrorActionPreference=Stop + try/catch で parameter binding エラーも
+    # 非ゼロ exit に変換する。catch ブロックでメッセージを stderr に流して
+    # exit 1 で抜ける。スクリプトが自分で exit したい場合は $LASTEXITCODE を
+    # 通す。
+    $scriptPathEscaped = $ScriptPath -replace "'", "''"
+    $command = @"
+`$ErrorActionPreference = 'Stop'
+try {
+    & '$scriptPathEscaped' $argLine
+    exit `$LASTEXITCODE
+} catch {
+    [Console]::Error.WriteLine(`$_.Exception.Message)
+    if (`$LASTEXITCODE -and `$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } else { exit 1 }
+}
+"@
+
     $psArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                '-File', $ScriptPath) + $Arguments
+                '-Command', $command)
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = 'powershell.exe'
+    $psi.FileName = $psExe
     foreach ($a in $psArgs) { $psi.ArgumentList.Add($a) | Out-Null }
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
@@ -146,17 +181,28 @@ function Invoke-ControllerWithServiceMock {
     $wrapper = Join-Path ([IO.Path]::GetTempPath()) ("ctl-wrapper-$([Guid]::NewGuid().ToString('N')).ps1")
     $callLog = Join-Path ([IO.Path]::GetTempPath()) ("ctl-call-$([Guid]::NewGuid().ToString('N')).log")
 
-    $arr = ($Arguments | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ', '
+    # 引数渡しの注意:
+    #   - & '<script>' 'a' 'b'        だと quoted string は positional 扱い
+    #   - & '<script>' @argArray      だと parameter set ありのスクリプトで
+    #                                  named arg が認識されないケースあり
+    #   - Invoke-Expression で文字列として渡すのが最も確実。-SID のような
+    #     ハイフン始まり要素はそのまま、値要素は single-quote で囲む。
+    $argTokens = $Arguments | ForEach-Object {
+        if ($_ -match '^-[A-Za-z][A-Za-z0-9]*$') { $_ }  # -Foo はそのまま (named parameter)
+        else { "'" + ($_ -replace "'", "''") + "'" }      # 値は quoting
+    }
+    $argLine = $argTokens -join ' '
     $wrapperContent = @"
 `$ErrorActionPreference = 'Stop'
 `$CallLog = '$callLog'
 `$global:_MockStatus = '$InitialStatus'
 
 function Get-Service {
+    # CmdletBinding を付けると common parameters (-ErrorAction 等) が
+    # 自動付与されるので、呼び出し側の -ErrorAction SilentlyContinue を吸収できる
     [CmdletBinding()]
     param(
-        [Parameter(Position=0)][string]`$Name,
-        [Parameter(ValueFromPipelineByPropertyName=`$true)][string]`$ErrorAction
+        [Parameter(Position=0)][string]`$Name
     )
     Add-Content -Path `$CallLog -Value "Get-Service: `$Name"
     if (`$global:_MockStatus -eq 'None') {
@@ -179,7 +225,7 @@ function Start-Service   { param([Parameter(Mandatory)][string]`$Name) Add-Conte
 function Stop-Service    { param([Parameter(Mandatory)][string]`$Name, [switch]`$Force) Add-Content -Path `$CallLog -Value "Stop-Service: `$Name"; `$global:_MockStatus = 'Stopped' }
 function Restart-Service { param([Parameter(Mandatory)][string]`$Name, [switch]`$Force) Add-Content -Path `$CallLog -Value "Restart-Service: `$Name"; `$global:_MockStatus = 'Running' }
 
-& '$ScriptPath' $arr
+Invoke-Expression "& '$ScriptPath' $argLine"
 exit `$LASTEXITCODE
 "@
     Set-Content -LiteralPath $wrapper -Value $wrapperContent -Encoding UTF8

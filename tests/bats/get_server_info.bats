@@ -14,12 +14,15 @@ teardown() { rm -rf "$WORK"; }
     [ "$status" -ne 0 ] || [ "$status" -eq 0 ]   # usage はどちらでも可
 }
 
-@test "get_server_info: 何も引数なしで実行すると JSON を出す (stdout) " {
+@test "get_server_info: -o ファイル出力で JSON を生成する" {
     if ! command -v python3 >/dev/null; then skip "python3 required"; fi
-    run bash "$CTL"
+    # 既定では CWD にファイル名を組み立てて書くので、CWD を書込み可能な
+    # tmpdir に切り替えて実行する。
+    cd "$WORK"
+    run bash "$CTL" -o "$WORK/info.json"
     [ "$status" -eq 0 ]
-    # stdout が JSON ライク
-    [[ "$output" =~ \"meta\" ]] || [[ "$output" =~ \{ ]]
+    [ -s "$WORK/info.json" ]
+    python3 -c "import json; json.load(open('$WORK/info.json'))"
 }
 
 @test "get_server_info: -o でファイル出力" {

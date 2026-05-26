@@ -50,7 +50,10 @@ teardown() { teardown_mock_bin; }
 @test "backup_ami: aws CLI 不在は exit 10" {
     teardown_mock_bin
     setup_mock_bin
-    PATH="$MOCK_BIN_DIR"
+    PATH="$MOCK_BIN_DIR:/usr/bin:/bin"
+    if command -v aws >/dev/null 2>&1; then
+        skip "aws CLI present in system PATH"
+    fi
     run bash "${SCRIPTS_DIR}/aws/backup_ami.sh" -i i-0abcd1234 -p prod
     [ "$status" -eq 10 ]
 }

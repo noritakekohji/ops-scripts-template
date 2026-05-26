@@ -51,6 +51,17 @@ source "$_ops_lib/logging.sh"
 # shellcheck source=/dev/null
 source "$_ops_lib/config.sh"
 
+# Helper: systemctl is-active の戻り値を安全に文字列化する。
+# 実 systemctl は inactive のときに stdout="inactive" + exit=3 を返す。
+# $(... || echo unknown) で捕捉すると "inactive" の後に "unknown" が改行付きで
+# 連結されてしまうため、失敗を握りつぶしつつ空のときだけ "unknown" を返す。
+_systemctl_state() {
+    local s
+    s=$(systemctl is-active "$1" 2>/dev/null) || true
+    [[ -z "$s" ]] && s="unknown"
+    printf '%s' "$s"
+}
+
 usage() { sed -n '2,22p' "$0" >&2; exit 1; }
 
 before_state=""
@@ -130,7 +141,7 @@ if ! systemctl list-unit-files --no-legend "${service_name}.service" 2>/dev/null
     status="failed"; exit 2
 fi
 
-before_state=$(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")
+before_state=$(_systemctl_state "$service_name")
 log_info "Current state: service=$service_name state=$before_state"
 
 if [[ "$action" == "status" ]]; then
@@ -159,21 +170,21 @@ log_info "Main start"
 sysctl_args=( "$action" "$service_name" )
 if [[ "$wait_for_completion" -eq 1 ]]; then
     if ! timeout "$wait_timeout" systemctl "${sysctl_args[@]}"; then
-        after_state=$(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")
+        after_state=$(_systemctl_state "$service_name")
         log_error "systemctl $action did not complete within timeout: service=$service_name timeoutSec=$wait_timeout actual=$after_state"
         status="failed"; exit 3
     fi
 else
     # -w 未指定の場合: systemd の即時応答を確認
     if ! systemctl "${sysctl_args[@]}"; then
-        after_state=$(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")
+        after_state=$(_systemctl_state "$service_name")
         log_error "systemctl $action failed: service=$service_name actual=$after_state"
         status="failed"; exit 4
     fi
 fi
 log_info "$action initiated: service=$service_name"
 
-after_state=$(systemctl is-active "$service_name" 2>/dev/null || echo "unknown")
+after_state=$(_systemctl_state "$service_name")
 log_info "Main complete: service=$service_name state=$after_state"
 status="success"
 exit 0
