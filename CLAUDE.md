@@ -164,6 +164,16 @@ Phase 5: 後始末 + 結果出力（trap / finally で構造化ログ）
 # テンプレ準拠チェック (CI と同じ検査)
 bash ci/template-check/check_template.sh
 
+# ローカル単体テスト（モック使用、bats / Pester 必要）
+bash  tests/run_unit.sh
+pwsh  tests/run_unit.ps1
+# 単体 + 結合（rotate_log の tmpdir、perf-monitor 短時間 start/stop など）
+bash  tests/run_all.sh
+pwsh  tests/run_all.ps1
+# カバレッジ（要 kcov / Pester built-in）
+bash  tests/run_unit.sh --coverage
+pwsh  tests/run_unit.ps1 -Coverage
+
 # Docker でユニットテスト
 bash tests/docker/run_tests.sh        # Linux 側
 pwsh -File tests/docker/run_tests.ps1 # Windows 側
@@ -171,6 +181,8 @@ pwsh -File tests/docker/run_tests.ps1 # Windows 側
 # 配備同期 (dry-run)
 DRY_RUN=true python deploy/sync.py
 ```
+
+詳細は [`tests/README.md`](tests/README.md)。
 
 ```powershell
 # perf-monitor 操作（負荷テスト時のリソース監視）
@@ -207,6 +219,7 @@ DRY_RUN=true python deploy/sync.py
 
 - `/template-check` — CI と同じテンプレ準拠検査をローカルで実行
 - `/docker-test` — Docker テストスイートを起動（Linux / Windows 両方）
+- `/run-tests` — bats + Pester のローカル単体/結合テストを実行
 - `/encoding-audit` — `.ps1` の BOM 欠落と `.sh` の CRLF を検査
 - `/new-controller` — 新規制御スクリプト（XXXCtl.ps1 / xxxctl.sh）の雛形を作成
 

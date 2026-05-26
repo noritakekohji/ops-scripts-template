@@ -17,6 +17,7 @@ pester:
     when: always
     paths:
       - pester-results.xml
+      - tests/results/
     reports:
       junit: pester-results.xml
     expire_in: 1 week

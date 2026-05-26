@@ -1,26 +1,44 @@
 bats:
   stage: test
-  image: bats/bats:latest
+  # 公式 bats イメージは alpine ベースで coreutils などが少ない。
+  # ubuntu を使って自前で bats / 必要に応じて kcov を入れる。
+  image: ubuntu:22.04
   tags:
     - linux
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes:
         - "**/*.sh"
+        - "**/*.bash"
         - "tests/bats/**/*"
+        - "tests/run_unit.sh"
+        - "tests/run_all.sh"
+        - "tests/fixtures/**/*"
+        - "tools/server-compare/compare_server_info.py"
         - "ci/test/bats.gitlab-ci.yml"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends bats python3 ca-certificates iputils-ping
+    # kcov はサイズが大きいので任意（RUN_COVERAGE=true のときだけ入れる）
+    - if [ "${RUN_COVERAGE:-}" = "true" ]; then apt-get install -y --no-install-recommends kcov; fi
   script:
     - |
       if [ ! -d tests/bats ]; then
         echo "No bats tests found. Skipping."
         exit 0
       fi
-      bats --formatter junit tests/bats > bats-results.xml
+      mkdir -p tests/results
+      if [ "${RUN_COVERAGE:-}" = "true" ]; then
+        bash tests/run_unit.sh --coverage
+      else
+        # JUnit 形式で結果を出力。tests/bats 配下の .bats を全部走らせる
+        bats --formatter junit tests/bats > tests/results/bats-results.xml
+      fi
   artifacts:
     when: always
     paths:
-      - bats-results.xml
+      - tests/results/
     reports:
-      junit: bats-results.xml
+      junit: tests/results/bats-results.xml
     expire_in: 1 week

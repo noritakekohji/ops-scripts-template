@@ -20,6 +20,9 @@ pester-results.xml
 bats-results.xml
 .trivycache/
 
+# --- test runner outputs (kcov / Pester coverage / JUnit XML) ---
+tests/results/
+
 # --- editor / OS ---
 .vscode/
 .idea/
