@@ -64,7 +64,21 @@ $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
 if (-not $pyCmd) { $pyCmd = Get-Command python -ErrorAction SilentlyContinue }
 if (-not $pyCmd) { Write-Log 'ERROR' 'python3 not found (required to assemble JSON)'; exit 10 }
 
+# ── AWS CLI 挙動の安定化 ───────────────────────────────────────
+# AWS_PAGER='' : v2 のページャー入力待ちで固まるのを防ぐ
+# タイムアウト / リトライ抑制で到達不可エンドポイント時の長時間ハングを防ぐ
+$env:AWS_PAGER = ''
+if (-not $env:AWS_MAX_ATTEMPTS) { $env:AWS_MAX_ATTEMPTS = '2' }
+if (-not $env:AWS_RETRY_MODE)   { $env:AWS_RETRY_MODE   = 'standard' }
+$AwsTimeoutOpts = @('--cli-connect-timeout', '5', '--cli-read-timeout', '30')
+
 # ── IMDSv2 ─────────────────────────────────────────────────────
+# IMDS はリンクローカル (169.254.169.254)。システムプロキシ経由になると
+# 到達できず長時間ブロックするため、IMDS アクセスの間だけ既定プロキシを無効化する。
+$script:savedProxy = $null
+try { $script:savedProxy = [System.Net.WebRequest]::DefaultWebProxy } catch {}
+try { [System.Net.WebRequest]::DefaultWebProxy = $null } catch {}
+
 function Get-ImdsToken {
     try {
         return Invoke-RestMethod -Method Put -Uri "$ImdsBase/api/token" `
@@ -76,6 +90,7 @@ function Get-ImdsToken {
 $token = Get-ImdsToken
 if (-not $token) {
     Write-Log 'ERROR' "Cannot reach IMDS ($ImdsBase). Not on an EC2 instance, or IMDS disabled."
+    try { [System.Net.WebRequest]::DefaultWebProxy = $script:savedProxy } catch {}
     exit 2
 }
 
@@ -123,7 +138,7 @@ New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 function Invoke-AwsJson {
     param([string[]]$AwsArgs, [string]$OutFile)
     try {
-        $raw = & aws @AwsArgs --output json 2>$null
+        $raw = & aws @AwsArgs @AwsTimeoutOpts --output json 2>$null
         if ($LASTEXITCODE -eq 0 -and $raw) {
             $raw | Out-File -LiteralPath $OutFile -Encoding utf8
         } else {
@@ -137,12 +152,14 @@ function Invoke-AwsJson {
 }
 
 try {
-    # 認証確認
-    & aws sts get-caller-identity --output json > (Join-Path $tmp 'caller.json') 2>$null
+    # 認証確認（PS5.1 では `> (式)` のリダイレクトは不可。変数経由で Out-File する）
+    $callerFile = Join-Path $tmp 'caller.json'
+    $callerRaw = & aws sts get-caller-identity @AwsTimeoutOpts --output json 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Log 'ERROR' 'AWS auth failed (sts get-caller-identity)'
         exit 20
     }
+    $callerRaw | Out-File -LiteralPath $callerFile -Encoding utf8
 
     foreach ($f in 'iam_attached','iam_inline','iam_role','sg','vpc','subnet','eni','rt','tags') {
         'null' | Out-File -LiteralPath (Join-Path $tmp "$f.json") -Encoding utf8
@@ -219,4 +236,6 @@ try {
 }
 finally {
     if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+    # IMDS 用に無効化した既定プロキシを元に戻す
+    try { [System.Net.WebRequest]::DefaultWebProxy = $script:savedProxy } catch {}
 }

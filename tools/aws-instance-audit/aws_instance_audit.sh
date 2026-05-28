@@ -78,6 +78,23 @@ else
     PY="python3"
 fi
 
+# ── AWS CLI 挙動の安定化 ───────────────────────────────────────
+# - AWS_PAGER='' : v2 のページャー（less 風）が非対話環境で入力待ちになり
+#   固まるのを防ぐ
+# - 接続/読み取りタイムアウトとリトライ回数を絞り、egress 制限環境で
+#   IAM 等の到達不可エンドポイントを叩いたときに数分ハングするのを防ぐ
+export AWS_PAGER=""
+export AWS_MAX_ATTEMPTS="${AWS_MAX_ATTEMPTS:-2}"
+export AWS_RETRY_MODE="${AWS_RETRY_MODE:-standard}"
+AWS_TIMEOUT_OPTS=(--cli-connect-timeout 5 --cli-read-timeout 30)
+
+# timeout コマンドがあれば各 aws 呼び出しのハード上限として使う（保険）
+if command -v timeout >/dev/null 2>&1; then
+    AWS_HARD_TIMEOUT=(timeout 60)
+else
+    AWS_HARD_TIMEOUT=()
+fi
+
 # ── IMDSv2 トークン取得 ────────────────────────────────────────
 imds_token() {
     curl -fsS -m 3 -X PUT "${IMDS}/api/token" \
@@ -136,9 +153,10 @@ TMPDIR_AUDIT=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_AUDIT"' EXIT
 
 aws_json() {
-    # $@ = aws CLI 引数。失敗時は空 JSON "{}" を返し WARN。
+    # $@ = aws CLI 引数。失敗時は "null" を返し WARN。
+    # タイムアウト/リトライ抑制オプションとハード timeout を付与する。
     local out
-    if out=$(aws "$@" --output json 2>"$TMPDIR_AUDIT/err"); then
+    if out=$("${AWS_HARD_TIMEOUT[@]}" aws "$@" "${AWS_TIMEOUT_OPTS[@]}" --output json 2>"$TMPDIR_AUDIT/err"); then
         printf '%s' "$out"
     else
         log_warn "aws $* failed: $(tr '\n' ' ' < "$TMPDIR_AUDIT/err")"
@@ -147,7 +165,8 @@ aws_json() {
 }
 
 # 認証確認
-if ! aws sts get-caller-identity --output json >"$TMPDIR_AUDIT/caller.json" 2>"$TMPDIR_AUDIT/err"; then
+if ! "${AWS_HARD_TIMEOUT[@]}" aws sts get-caller-identity "${AWS_TIMEOUT_OPTS[@]}" \
+        --output json >"$TMPDIR_AUDIT/caller.json" 2>"$TMPDIR_AUDIT/err"; then
     log_error "AWS auth failed (sts get-caller-identity): $(tr '\n' ' ' < "$TMPDIR_AUDIT/err")"
     exit 20
 fi
