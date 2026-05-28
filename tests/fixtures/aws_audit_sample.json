@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "tool": "aws_instance_audit",
+    "collected_at": "2026-05-01 10:00:00",
+    "hostname": "web01",
+    "region": "ap-northeast-1",
+    "instance_id": "i-0abcdef1234567890",
+    "categories": "all"
+  },
+  "instance": {
+    "instance_id": "i-0abcdef1234567890",
+    "instance_type": "t3.micro",
+    "ami_id": "ami-0123456789abcdef0",
+    "availability_zone": "ap-northeast-1a",
+    "region": "ap-northeast-1",
+    "private_ip": "10.0.1.23",
+    "public_ip": "",
+    "vpc_id": "vpc-0aaa1111",
+    "subnet_id": "subnet-0bbb2222",
+    "tags": { "Name": "web01", "Env": "prod" }
+  },
+  "iam": {
+    "role_name": "web-instance-role",
+    "role_arn": "arn:aws:iam::000000000000:role/web-instance-role",
+    "attached_policies": [
+      { "name": "AmazonS3ReadOnlyAccess", "arn": "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess" }
+    ],
+    "inline_policies": [ "app-secrets-read" ]
+  },
+  "security_groups": [
+    {
+      "group_id": "sg-0web11111",
+      "group_name": "web-sg",
+      "description": "web tier",
+      "vpc_id": "vpc-0aaa1111",
+      "ingress": [
+        { "protocol": "tcp", "from_port": 443, "to_port": 443, "cidrs": ["0.0.0.0/0"], "sg_refs": [] },
+        { "protocol": "tcp", "from_port": 22,  "to_port": 22,  "cidrs": ["10.0.0.0/8"], "sg_refs": [] }
+      ],
+      "egress": [
+        { "protocol": "all", "from_port": null, "to_port": null, "cidrs": ["0.0.0.0/0"], "sg_refs": [] }
+      ]
+    }
+  ],
+  "network": {
+    "vpc": { "vpc_id": "vpc-0aaa1111", "cidr": "10.0.0.0/16", "is_default": false },
+    "subnet": { "subnet_id": "subnet-0bbb2222", "cidr": "10.0.1.0/24", "az": "ap-northeast-1a", "map_public_ip": false },
+    "enis": [
+      { "eni_id": "eni-0ccc3333", "private_ip": "10.0.1.23", "subnet_id": "subnet-0bbb2222", "description": "primary", "groups": ["sg-0web11111"] }
+    ],
+    "route_tables": [
+      { "route_table_id": "rtb-0ddd4444", "routes": [
+        { "dest": "10.0.0.0/16", "target": "local" },
+        { "dest": "0.0.0.0/0", "target": "igw-0eee5555" }
+      ] }
+    ]
+  }
+}

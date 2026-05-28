@@ -81,6 +81,7 @@ ops-scripts-template/
 │   ├── network-check/             # DNS / Ping / TCP 疎通確認
 │   ├── change-detect/             # サーバ情報の前後比較ワークフロー
 │   ├── server-compare/            # サーバ情報収集と差分検出
+│   ├── aws-instance-audit/        # EC2 自インスタンスの IAM/SG/VPC 等を監査
 │   └── templates/                 # 新規スクリプト用テンプレート（5-phase 構造）
 │
 ├── deploy/                        # 別リポジトリへの自動同期
@@ -189,6 +190,7 @@ scripts_windows/lib/
 | `network-check/`   | DNS / Ping / TCP 疎通チェック |
 | `change-detect/`   | サーバ情報の現新差分検出ワークフロー |
 | `server-compare/`  | サーバ情報収集と差分検出 |
+| `aws-instance-audit/` | EC2 自インスタンスの IAM ロール / SG / VPC・Subnet・ENI・Route / メタデータを IMDSv2 + AWS CLI で収集 |
 | `templates/`       | 新規スクリプト雛形（5-phase 構造の動くデモ） |
 
 各ツールは `.ps1` + `.bat`（Windows）と `.sh`（Linux）を同梱し、`README.md` を持ちます。

@@ -33,6 +33,7 @@ ops-scripts-template/
 │   ├── network-check/     # DNS/Ping/TCP 接続性チェック
 │   ├── change-detect/     # サーバ情報の前後比較
 │   ├── server-compare/    # サーバ情報収集と差分検出
+│   ├── aws-instance-audit/ # EC2 自インスタンスの IAM/SG/VPC 監査
 │   └── templates/         # 新規スクリプト用テンプレート
 ├── deploy/          # 別リポジトリへの同期スクリプト (sync.py / servers.yaml)
 └── tests/

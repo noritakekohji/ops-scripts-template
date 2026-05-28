@@ -9,7 +9,7 @@
 
 エンタープライズ向け運用スクリプト（PowerShell / Bash / SQL 混在）の **共通テンプレート**。
 AWS / OS / 各種ミドルウェア（PostgreSQL / MySQL / SAP HANA / S/4HANA / SQL Server / Tomcat / nginx）の
-**制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / change-detect / server-compare）、
+**制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / change-detect / server-compare / aws-instance-audit）、
 **GitLab CI 設定**、**仕様書**を 1 リポジトリに集約しています。
 
 別リポジトリへの配備は `deploy/sync.py`（GitLab MR 自動作成）で行います。
@@ -25,7 +25,7 @@ scripts_linux/<domain>/   Bash 実装 (aws / hana / mysql / nginx / os / postgre
 scripts_windows/<domain>/ PowerShell 実装（domain は Linux 側と 1:1 対応）
 config/{default,dev,staging,production}/  環境別設定
 docs_{linux,windows}/<domain>/<file>.md   各スクリプトの仕様書
-tools/{perf-monitor,network-check,change-detect,server-compare,templates}/  自己完結ツール
+tools/{perf-monitor,network-check,change-detect,server-compare,aws-instance-audit,templates}/  自己完結ツール
 deploy/    別リポジトリ同期 (sync.py + servers.yaml + SPEC.md)
 tests/{pester,bats,docker}/  ユニット & Docker E2E
 ci/{lint,security,test,deploy,template-check}/  GitLab CI 定義
