@@ -38,6 +38,7 @@
 *.py    text eol=lf
 
 # ---------- バイナリ: 変換しない ----------
+*.xlsm  binary
 *.zip   binary
 *.tar   binary
 *.gz    binary
