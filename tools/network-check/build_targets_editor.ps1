@@ -23,6 +23,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ([string]::IsNullOrEmpty($OutputPath)) {
     $OutputPath = Join-Path $scriptDir 'targets-editor.xlsm'
 }
+# SaveAs resolves relative paths against EXCEL.EXE's CWD, not ours.
+$OutputPath = [IO.Path]::GetFullPath([IO.Path]::Combine((Get-Location).Path, $OutputPath))
 
 $wb = $null
 $basPath = Join-Path $scriptDir 'targets-editor.bas'
