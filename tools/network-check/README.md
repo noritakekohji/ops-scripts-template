@@ -8,7 +8,10 @@ tools/network-check/
 ├── Check-NetworkConnectivity.ps1   # Windows PowerShell 本体
 ├── Check-NetworkConnectivity.bat   # Windows 起動用バッチ
 ├── check_network_connectivity.sh   # Linux Bash
-└── targets.lst                     # 接続先リストファイル（サンプル）
+├── targets.lst                     # 接続先リストファイル（サンプル）
+├── targets-editor.xlsm             # targets.lst 編集用 Excel マクロブック
+├── targets-editor.bas              # 上記の VBA ソース（真実の源）
+└── build_targets_editor.ps1        # .bas から .xlsm を再生成するビルドスクリプト
 ```
 
 ---
@@ -129,3 +132,34 @@ chmod +x check_network_connectivity.sh
 | 1 | 1 件以上 Failed |
 | 2 | リストファイルが見つからない |
 | 10 | 前提コマンドが見つからない |
+
+---
+
+## targets.lst を Excel で作る（targets-editor.xlsm）
+
+`targets-editor.xlsm` を開き、`Targets` シートに入力して
+「Export targets.lst」ボタンを押すと 4-field 形式の targets.lst を出力します。
+
+| 列 | 内容 |
+|---|---|
+| Section | 出力時に `# ---- <Section> ----` コメントになるグループ名（任意） |
+| Host | ホスト名または IP（必須） |
+| Port | TCP ポート番号、または `-`（Ping のみ）。空欄は `-` 扱い |
+| Expected | `ok` / `ng` / `-`（ドロップダウン。空欄は `-` 扱い） |
+| Description | 説明 |
+
+- 出力は **UTF-8（BOM なし）+ LF**。リポジトリの LF 統一規約に準拠します
+- 不正な入力（Host 空欄、Port 範囲外、Expected 不正、セルのエラー値）は赤くハイライトされ、
+  修正するまでエクスポートされません
+- 注意: Description に `#` を含めると、パーサ側でコメントとして切り詰められます
+
+### マクロを修正するとき
+
+真実の源は `targets-editor.bas` です。`.bas` を編集してから
+`build_targets_editor.ps1` で `.xlsm` を再生成してください
+（要 Excel + 「VBA プロジェクト オブジェクト モデルへのアクセスを信頼する」設定。
+ビルド後は設定を元に戻して構いません）。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File build_targets_editor.ps1
+```
