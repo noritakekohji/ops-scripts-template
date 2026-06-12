@@ -20,6 +20,7 @@
 *.ps1   text eol=crlf
 *.psm1  text eol=crlf
 *.bat   text eol=crlf
+*.bas   text eol=crlf
 
 # ---------- 設定・ドキュメント: LF 統一 ----------
 # PS/Bash 両方から読む共有ファイルは LF で統一する
