@@ -63,41 +63,70 @@ Private Function ValidateRows(ByVal ws As Worksheet, ByVal lastRow As Long) As S
     Dim host As String, port As String, expected As String
 
     For r = FIRST_DATA_ROW To lastRow
-        ws.Range(ws.Cells(r, COL_HOST), ws.Cells(r, COL_EXPECTED)).Interior.ColorIndex = xlNone
+        ws.Range(ws.Cells(r, COL_SECTION), ws.Cells(r, COL_DESC)).Interior.ColorIndex = xlNone
 
-        host = Trim$(CStr(ws.Cells(r, COL_HOST).Value))
-        port = Trim$(CStr(ws.Cells(r, COL_PORT).Value))
-        expected = LCase$(Trim$(CStr(ws.Cells(r, COL_EXPECTED).Value)))
+        If RowHasErrorValue(ws, r) Then
+            errs = errs & "Row " & r & ": Cell contains an error value (#N/A etc.)" & vbCrLf
+        Else
+            host = Trim$(CStr(ws.Cells(r, COL_HOST).Value))
+            port = Trim$(CStr(ws.Cells(r, COL_PORT).Value))
+            expected = LCase$(Trim$(CStr(ws.Cells(r, COL_EXPECTED).Value)))
 
-        If Len(host) = 0 Then
-            ws.Cells(r, COL_HOST).Interior.Color = RGB(255, 200, 200)
-            errs = errs & "Row " & r & ": Host is empty" & vbCrLf
-        ElseIf InStr(host, ",") > 0 Then
-            ws.Cells(r, COL_HOST).Interior.Color = RGB(255, 200, 200)
-            errs = errs & "Row " & r & ": Host must not contain ','" & vbCrLf
-        End If
+            If Len(host) = 0 Then
+                ws.Cells(r, COL_HOST).Interior.Color = RGB(255, 200, 200)
+                errs = errs & "Row " & r & ": Host is empty" & vbCrLf
+            ElseIf InStr(host, ",") > 0 Then
+                ws.Cells(r, COL_HOST).Interior.Color = RGB(255, 200, 200)
+                errs = errs & "Row " & r & ": Host must not contain ','" & vbCrLf
+            End If
 
-        If Not IsValidPort(port) Then
-            ws.Cells(r, COL_PORT).Interior.Color = RGB(255, 200, 200)
-            errs = errs & "Row " & r & ": Port must be 1-65535 or '-'" & vbCrLf
-        End If
+            If Not IsValidPort(port) Then
+                ws.Cells(r, COL_PORT).Interior.Color = RGB(255, 200, 200)
+                errs = errs & "Row " & r & ": Port must be 1-65535 or '-'" & vbCrLf
+            End If
 
-        If expected <> "ok" And expected <> "ng" And expected <> "-" And Len(expected) > 0 Then
-            ws.Cells(r, COL_EXPECTED).Interior.Color = RGB(255, 200, 200)
-            errs = errs & "Row " & r & ": Expected must be ok / ng / -" & vbCrLf
+            If expected <> "ok" And expected <> "ng" And expected <> "-" And Len(expected) > 0 Then
+                ws.Cells(r, COL_EXPECTED).Interior.Color = RGB(255, 200, 200)
+                errs = errs & "Row " & r & ": Expected must be ok / ng / -" & vbCrLf
+            End If
         End If
     Next r
 
     ValidateRows = errs
 End Function
 
+' True when any cell in COL_SECTION..COL_DESC holds an error value (#N/A etc.).
+' Offending cells are highlighted; CStr on such a value raises error 13.
+Private Function RowHasErrorValue(ByVal ws As Worksheet, ByVal r As Long) As Boolean
+    Dim c As Long
+    For c = COL_SECTION To COL_DESC
+        If IsError(ws.Cells(r, c).Value) Then
+            ws.Cells(r, c).Interior.Color = RGB(255, 200, 200)
+            RowHasErrorValue = True
+        End If
+    Next c
+End Function
+
+' Strict: empty or '-' (ping-only), or digits 0-9 only within 1-65535.
+' IsNumeric is NOT used: it accepts "1,000" / "1e3" which would corrupt
+' the 4-field output format.
 Private Function IsValidPort(ByVal port As String) As Boolean
+    Dim i As Long, ch As String
     If port = "-" Or Len(port) = 0 Then
         IsValidPort = True
-    ElseIf IsNumeric(port) Then
-        IsValidPort = (CDbl(port) >= 1 And CDbl(port) <= 65535 And CDbl(port) = Int(CDbl(port)))
-    Else
+        Exit Function
+    End If
+    For i = 1 To Len(port)
+        ch = Mid$(port, i, 1)
+        If ch < "0" Or ch > "9" Then
+            IsValidPort = False
+            Exit Function
+        End If
+    Next i
+    If Len(port) > 5 Then
         IsValidPort = False
+    Else
+        IsValidPort = (CLng(port) >= 1 And CLng(port) <= 65535)
     End If
 End Function
 
