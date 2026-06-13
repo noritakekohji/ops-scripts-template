@@ -220,8 +220,9 @@ check_ping() {
 check_tcp() {
     local target="$1" to="$2"
     local host="${target%:*}" port="${target##*:}"
-    # /dev/tcp + timeout(1). Use a subshell so the redirect failure is caught.
-    timeout "$to" bash -c "exec 3<>/dev/tcp/$host/$port" >/dev/null 2>&1
+    # /dev/tcp + timeout(1). Pass host/port as positional args so they are not
+    # re-evaluated as shell syntax inside the inner bash -c command string.
+    timeout "$to" bash -c 'exec 3<>/dev/tcp/"$1"/"$2"' _ "$host" "$port" >/dev/null 2>&1
 }
 
 check_http() {
