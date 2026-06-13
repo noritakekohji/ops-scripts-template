@@ -1,51 +1,64 @@
 #!/usr/bin/env bats
 
+load test_helper
+
 setup() {
-    REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-    SCRIPT="$REPO_ROOT/scripts_linux/os/service_wait.sh"
+    SCRIPT="$SCRIPTS_DIR/os/service_wait.sh"
     FIXTURE_DIR="$BATS_TEST_DIRNAME/fixtures/service_wait"
-    export OPS_LIB="$REPO_ROOT/scripts_linux/lib"
+    export OPS_LIB="$LIB_DIR"
     export OPS_CONFIG_DIR="$REPO_ROOT/config"
     export TZ=Asia/Tokyo
+    TMPS=()
 }
 
-@test "rejects missing target list argument" {
+teardown() {
+    for f in "${TMPS[@]:-}"; do
+        [[ -n "$f" && -f "$f" ]] && rm -f "$f"
+    done
+    unset OPS_OVERRIDE_TIMEOUT_SEC OPS_OVERRIDE_INITIAL_WAIT_SEC \
+          OPS_OVERRIDE_INTERVAL_SEC OPS_OVERRIDE_SUCCESS_THRESHOLD
+}
+
+new_tmp() {
+    local t
+    t=$(mktemp)
+    TMPS+=("$t")
+    printf '%s' "$t"
+}
+
+@test "exit 1 when target list argument is missing" {
     run bash "$SCRIPT"
     [ "$status" -eq 1 ]
+    [[ "$output" =~ Usage|usage ]]
 }
 
-@test "rejects non-existent list file" {
+@test "exit 2 when list file does not exist" {
     run bash "$SCRIPT" /does/not/exist.lst
     [ "$status" -eq 2 ]
+    [[ "$output" == *"not found"* ]]
 }
 
-@test "rejects list with unknown type" {
-    tmp=$(mktemp)
-    cat > "$tmp" <<EOF
-foo, 127.0.0.1, bad type
-EOF
+@test "exit 2 when list contains unknown type" {
+    tmp=$(new_tmp)
+    printf 'foo, 127.0.0.1, bad type\n' > "$tmp"
     run bash "$SCRIPT" "$tmp"
     [ "$status" -eq 2 ]
-    rm -f "$tmp"
+    [[ "$output" == *"unknown_type"* ]]
 }
 
-@test "rejects list with unknown override key" {
-    tmp=$(mktemp)
-    cat > "$tmp" <<EOF
-ping, 127.0.0.1, ok, success_threshold=99
-EOF
+@test "exit 2 when list contains unknown override key" {
+    tmp=$(new_tmp)
+    printf 'ping, 127.0.0.1, ok, success_threshold=99\n' > "$tmp"
     run bash "$SCRIPT" "$tmp"
     [ "$status" -eq 2 ]
-    rm -f "$tmp"
+    [[ "$output" == *"unknown_key"* ]]
 }
 
-@test "parses sample.lst and reports start (timeout 1s)" {
-    # Force quick failure so test does not hang.
+@test "sample.lst is parsed and start line is logged (1s timeout)" {
     export OPS_OVERRIDE_TIMEOUT_SEC=1
     export OPS_OVERRIDE_INITIAL_WAIT_SEC=0
     export OPS_OVERRIDE_INTERVAL_SEC=1
     run bash "$SCRIPT" "$FIXTURE_DIR/sample.lst"
-    # 3 = timeout (expected since http://127.0.0.1/health is not up here)
     [ "$status" -eq 3 ]
     [[ "$output" == *"start targets=3"* ]]
 }
