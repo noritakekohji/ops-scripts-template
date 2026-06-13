@@ -8,8 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- server-snapshot: server-compare と change-detect を統合した自己完結ツール
+  （ServerSnapshot.ps1 / server_snapshot.sh / server_snapshot.bat + compare_server_info.py）
+  - 5 サブコマンド: collect / before / after / compare / list
 - network-check: targets.lst 編集用の Excel マクロブック targets-editor.xlsm
   （VBA ソース targets-editor.bas + ビルドスクリプト build_targets_editor.ps1）
+
+### Deprecated
+- server-compare: server-snapshot に統合。既存スクリプトは委譲ラッパーとして動作
+- change-detect: server-snapshot に統合。既存スクリプトは委譲ラッパーとして動作
 
 ## [0.1.0] - 2026-06-10
 
