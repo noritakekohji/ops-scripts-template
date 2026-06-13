@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `scripts_*/os/service-wait` ヘルスチェック待ちスクリプト。Ping / TCP / HTTP の連続成功でブロック解除、タイムアウト時 exit 3。
 - server-snapshot: server-compare と change-detect を統合した自己完結ツール
   （ServerSnapshot.ps1 / server_snapshot.sh / server_snapshot.bat + compare_server_info.py）
   - 5 サブコマンド: collect / before / after / compare / list
