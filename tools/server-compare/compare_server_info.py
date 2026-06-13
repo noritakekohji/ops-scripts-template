@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# NOTE: The canonical copy of this file is maintained in ../server-snapshot/.
+# This copy remains for direct callers; future updates should be made in
+# the server-snapshot directory first.
 """
 compare_server_info.py
     サーバ情報スナップショット（Get-ServerInfo / get_server_info の JSON）を

@@ -1,33 +1,10 @@
 @echo off
-setlocal enabledelayedexpansion
-cd /d "%~dp0"
-
-echo.
-echo ================================================
-echo  Get Server Info - Windows
-echo ================================================
-echo.
-echo Categories: all, os, network, services, packages,
-echo             users, filesystem, environment, security
-echo.
-
-set /p "CATEGORY=Categories    [Enter for 'all'          ]: "
-if "!CATEGORY!"=="" set "CATEGORY=all"
-
-set /p "OUTPUT=Output JSON path [Enter for auto-named file]: "
-
-echo.
-echo Running...
-echo.
-
-for /f %%t in ('powershell -NoLogo -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "TIMESTAMP=%%t"
-set "OPS_LOG_FILE=%~dpn0_!TIMESTAMP!.log"
-set "PSARGS=-Category !CATEGORY!"
-if not "!OUTPUT!"=="" set "PSARGS=!PSARGS! -OutputPath "!OUTPUT!""
-
-powershell.exe -ExecutionPolicy Bypass -NoLogo ^
-    -File "%~dp0Get-ServerInfo.ps1" !PSARGS!
-
-echo.
-pause
-endlocal
+:: DEPRECATED: Use server_snapshot.bat collect
+set "TARGET=%~dp0..\server-snapshot\server_snapshot.bat"
+if not exist "%TARGET%" (
+    echo [ERROR] server_snapshot.bat not found: %TARGET%
+    exit /b 10
+)
+echo [WARN] Get-ServerInfo.bat is deprecated. Use: server_snapshot.bat collect >&2
+call "%TARGET%" collect %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
