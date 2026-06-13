@@ -1,3 +1,7 @@
+> **非推奨**: このツールは [server-snapshot](../server-snapshot/README.md) に統合されました。
+> このディレクトリのスクリプトは server-snapshot への委譲ラッパーとして動作します。
+> 将来のバージョンで削除予定です。
+
 # Change Detection Tool
 
 デプロイや設定変更の前後でサーバー状態を収集し、差分を自動比較するツールです。

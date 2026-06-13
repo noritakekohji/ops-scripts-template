@@ -1,3 +1,7 @@
+> **非推奨**: このツールは [server-snapshot](../server-snapshot/README.md) に統合されました。
+> このディレクトリのスクリプトは server-snapshot への委譲ラッパーとして動作します。
+> 将来のバージョンで削除予定です。
+
 # Server Compare Tools
 
 サーバー設定の現新比較ツール。**このフォルダ一式をコピーするだけで動きます。**
