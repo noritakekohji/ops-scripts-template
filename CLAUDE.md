@@ -9,7 +9,8 @@
 
 エンタープライズ向け運用スクリプト（PowerShell / Bash / SQL 混在）の **共通テンプレート**。
 AWS / OS / 各種ミドルウェア（PostgreSQL / MySQL / SAP HANA / S/4HANA / SQL Server / Tomcat / nginx）の
-**制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / change-detect / server-compare / aws-instance-audit）、
+**制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / server-snapshot /
+cert-check / port-inventory / log-collector / aws-instance-audit）、
 **GitLab CI 設定**、**仕様書**を 1 リポジトリに集約しています。
 
 別リポジトリへの配備は `deploy/sync.py`（GitLab MR 自動作成）で行います。
@@ -25,7 +26,8 @@ scripts_linux/<domain>/   Bash 実装 (aws / hana / mysql / nginx / os / postgre
 scripts_windows/<domain>/ PowerShell 実装（domain は Linux 側と 1:1 対応）
 config/{default,dev,staging,production}/  環境別設定
 docs_{linux,windows}/<domain>/<file>.md   各スクリプトの仕様書
-tools/{perf-monitor,network-check,change-detect,server-compare,aws-instance-audit,templates}/  自己完結ツール
+tools/{perf-monitor,network-check,server-snapshot,cert-check,port-inventory,log-collector,aws-instance-audit,templates}/  自己完結ツール
+      {server-compare,change-detect}/  非推奨 → server-snapshot への委譲ラッパー
 deploy/    別リポジトリ同期 (sync.py + servers.yaml + SPEC.md)
 tests/{pester,bats,docker}/  ユニット & Docker E2E
 ci/{lint,security,test,deploy,template-check}/  GitLab CI 定義
@@ -108,6 +110,157 @@ GPO / AppLocker で以下がブロックされることがある。代替手段:
 | `python3` | PowerShell ネイティブ実装をフォールバックとして用意 |
 
 `tools/perf-monitor/PerfMonitor.ps1` がこのパターンの参考実装。
+
+### tools/ ディレクトリ規約（運用補助ツール）
+
+#### ツール一覧と役割
+
+| ツール | 用途 | 参考 |
+|---|---|---|
+| `perf-monitor` | 負荷テスト中のリソース定期収集 + HTML レポート | サブコマンドの参照実装 |
+| `network-check` | DNS/Ping/TCP 疎通チェック + targets-editor.xlsm | 対象リスト形式の参照実装 |
+| `server-snapshot` | サーバ情報スナップショットの収集・比較（server-compare + change-detect 統合） | 統合ツールの参照実装 |
+| `cert-check` | TLS 証明書有効期限チェック | 単機能ツールの参照実装 |
+| `port-inventory` | 待受ポート棚卸し・期待値監査 | 判定ロジックの参照実装 |
+| `log-collector` | 障害時の証跡（ログファイル）収集 → ZIP | conf 設計の参照実装 |
+| `aws-instance-audit` | AWS EC2 インスタンス棚卸し | — |
+| `server-compare` | **非推奨** → server-snapshot 委譲ラッパー | 委譲パターンの参照実装 |
+| `change-detect` | **非推奨** → server-snapshot 委譲ラッパー | 同上 |
+
+#### ファイル構成の必須パターン
+
+すべてのツールは以下の **3 プラットフォーム + ドキュメント** 構成に従う:
+
+```
+tools/<tool-name>/
+├── <ToolName>.ps1           # Windows 本体（UTF-8 BOM 付き）
+├── <tool_name>.sh           # Linux 本体（UTF-8 BOM なし + LF）
+├── <tool_name>.bat          # Windows 起動用バッチ（CRLF）
+├── <config_or_list_file>    # 設定ファイルまたは対象リスト（LF）
+└── README.md                # ツール固有の説明
+```
+
+**命名規則:**
+- PS1: `PascalCase`（例: `CertCheck.ps1`）
+- sh / bat: `snake_case`（例: `cert_check.sh`, `cert_check.bat`）
+- ディレクトリ: `kebab-case`（例: `cert-check/`）
+
+#### 自己完結ルール
+
+- ツールは **`scripts_*/lib/` に依存してはならない**。フォルダ一式コピーで動くこと
+- 共通比較エンジン等の Python スクリプトは **同梱コピー** とする
+- python3 が制限される環境では PS ネイティブ / Bash ネイティブのフォールバックを用意
+
+#### サブコマンドパターン
+
+複数機能を持つツールは PerfMonitor.ps1 パターンに従う:
+
+```powershell
+# PowerShell: ValidateSet でサブコマンド定義
+param(
+    [Parameter(Position = 0)]
+    [ValidateSet('collect','before','after','compare','list')]
+    [string]$Command = 'collect'
+)
+switch ($Command) { ... }
+```
+
+```bash
+# Bash: case 文でディスパッチ
+command="${1:-}"
+case "$command" in
+    collect) shift; do_collect "$@" ;;
+    compare) shift; do_compare "$@" ;;
+    *) usage; exit 1 ;;
+esac
+```
+
+```batch
+:: bat: goto :cmd_* ラベルでルーティング
+if /i "%CMD%"=="collect" goto :cmd_collect
+if /i "%CMD%"=="compare" goto :cmd_compare
+```
+
+#### 対象リスト（.lst）形式
+
+`network-check/targets.lst` と同じ思想で CSV 形式:
+
+```
+# コメント行（# で始まる）
+# セクション区切り: # ---- Section Name ----
+<field1>, <field2>, <field3>, <description>
+```
+
+- 各ツールのリスト形式:
+  - `cert_targets.lst`: `<host>, <port>, <warn_days>, <description>`
+  - `expected_ports.lst`: `<port>, <proto>, <expected>, <description>`
+  - `targets.lst`: `<host>, <port>, <expected>, <description>`
+
+#### 設定ファイル（.conf）形式
+
+INI ライクなプリセット定義（log-collector パターン）:
+
+```ini
+[preset_name]
+path = /path/to/glob/*.log
+max_file_size_mb = 100
+```
+
+#### 出力モード
+
+すべてのツールで以下の 3 出力モードをサポートする:
+
+| モード | PS フラグ | Bash フラグ | 説明 |
+|---|---|---|---|
+| コンソールテーブル | （既定） | （既定） | `printf` / `Format-Table` で整形 |
+| JSON | `-Json` | `--json` | 構造化出力。`ConvertTo-Json -Depth 3` |
+| HTML レポート | `-HtmlReport <path>` | `--html <path>` | 自己完結 HTML + 埋め込み CSS |
+| フィルタ | `-FailOnly` | `--fail-only` | NG/WARN のみ表示 |
+
+#### 判定ロジックの共通パターン
+
+対象リストの `expected` フィールドで判定を制御:
+
+| expected | 実際の状態 | 判定 |
+|---|---|---|
+| `ok` | 期待どおり | OK |
+| `ok` | 期待と異なる | **NG** |
+| `ng` | 期待どおり（存在しない） | OK |
+| `ng` | 期待と異なる（存在する） | **NG** |
+| `-` | — | INFO（判定なし） |
+| （リスト外） | 検出された | **WARN**（unexpected） |
+
+#### 委譲ラッパーパターン（非推奨ツール用）
+
+統合されたツールの旧エントリポイントを維持する場合:
+
+```powershell
+# PS1 ラッパー
+$target = Join-Path (Split-Path $PSScriptRoot) 'server-snapshot\ServerSnapshot.ps1'
+if (-not (Test-Path $target)) { Write-Error "..."; exit 10 }
+Write-Warning "[DEPRECATED] ... is deprecated. Use: ServerSnapshot.ps1 <subcommand>"
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $target <subcommand> @args
+exit $LASTEXITCODE
+```
+
+```bash
+# sh ラッパー
+TARGET="${SCRIPT_DIR}/../server-snapshot/server_snapshot.sh"
+[[ -f "$TARGET" ]] || { echo "[ERROR] ..."; exit 10; }
+echo "[WARN] ... is deprecated. Use: server_snapshot.sh <subcommand>" >&2
+exec bash "$TARGET" <subcommand> "$@"
+```
+
+#### 新規ツール追加時のチェックリスト
+
+1. `tools/<tool-name>/` ディレクトリを作成
+2. PS1 + sh + bat の 3 ファイルを作成（命名規則に従う）
+3. 設定/対象リストファイルをサンプル付きで作成
+4. `tests/bats/<tool_name>.bats` テストを作成
+5. `tools/<tool-name>/README.md` を作成
+6. `CHANGELOG.md` の `[Unreleased]` に追加
+7. エンコーディング検証: PS1 に BOM あり、sh に BOM なし + LF
+8. `ci/template-check` を通す
 
 ### lib と config の解決メカニズム
 
@@ -215,9 +368,27 @@ DRY_RUN=true python deploy/sync.py
 # 疎通チェック
 .\tools\network-check\Check-NetworkConnectivity.bat -TargetList targets.lst
 
-# サーバ情報の前後比較
-.\tools\change-detect\Change-Detect.bat before -Label deploy-v1
-.\tools\change-detect\Change-Detect.bat after  -Label deploy-v1 -Html report.html
+# サーバ情報スナップショット（server-compare + change-detect 統合先）
+.\tools\server-snapshot\server_snapshot.bat collect
+.\tools\server-snapshot\server_snapshot.bat before -Label deploy-v1
+.\tools\server-snapshot\server_snapshot.bat after  -Label deploy-v1 -HtmlReport report.html
+.\tools\server-snapshot\server_snapshot.bat compare before.json after.json
+.\tools\server-snapshot\server_snapshot.bat list
+
+# TLS 証明書期限チェック
+.\tools\cert-check\cert_check.bat -TargetList cert_targets.lst
+.\tools\cert-check\cert_check.bat -TargetList cert_targets.lst -HtmlReport report.html
+.\tools\cert-check\cert_check.bat -TargetList cert_targets.lst -Json
+
+# 待受ポート棚卸し
+.\tools\port-inventory\port_inventory.bat                                          # 一覧のみ
+.\tools\port-inventory\port_inventory.bat -ExpectedList expected_ports.lst          # 期待値監査
+.\tools\port-inventory\port_inventory.bat -ExpectedList expected_ports.lst -Json
+
+# 障害時の証跡収集
+.\tools\log-collector\log_collector.bat -Target tomcat,os
+.\tools\log-collector\log_collector.bat -Target nginx -Since 48h
+.\tools\log-collector\log_collector.bat -Target tomcat -From "2026-06-01 00:00" -To "2026-06-02 00:00"
 ```
 
 ---
@@ -231,6 +402,11 @@ DRY_RUN=true python deploy/sync.py
 - 同じドメインで Linux / Windows のコマンド体系を変える → 1:1 対応を維持
 - 新規 `.ps1` を BOM なしで保存（CI は通っても CP932 環境で文字化け）
 - `Start-Job` で長時間プロセスを起動（親が消えると死ぬ）→ `Start-Process`
+- 新規ツールで PS1 / sh / bat のどれかを省略 → 3 プラットフォーム必須
+- 対象リストのパーサを各ツール独自に書く → CSV + `#` コメント + セクション区切りの共通形式に従う
+- SAN 取得で `FriendlyName` を使う → 日本語 Windows で壊れる。`Oid.Value -eq '2.5.29.17'` を使う
+- PS5.1 で `@($list)` の要素数を `.Count` で取る → 要素 1 つの場合ハッシュテーブルのキー数が返る。`, @($list)` でカンマ演算子を使う
+- 非推奨ツールのラッパーで `exit 10` 以外のコードを返す → ターゲット不在は常に `exit 10`
 
 ---
 
