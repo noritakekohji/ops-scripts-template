@@ -51,6 +51,7 @@ usage() { sed -n '2,21p' "$0" >&2; exit 1; }
 status="unknown"
 rounds=0
 consec=0
+start_epoch=0
 
 cleanup() {
     local rc=$?
@@ -100,6 +101,15 @@ fi
 # Parsed targets stored as TAB-separated lines: type \t target \t desc \t per_check
 targets_text=""
 
+parse_fail() {
+    local lineno="$1"
+    local reason="$2"
+    local detail="${3:-}"
+    log_error "List parse error: line=$lineno reason=$reason${detail:+ $detail}"
+    status="failed"
+    exit 2
+}
+
 parse_list_line() {
     local lineno="$1" raw="$2"
     # Split on commas with surrounding whitespace.
@@ -114,8 +124,7 @@ parse_list_line() {
         cols[$i]="${cols[$i]%"${cols[$i]##*[![:space:]]}"}"
     done
     if [[ "${#cols[@]}" -lt 3 ]]; then
-        log_error "List parse error: line=$lineno reason=need_3_cols raw='$raw'"
-        status="failed"; exit 2
+        parse_fail "$lineno" need_3_cols "raw='$raw'"
     fi
     local p_type="${cols[0]}"
     local p_target="${cols[1]}"
@@ -125,17 +134,14 @@ parse_list_line() {
     case "$p_type" in
         ping|tcp|http) ;;
         *)
-            log_error "List parse error: line=$lineno reason=unknown_type type='$p_type'"
-            status="failed"; exit 2 ;;
+            parse_fail "$lineno" unknown_type "type='$p_type'" ;;
     esac
 
     if [[ "$p_type" == "tcp" && "$p_target" != *:* ]]; then
-        log_error "List parse error: line=$lineno reason=tcp_needs_host_port target='$p_target'"
-        status="failed"; exit 2
+        parse_fail "$lineno" tcp_needs_host_port "target='$p_target'"
     fi
     if [[ "$p_type" == "http" && "$p_target" != http://* && "$p_target" != https://* ]]; then
-        log_error "List parse error: line=$lineno reason=http_needs_url target='$p_target'"
-        status="failed"; exit 2
+        parse_fail "$lineno" http_needs_url "target='$p_target'"
     fi
 
     # Parse "key=value" tokens in column 4..end (space-separated within a single column).
@@ -152,21 +158,18 @@ parse_list_line() {
         local kv key val
         for kv in "${kvs[@]}"; do
             if [[ ! "$kv" =~ ^([^=]+)=(.*)$ ]]; then
-                log_error "List parse error: line=$lineno reason=bad_token token='$kv'"
-                status="failed"; exit 2
+                parse_fail "$lineno" bad_token "token='$kv'"
             fi
             key="${BASH_REMATCH[1]}"
             val="${BASH_REMATCH[2]}"
             case "$key" in
                 per_check_timeout_sec)
                     if ! [[ "$val" =~ ^[0-9]+$ ]]; then
-                        log_error "List parse error: line=$lineno reason=bad_per_check value='$val'"
-                        status="failed"; exit 2
+                        parse_fail "$lineno" bad_per_check "value='$val'"
                     fi
                     p_per_check="$val" ;;
                 *)
-                    log_error "List parse error: line=$lineno reason=unknown_key key='$key'"
-                    status="failed"; exit 2 ;;
+                    parse_fail "$lineno" unknown_key "key='$key'" ;;
             esac
         done
     fi
