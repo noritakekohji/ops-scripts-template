@@ -1,0 +1,28 @@
+# Expected listening ports inventory
+#
+# Format:
+#   <port>, <proto>, <expected>, <description>
+#
+# Fields:
+#   port       : Port number
+#   proto      : tcp or udp
+#   expected   : ok (should listen) / ng (should NOT listen) / - (info only)
+#   description: Free-text label
+#
+# Lines starting with '#' are comments. Blank lines are skipped.
+
+# ---- SSH ----
+22,   tcp, ok, SSH Server
+
+# ---- Web Services ----
+80,   tcp, ok, HTTP
+443,  tcp, ok, HTTPS
+
+# ---- Database (examples - edit for your environment) ----
+# 5432, tcp, ok, PostgreSQL
+# 3306, tcp, ok, MySQL
+# 1433, tcp, ng, SQL Server (should not be exposed)
+
+# ---- Monitoring ----
+# 9090, tcp, ok, Prometheus
+# 3000, tcp, ok, Grafana
