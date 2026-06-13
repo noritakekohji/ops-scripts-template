@@ -1,0 +1,22 @@
+# TLS Certificate Expiry Check target list
+#
+# Format:
+#   <host>, <port>, <warn_days>, <description>
+#
+# Fields:
+#   host       : Hostname or IP address to connect to
+#   port       : TCP port (default: 443 if omitted or '-')
+#   warn_days  : Warning threshold in days (default: 30 if omitted or '-')
+#   description: Free-text label for this entry
+#
+# Lines starting with '#' are comments. Blank lines are skipped.
+# Section headers like '# ---- Section ----' group entries in output.
+
+# ---- Public Web Services ----
+google.com,      443, 30, Google HTTPS
+github.com,      443, 30, GitHub HTTPS
+
+# ---- Internal Services (examples - edit for your environment) ----
+# app.internal.example.com,  443, 60, App Server
+# db.internal.example.com,  5432, 30, PostgreSQL TLS
+# mail.example.com,          587, 30, SMTP STARTTLS
