@@ -1,0 +1,6 @@
+# type, target, description [, key=value ...]
+ping, 127.0.0.1,             loopback
+tcp,  127.0.0.1:65535,       closed port (for timeout tests)
+http, http://127.0.0.1/health, http health,   per_check_timeout_sec=2
+# blank line below should be skipped
+
