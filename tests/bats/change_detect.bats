@@ -42,3 +42,12 @@ teardown() { rm -rf "$WORK"; }
     run bash "$CTL" compare "$WORK/nope.json" "${FIXTURES}/server_info_after.json"
     [ "$status" -eq 2 ]
 }
+
+@test "change_detect: 実行時に deprecation 警告が stderr に出る" {
+    if ! command -v python3 >/dev/null; then skip "python3 required"; fi
+    cd "$WORK"
+    # run は stdout+stderr を $output に混ぜるので、deprecated が含まれることを確認
+    run bash "$CTL" compare "${FIXTURES}/server_info_before.json" "${FIXTURES}/server_info_after.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ [Dd]eprecated ]]
+}
