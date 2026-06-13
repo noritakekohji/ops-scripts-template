@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （CertCheck.ps1 / cert_check.sh / cert_check.bat + cert_targets.lst サンプル）
 - port-inventory: 待受ポート棚卸し・監査ツール
   （PortInventory.ps1 / port_inventory.sh / port_inventory.bat + expected_ports.lst サンプル）
+- log-collector: 障害時の証跡（ログファイル）収集ツール
+  （LogCollector.ps1 / log_collector.sh / log_collector.bat + collect_targets.conf プリセット定義）
 - network-check: targets.lst 編集用の Excel マクロブック targets-editor.xlsm
   （VBA ソース targets-editor.bas + ビルドスクリプト build_targets_editor.ps1）
 
