@@ -211,12 +211,42 @@ fi
 
 log_info "start targets=$target_count timeout=$timeout_sec success=$success_threshold interval=$interval_sec initial=$initial_wait_sec"
 
-# Temporary: succeed immediately if timeout is 0, otherwise time out.
+check_ping() {
+    local host="$1" to="$2"
+    # ping -W is seconds on Linux. macOS differs but we target Linux here.
+    ping -c 1 -W "$to" -- "$host" >/dev/null 2>&1
+}
+
+check_tcp() {
+    local target="$1" to="$2"
+    local host="${target%:*}" port="${target##*:}"
+    # /dev/tcp + timeout(1). Use a subshell so the redirect failure is caught.
+    timeout "$to" bash -c "exec 3<>/dev/tcp/$host/$port" >/dev/null 2>&1
+}
+
+check_http() {
+    local url="$1" to="$2"
+    local code
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time "$to" -- "$url" 2>/dev/null || echo "000")
+    [[ "$code" =~ ^2[0-9][0-9]$ ]]
+}
+
+run_check() {
+    local type="$1" target="$2" to="$3"
+    case "$type" in
+        ping) check_ping "$target" "$to" ;;
+        tcp)  check_tcp  "$target" "$to" ;;
+        http) check_http "$target" "$to" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Temporary stub: real round loop comes in Task 5.
 sleep "$initial_wait_sec"
 deadline=$(( start_epoch + timeout_sec ))
 while [[ $(date +%s) -lt $deadline ]]; do
     rounds=$((rounds+1))
-    log_info "[ROUND $rounds] stub (not implemented)"
+    log_info "[ROUND $rounds] stub (functions defined, loop not wired)"
     sleep "$interval_sec"
 done
 status="timeout"

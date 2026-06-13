@@ -62,3 +62,35 @@ new_tmp() {
     [ "$status" -eq 3 ]
     [[ "$output" == *"start targets=3"* ]]
 }
+
+@test "tcp check succeeds against bash's own bound port" {
+    # Listen on an ephemeral port using nc.
+    port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
+    nc -l 127.0.0.1 "$port" >/dev/null 2>&1 &
+    nc_pid=$!
+    sleep 0.2
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+tcp, 127.0.0.1:${port}, listener
+EOF
+    export OPS_OVERRIDE_INITIAL_WAIT_SEC=0
+    export OPS_OVERRIDE_INTERVAL_SEC=1
+    export OPS_OVERRIDE_TIMEOUT_SEC=5
+    export OPS_OVERRIDE_SUCCESS_THRESHOLD=1
+    run bash "$SCRIPT" "$tmp"
+    kill "$nc_pid" 2>/dev/null || true
+    [ "$status" -eq 0 ]
+}
+
+@test "tcp check fails on closed port and times out" {
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+tcp, 127.0.0.1:1, closed
+EOF
+    export OPS_OVERRIDE_INITIAL_WAIT_SEC=0
+    export OPS_OVERRIDE_INTERVAL_SEC=1
+    export OPS_OVERRIDE_TIMEOUT_SEC=2
+    export OPS_OVERRIDE_SUCCESS_THRESHOLD=1
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 3 ]
+}
