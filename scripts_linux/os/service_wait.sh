@@ -242,13 +242,47 @@ run_check() {
     esac
 }
 
-# Temporary stub: real round loop comes in Task 5.
 sleep "$initial_wait_sec"
 deadline=$(( start_epoch + timeout_sec ))
+
 while [[ $(date +%s) -lt $deadline ]]; do
     rounds=$((rounds+1))
-    log_info "[ROUND $rounds] stub (functions defined, loop not wired)"
-    sleep "$interval_sec"
+    round_ok=1
+    while IFS=$'\t' read -r t_type t_target t_desc t_per_check; do
+        [[ -z "$t_type" ]] && continue
+        if run_check "$t_type" "$t_target" "$t_per_check"; then
+            log_info "[ROUND $rounds] $t_type $t_target -> OK (desc=$t_desc)"
+        else
+            log_warn "[ROUND $rounds] $t_type $t_target -> NG (desc=$t_desc)"
+            round_ok=0
+        fi
+    done <<< "$targets_text"
+
+    if [[ "$round_ok" -eq 1 ]]; then
+        consec=$((consec+1))
+    else
+        consec=0
+    fi
+
+    if [[ "$round_ok" -eq 1 ]]; then
+        log_info "[ROUND $rounds] PASS consec=$consec/$success_threshold"
+    else
+        log_info "[ROUND $rounds] FAIL consec=$consec/$success_threshold"
+    fi
+
+    if [[ "$consec" -ge "$success_threshold" ]]; then
+        status="success"
+        exit 0
+    fi
+
+    # Sleep, but don't oversleep the deadline.
+    now=$(date +%s)
+    remain=$(( deadline - now ))
+    if [[ "$remain" -le 0 ]]; then break; fi
+    sleep_n="$interval_sec"
+    [[ "$sleep_n" -gt "$remain" ]] && sleep_n="$remain"
+    sleep "$sleep_n"
 done
+
 status="timeout"
 exit 3
