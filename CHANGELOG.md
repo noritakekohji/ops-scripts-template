@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 5 サブコマンド: collect / before / after / compare / list
 - cert-check: TLS 証明書有効期限チェックツール
   （CertCheck.ps1 / cert_check.sh / cert_check.bat + cert_targets.lst サンプル）
+- port-inventory: 待受ポート棚卸し・監査ツール
+  （PortInventory.ps1 / port_inventory.sh / port_inventory.bat + expected_ports.lst サンプル）
 - network-check: targets.lst 編集用の Excel マクロブック targets-editor.xlsm
   （VBA ソース targets-editor.bas + ビルドスクリプト build_targets_editor.ps1）
 
