@@ -54,6 +54,17 @@ function _Default($value, $fallback) {
     return $value
 }
 
+function _IntOrFail($value, $fallback, $key) {
+    $v = if ($null -eq $value -or $value -eq '') { $fallback } else { $value }
+    if ("$v" -notmatch '^\d+$') {
+        Write-OpsLog -Level ERROR -Message "Config $key must be a non-negative integer, got '$v'"
+        $script:Status = 'failed'
+        Emit-Result
+        exit 1
+    }
+    return [int]$v
+}
+
 function Emit-Result {
     if ($script:Emitted) { return }
     $script:Emitted = $true
@@ -76,11 +87,11 @@ if (-not $TargetList) {
 
 $cfg = Get-OpsConfig -Name 'service_wait'
 
-$initialWait     = [int](_Default $cfg['initial_wait_sec']      0)
-$interval        = [int](_Default $cfg['interval_sec']          5)
-$successN        = [int](_Default $cfg['success_threshold']     3)
-$timeoutSec      = [int](_Default $cfg['timeout_sec']           600)
-$defaultPerCheck = [int](_Default $cfg['per_check_timeout_sec'] 5)
+$initialWait     = _IntOrFail $cfg['initial_wait_sec']      0   'initial_wait_sec'
+$interval        = _IntOrFail $cfg['interval_sec']          5   'interval_sec'
+$successN        = _IntOrFail $cfg['success_threshold']     3   'success_threshold'
+$timeoutSec      = _IntOrFail $cfg['timeout_sec']           600 'timeout_sec'
+$defaultPerCheck = _IntOrFail $cfg['per_check_timeout_sec'] 5   'per_check_timeout_sec'
 
 # Test hooks
 if ($env:OPS_OVERRIDE_INITIAL_WAIT_SEC)  { $initialWait = [int]$env:OPS_OVERRIDE_INITIAL_WAIT_SEC }
@@ -89,7 +100,7 @@ if ($env:OPS_OVERRIDE_TIMEOUT_SEC)       { $timeoutSec  = [int]$env:OPS_OVERRIDE
 if ($env:OPS_OVERRIDE_SUCCESS_THRESHOLD) { $successN    = [int]$env:OPS_OVERRIDE_SUCCESS_THRESHOLD }
 
 if ($cfg['LogFile']) {
-    try { Set-OpsLogConfig -File $cfg['LogFile'] -Level (_Default $cfg['LogLevel'] 'INFO') } catch { }
+    try { Set-OpsLogConfig -LogFile $cfg['LogFile'] -LogLevel (_Default $cfg['LogLevel'] 'INFO') } catch { }
 }
 
 if (-not (Test-Path -LiteralPath $TargetList -PathType Leaf)) {

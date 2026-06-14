@@ -80,11 +80,6 @@ default_per_check="${OPS_CONFIG[per_check_timeout_sec]:-5}"
 [[ -n "${OPS_OVERRIDE_TIMEOUT_SEC:-}"       ]] && timeout_sec="$OPS_OVERRIDE_TIMEOUT_SEC"
 [[ -n "${OPS_OVERRIDE_SUCCESS_THRESHOLD:-}" ]] && success_threshold="$OPS_OVERRIDE_SUCCESS_THRESHOLD"
 
-# Optional file logging
-if [[ -n "${OPS_CONFIG[LogFile]:-}" ]]; then
-    set_ops_log_config "${OPS_CONFIG[LogFile]}" "${OPS_CONFIG[LogLevel]:-INFO}" || true
-fi
-
 for v in initial_wait_sec interval_sec success_threshold timeout_sec default_per_check; do
     val="${!v}"
     if ! [[ "$val" =~ ^[0-9]+$ ]]; then
@@ -137,7 +132,7 @@ parse_list_line() {
             parse_fail "$lineno" unknown_type "type='$p_type'" ;;
     esac
 
-    if [[ "$p_type" == "tcp" && "$p_target" != *:* ]]; then
+    if [[ "$p_type" == "tcp" && ! "$p_target" =~ ^[^:]+:[0-9]+$ ]]; then
         parse_fail "$lineno" tcp_needs_host_port "target='$p_target'"
     fi
     if [[ "$p_type" == "http" && "$p_target" != http://* && "$p_target" != https://* ]]; then
