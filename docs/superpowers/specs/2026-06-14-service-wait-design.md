@@ -1,7 +1,8 @@
 # service-wait 設計仕様書
 
-- 日付: 2026-06-14（初版） / **2026-06-15（改訂 v2: 監視パラメータを lst に移行）**
-- ステータス: v1 実装済み、v2 仕様確定・実装未着手
+- 日付: 2026-06-14（初版） / 2026-06-15（v2 監視パラメータ移行） /
+  **2026-06-15（改訂 v3: ローカルノードの service / process チェックを追加）**
+- ステータス: v2 実装済み、v3 仕様確定・実装未着手
 - 配置ドメイン: `scripts_*/os/`
 
 ## 改訂サマリ (v2, 2026-06-15)
@@ -18,6 +19,26 @@
 
 詳細は §4 / §5 / §6 を参照。
 
+## 改訂サマリ (v3, 2026-06-15)
+
+**ローカルノード限定** で `service` と `process` の 2 タイプを追加する。
+他ノードへの SSH/WinRM 委譲は v3 でも対象外。
+
+- `type=service`
+  - Linux: `systemctl is-active <name>` が `active` を返したら OK
+  - Windows: `Get-Service -Name <name>` の `Status` が `Running` なら OK
+- `type=process`
+  - Linux: `pgrep -x <name>` が 1 件以上ヒットしたら OK（実行ファイル名の完全一致）
+  - Windows: `Get-Process -Name <name>` が 1 件以上返ったら OK（`.exe` 抜き、完全一致）
+- service / process 名は OS 依存。**OS ごとに別 .lst を使う前提** で、同じ lst を
+  別 OS 間で共有することは想定しない
+- 前提コマンド: Linux `service` → `systemctl`、Linux `process` → `pgrep`。
+  不足時は exit 10（既存規約どおり）
+- ターゲット書式: ping/tcp/http と同じ CSV 行。service/process では target に
+  service 名・プロセス名を入れる。カンマと先頭末尾空白は不可
+
+詳細は §5 / §6 を参照。
+
 ## 1. 目的とスコープ
 
 デプロイ・サービス再起動後の **ヘルスチェック待ち** を行う運用スクリプト。
@@ -32,13 +53,13 @@ CI/CD・運用手順内で「次の手順に進んでよい」判定や、フェ
 - TCP ポート Listen チェック
 - HTTP/HTTPS ステータスコードチェック（2xx を OK とみなす）
 - ローカル / リモート問わず、ネットワーク到達可能なターゲット
+- **ローカルノードの OS サービス状態（systemctl / Get-Service）チェック**（v3）
+- **ローカルノードのプロセス存在チェック**（v3）
 - 単一プロセスでの定期ポーリングと連続成功判定
 
 ### スコープ外
 
-- OS サービス状態（systemctl / Get-Service）チェック
-- プロセス存在チェック
-- SSH/WinRM 経由のリモート OS 操作
+- SSH/WinRM 経由でのリモートノード OS / サービス / プロセス操作
 - 早期失敗（fail_threshold）機構
 - JSON / HTML レポート出力
 
@@ -130,23 +151,25 @@ tcp,  10.0.0.1:8080,      Tomcat
 
 ```
 # type, target, description [, key=value ...]
-ping, 10.0.0.1,                node-A
-ping, 10.0.0.2,                node-B
-tcp,  10.0.0.1:8080,           Tomcat
-http, https://api/health,      API
-http, https://slow/health,     slow API,   per_check_timeout_sec=30
+ping,    10.0.0.1,                node-A
+ping,    10.0.0.2,                node-B
+tcp,     10.0.0.1:8080,           Tomcat
+http,    https://api/health,      API
+http,    https://slow/health,     slow API,   per_check_timeout_sec=30
+service, httpd,                   Apache HTTP Server (v3)
+process, java,                    JVM process (v3)
 ```
 
 - `#` 始まりの行・空行はスキップ
 - フィールド区切り: カンマ + 任意の空白
 - セクション区切りコメント `# ---- Section ----` も他ツールと同じく許容
 
-### 5.3 必須フィールド（v1 と同一）
+### 5.3 必須フィールド
 
 | 列 | 内容 | 制約 |
 |---|---|---|
-| type | `ping` / `tcp` / `http` | 上記 3 つ以外は exit 2 |
-| target | チェック対象 | type ごとの形式: ping は host、tcp は host:port、http は URL |
+| type | `ping` / `tcp` / `http` / `service` / `process` | 上記 5 つ以外は exit 2 |
+| target | チェック対象 | type ごとの形式: ping は host、tcp は host:port、http は URL、service / process は名前（空白・カンマ不可） |
 | description | 説明 | 自由テキスト。ログ表示用 |
 
 ### 5.4 行レベルのオプションオーバーライド（v1 と同一）
@@ -159,15 +182,19 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
 
 未知のキーが現れた場合は exit 2。
 
-### 5.5 判定基準（v1 と同一）
+### 5.5 判定基準
 
 | type | OK の条件 |
 |---|---|
-| ping | ICMP echo 応答が 1 回返ること |
-| tcp  | TCP connect が成功すること |
-| http | HTTP ステータスコードが 2xx であること |
+| ping    | ICMP echo 応答が 1 回返ること |
+| tcp     | TCP connect が成功すること |
+| http    | HTTP ステータスコードが 2xx であること |
+| service | ローカル OS で対象サービスが起動中（Linux=`active`, Windows=`Running`）（v3） |
+| process | ローカル OS で対象実行ファイル名のプロセスが 1 件以上存在すること（v3） |
 
 `expected` 列は持たない。すべて「OK 判定」固定。
+service / process はローカルノードでしか確認できないため、別ノードを含むリストで
+混在させる場合は実行ノード上で OK が出るかどうかを利用者が把握する必要がある。
 
 ### 5.6 値の解決順位
 
@@ -203,9 +230,11 @@ Phase 3: 事前検査
   - 各行の type / target 形式バリデーション
   - 各行の key=value バリデーション（未知キーで exit 2）
   - 前提コマンド存在確認:
-      ping → ping (Linux) / Test-Connection (Windows)
-      http → curl (Linux) / Invoke-WebRequest (Windows)
-      tcp  → 標準機能で対応（追加コマンド不要）
+      ping    → ping (Linux) / Test-Connection (Windows)
+      http    → curl (Linux) / Invoke-WebRequest (Windows)
+      tcp     → 標準機能で対応（追加コマンド不要）
+      service → systemctl (Linux) / Get-Service (Windows; PS5.1 同梱) (v3)
+      process → pgrep (Linux) / Get-Process (Windows; PS5.1 同梱) (v3)
   - 不足時は exit 10
 
 Phase 4: 本処理
@@ -241,12 +270,20 @@ Phase 5: 後始末・結果出力
 
 | type | Linux 実装 | Windows 実装 |
 |---|---|---|
-| ping | `ping -c1 -W <timeout> <host>` (Linux ping は `-W` 秒) | `Test-Connection -Count 1 -TimeoutSeconds <timeout> -Quiet` |
-| tcp  | `bash -c 'exec 3<>/dev/tcp/<host>/<port>'` をタイムアウト付きで実行 | `[System.Net.Sockets.TcpClient]::ConnectAsync` + `Wait(<timeout>ms)` |
-| http | `curl -sS -o /dev/null -w '%{http_code}' --max-time <timeout> <url>` で 2xx 判定 | `Invoke-WebRequest -UseBasicParsing -TimeoutSec <timeout> -UseDefaultCredentials:$false` で StatusCode 判定 |
+| ping    | `ping -c1 -W <timeout> <host>` (Linux ping は `-W` 秒) | `Test-Connection -Count 1 -TimeoutSeconds <timeout> -Quiet` |
+| tcp     | `bash -c 'exec 3<>/dev/tcp/<host>/<port>'` をタイムアウト付きで実行 | `[System.Net.Sockets.TcpClient]::ConnectAsync` + `Wait(<timeout>ms)` |
+| http    | `curl -sS -o /dev/null -w '%{http_code}' --max-time <timeout> <url>` で 2xx 判定 | `Invoke-WebRequest -UseBasicParsing -TimeoutSec <timeout> -UseDefaultCredentials:$false` で StatusCode 判定 |
+| service | `timeout <to> systemctl is-active --quiet <name>` の exit 0 を OK | `(Get-Service -Name <name> -ErrorAction SilentlyContinue).Status -eq 'Running'` |
+| process | `timeout <to> pgrep -x <name> >/dev/null` の exit 0 を OK | `@(Get-Process -Name <name> -ErrorAction SilentlyContinue).Count -ge 1` |
 
 ICMP は OS により権限・実装差があるため、PowerShell 5.1 で `Test-Connection -TimeoutSeconds`
 が使えない環境では `.NET Ping` クラス（`System.Net.NetworkInformation.Ping`）にフォールバック。
+
+service / process は実行ノードのローカル OS にしか問い合わせない。リモート対象を
+書いても OK にはならない（NG として通常のラウンドロジックに乗る）。
+target 文字列は前後空白除去後そのまま `systemctl` / `pgrep` / `Get-Service` /
+`Get-Process` の引数として渡す。シェルメタ文字を含む値はパース時に拒否
+（`reason=bad_service_name` / `reason=bad_process_name` で exit 2）。
 
 ## 7. 出力仕様
 
@@ -329,7 +366,7 @@ ICMP は OS により権限・実装差があるため、PowerShell 5.1 で `Tes
 - PS5.1 互換禁止構文（`??`, `?:`, `?.`, `utf8NoBOM` 等）は使用しない
 - `Start-Job` ではなく必要に応じ `Start-Process`
 
-## 12. 受入条件（v2）
+## 12. 受入条件（v3）
 
 1. `scripts_linux/os/service_wait.sh targets.lst` でリスト全行 OK になるまで待ち exit 0
 2. すべてのターゲットが応答しないリストでヘッダ `timeout_sec = 10` を指定し exit 3
@@ -340,5 +377,13 @@ ICMP は OS により権限・実装差があるため、PowerShell 5.1 で `Tes
 7. 同じ lst を別の引数で渡すと、それぞれのヘッダで挙動が独立に切り替わる
 8. conf に `interval_sec = ...` 等が残っていても WARN を出して無視され、起動はする
 9. Linux / Windows 両方でログフォーマットが規約どおり
-10. bats / Pester テストがローカル・Docker・CI で通る
-11. `ci/template-check` を通る
+10. (v3) Linux で `service, sshd, ssh daemon` を持つ lst が systemd 環境で OK になる
+11. (v3) Linux で `process, bash, login shell` を持つ lst が bash プロセスを検出して OK
+12. (v3) Windows で `service, BITS, Background Intelligent Transfer Service` が
+    BITS Running 時に OK になる
+13. (v3) Windows で `process, powershell, current shell` が PowerShell プロセスを検出して OK
+14. (v3) 存在しない service/process 名を渡したリストはタイムアウトで exit 3
+15. (v3) `pgrep` を PATH から外した状態で process 行を含む lst を実行 → exit 10
+16. (v3) target に空白やカンマを含む service / process 名は exit 2
+17. bats / Pester テストがローカル・Docker・CI で通る
+18. `ci/template-check` を通る
