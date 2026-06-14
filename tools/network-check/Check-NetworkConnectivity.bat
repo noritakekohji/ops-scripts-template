@@ -8,22 +8,28 @@ echo  Network Connectivity Check
 echo ================================================
 echo.
 
-:: Default target list
-set "DEFAULT_LIST="
-if exist "%~dp0targets.lst" set "DEFAULT_LIST=targets.lst"
+:: ---------------------------------------------------------------------------
+:: Target list resolution
+::   1) %1 if supplied
+::   2) DEFAULT_LIST set below (targets.lst alongside this bat)
+:: ---------------------------------------------------------------------------
+set "DEFAULT_LIST=%~dp0targets.lst"
 
-if defined DEFAULT_LIST (
-    set /p "LIST=Target list file [Enter for '%DEFAULT_LIST%']: "
-    if "!LIST!"=="" set "LIST=%DEFAULT_LIST%"
+if not "%~1"=="" (
+    set "LIST=%~1"
 ) else (
-    set /p "LIST=Target list file: "
+    set "LIST=%DEFAULT_LIST%"
 )
 
-if "!LIST!"=="" (
-    echo No target list specified.
+if not exist "!LIST!" (
+    echo [ERROR] Target list not found: !LIST!
+    echo Usage: %~nx0 [target-list-file]
     pause
-    exit /b 1
+    exit /b 2
 )
+
+echo Target list: !LIST!
+echo.
 
 set /p "HTML=HTML report path   [Enter to skip       ]: "
 
