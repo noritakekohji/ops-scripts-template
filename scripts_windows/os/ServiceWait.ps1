@@ -203,11 +203,37 @@ function Invoke-Check {
 
 Start-Sleep -Seconds $initialWait
 $deadline = $script:Start.AddSeconds($timeoutSec)
-while ((Get-Date) -lt $deadline) {
-    $script:Rounds++
-    Write-OpsLog -Level INFO -Message "[ROUND $($script:Rounds)] stub (not implemented)"
-    Start-Sleep -Seconds $interval
+
+try {
+    while ((Get-Date) -lt $deadline) {
+        $script:Rounds++
+        $roundOk = $true
+        foreach ($t in $targets) {
+            if (Invoke-Check -T $t) {
+                Write-OpsLog -Level INFO -Message ("[ROUND {0}] {1} {2} -> OK (desc={3})" -f $script:Rounds, $t.type, $t.target, $t.desc)
+            } else {
+                Write-OpsLog -Level WARN -Message ("[ROUND {0}] {1} {2} -> NG (desc={3})" -f $script:Rounds, $t.type, $t.target, $t.desc)
+                $roundOk = $false
+            }
+        }
+
+        if ($roundOk) { $script:Consec++ } else { $script:Consec = 0 }
+        $verdict = if ($roundOk) { 'PASS' } else { 'FAIL' }
+        Write-OpsLog -Level INFO -Message ("[ROUND {0}] {1} consec={2}/{3}" -f $script:Rounds, $verdict, $script:Consec, $successN)
+
+        if ($script:Consec -ge $successN) {
+            $script:Status = 'success'
+            Emit-Result
+            exit 0
+        }
+
+        $remain = ($deadline - (Get-Date)).TotalSeconds
+        if ($remain -le 0) { break }
+        $sleepN = [Math]::Min($interval, [int][Math]::Ceiling($remain))
+        Start-Sleep -Seconds $sleepN
+    }
+} finally {
+    if ($script:Status -eq 'unknown') { $script:Status = 'timeout' }
+    Emit-Result
 }
-$script:Status = 'timeout'
-Emit-Result
 exit 3

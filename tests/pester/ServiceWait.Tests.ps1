@@ -61,3 +61,33 @@ Describe 'ServiceWait.ps1 argument and list parsing' {
         }
     }
 }
+
+Describe 'ServiceWait.ps1 round semantics' {
+    It 'exits 0 when a TCP listener is up' {
+        # Bind an ephemeral port and accept once.
+        $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), 0
+        $listener.Start()
+        $port = $listener.LocalEndpoint.Port
+        try {
+            $work = New-TempWorkdir
+            try {
+                $tmp = Join-Path $work 'listener.lst'
+                "tcp, 127.0.0.1:$port, listener" | Set-Content -Path $tmp -Encoding ASCII
+                $env:OPS_OVERRIDE_INITIAL_WAIT_SEC  = '0'
+                $env:OPS_OVERRIDE_INTERVAL_SEC      = '1'
+                $env:OPS_OVERRIDE_TIMEOUT_SEC       = '5'
+                $env:OPS_OVERRIDE_SUCCESS_THRESHOLD = '1'
+                $r = Invoke-SW @('-TargetList', $tmp)
+                $r.ExitCode | Should -Be 0
+            } finally {
+                Remove-TempPath $work
+                $env:OPS_OVERRIDE_INITIAL_WAIT_SEC  = $null
+                $env:OPS_OVERRIDE_INTERVAL_SEC      = $null
+                $env:OPS_OVERRIDE_TIMEOUT_SEC       = $null
+                $env:OPS_OVERRIDE_SUCCESS_THRESHOLD = $null
+            }
+        } finally {
+            $listener.Stop()
+        }
+    }
+}
