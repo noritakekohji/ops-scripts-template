@@ -149,6 +149,55 @@ if ($targets.Count -eq 0) {
 Write-OpsLog -Level INFO -Message ("start targets={0} timeout={1} success={2} interval={3} initial={4}" -f `
     $targets.Count, $timeoutSec, $successN, $interval, $initialWait)
 
+function Test-PingHost {
+    param([string]$HostName, [int]$TimeoutSec)
+    try {
+        $p = New-Object System.Net.NetworkInformation.Ping
+        $r = $p.Send($HostName, ($TimeoutSec * 1000))
+        return $r.Status -eq 'Success'
+    } catch {
+        return $false
+    }
+}
+
+function Test-TcpEndpoint {
+    param([string]$Target, [int]$TimeoutSec)
+    $h, $p = $Target -split ':', 2
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $task   = $client.ConnectAsync($h, [int]$p)
+        if ($task.Wait([TimeSpan]::FromSeconds($TimeoutSec))) {
+            return $client.Connected
+        }
+        return $false
+    } catch {
+        return $false
+    } finally {
+        if ($client) { $client.Close() }
+    }
+}
+
+function Test-HttpUrl {
+    param([string]$Url, [int]$TimeoutSec)
+    try {
+        $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec -ErrorAction Stop
+        return ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 300)
+    } catch {
+        return $false
+    }
+}
+
+function Invoke-Check {
+    param([hashtable]$T)
+    switch ($T.type) {
+        'ping' { return (Test-PingHost     -HostName $T.target -TimeoutSec $T.per_check) }
+        'tcp'  { return (Test-TcpEndpoint  -Target   $T.target -TimeoutSec $T.per_check) }
+        'http' { return (Test-HttpUrl      -Url      $T.target -TimeoutSec $T.per_check) }
+        default { return $false }
+    }
+}
+
 Start-Sleep -Seconds $initialWait
 $deadline = $script:Start.AddSeconds($timeoutSec)
 while ((Get-Date) -lt $deadline) {
