@@ -1,8 +1,22 @@
 # service-wait 設計仕様書
 
-- 日付: 2026-06-14
-- ステータス: ドラフト（実装計画前）
+- 日付: 2026-06-14（初版） / **2026-06-15（改訂 v2: 監視パラメータを lst に移行）**
+- ステータス: v1 実装済み、v2 仕様確定・実装未着手
 - 配置ドメイン: `scripts_*/os/`
+
+## 改訂サマリ (v2, 2026-06-15)
+
+「設定ファイルはスクリプトの設定、監視用ファイルは監視タイミングごとの設定」という
+責任分割に合わせて、`initial_wait_sec` / `interval_sec` / `success_threshold` /
+`timeout_sec` / `per_check_timeout_sec` の 5 項目を **conf から lst のヘッダに移動** する。
+
+- `service_wait.conf` は **ロギング設定のみ** (`LogFile`, `LogLevel`) を保持
+- `.lst` ファイル先頭に `key = value` 形式で監視パラメータを記述（全項目オプション）
+- lst ヘッダで未指定の項目は **スクリプトのハードコード既定値** にフォールバック
+  （conf には監視パラメータの既定値を持たない）
+- 行レベルの `per_check_timeout_sec=N` オーバーライドは v1 と同じく継続サポート
+
+詳細は §4 / §5 / §6 を参照。
 
 ## 1. 目的とスコープ
 
@@ -57,37 +71,62 @@ scripts_windows/os/ServiceWait.ps1 -TargetList path\to\targets.lst
 
 設定は環境変数 `OPS_ENV` で切り替え（既定: `default`）。
 
-## 4. 設定ファイル `service_wait.conf`
+## 4. 設定ファイル `service_wait.conf`（v2）
 
-`config/<env>/service_wait.conf` → `config/default/service_wait.conf` の順で解決。
-default と env のマージは行わない（CLAUDE.md の優先順位規約に準拠）。
+スクリプト単位の設定のみを保持する。`config/<env>/service_wait.conf` →
+`config/default/service_wait.conf` の順で解決。default と env のマージは行わない
+（CLAUDE.md の優先順位規約に準拠）。
 
 ```ini
-# 起動後の初期待機（秒）
-initial_wait_sec      = 0
-# ラウンド間隔（秒）
-interval_sec          = 5
-# 連続成功ラウンド数
-success_threshold     = 3
-# 全体タイムアウト（秒）
-timeout_sec           = 600
-# 1 チェックの上限秒（個別オーバーライド可能）
-per_check_timeout_sec = 5
 # ログファイル出力先（空ならコンソールのみ）
-LogFile               =
+LogFile  =
 # ログレベル DEBUG/INFO/WARN/ERROR
-LogLevel              = INFO
+LogLevel = INFO
 ```
 
-これらは **既定値** であり、ターゲットリスト側で `per_check_timeout_sec` のみオーバーライドできる。
-他の 4 項目はラウンド全体の挙動を司るためターゲット個別の指定は不可。
+監視パラメータ（`initial_wait_sec` 等）は conf には**置かない**。配置場所は `.lst`
+ヘッダ（§5.1）。conf にこれらのキーを書いた場合は **WARN を出して無視** する
+（誤って v1 形式を残しても挙動が壊れないよう defensive）。
 
-## 5. ターゲットリスト仕様
+## 5. ターゲットリスト仕様（v2）
 
 CSV 風形式。リポジトリの他ツール（network-check / cert-check / port-inventory）の
-`.lst` 慣習に揃える。
+`.lst` 慣習に揃えつつ、**先頭にヘッダブロック**を持つ点が他ツールとの違い。
 
-### 5.1 形式
+### 5.1 ヘッダ（監視パラメータ）
+
+ファイル先頭にデータ行（カンマを含む CSV 行）が出現する **前** までの間、
+`key = value` 形式の行を任意の順序・任意の個数で記述できる。すべて省略可能。
+
+```
+# 監視パラメータ（全項目オプション）
+initial_wait_sec      = 10
+interval_sec          = 5
+success_threshold     = 3
+timeout_sec           = 600
+per_check_timeout_sec = 5
+
+# ---- Web tier ----
+http, https://api/health, API
+tcp,  10.0.0.1:8080,      Tomcat
+```
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `initial_wait_sec` | 0 | 起動後の初期待機（秒） |
+| `interval_sec` | 5 | ラウンド間隔（秒） |
+| `success_threshold` | 3 | 連続成功ラウンド数 |
+| `timeout_sec` | 600 | 全体タイムアウト（秒） |
+| `per_check_timeout_sec` | 5 | 個別チェックタイムアウト（秒、行レベルでさらにオーバーライド可） |
+
+- フォーマット: `key = value`（前後空白は無視、`#` から行末はコメント）
+- 値は非負整数のみ受け付ける。それ以外は exit 2
+- 未知のキーは exit 2（誤記の早期検知）
+- 同じキーが複数回現れた場合は **後勝ち** + WARN ログ
+- ヘッダブロックの終わりは「最初のターゲット行（type で始まりカンマを含む）」を検出した時点
+  （以後はヘッダ行を受け付けず、`key=value` 行が現れたら exit 2）
+
+### 5.2 ターゲット行（v1 と同一）
 
 ```
 # type, target, description [, key=value ...]
@@ -102,7 +141,7 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
 - フィールド区切り: カンマ + 任意の空白
 - セクション区切りコメント `# ---- Section ----` も他ツールと同じく許容
 
-### 5.2 必須フィールド
+### 5.3 必須フィールド（v1 と同一）
 
 | 列 | 内容 | 制約 |
 |---|---|---|
@@ -110,18 +149,17 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
 | target | チェック対象 | type ごとの形式: ping は host、tcp は host:port、http は URL |
 | description | 説明 | 自由テキスト。ログ表示用 |
 
-### 5.3 オプションオーバーライド列
+### 5.4 行レベルのオプションオーバーライド（v1 と同一）
 
 4 列目以降に空白区切りで `key=value` を複数指定可能。
 
 | キー | 用途 |
 |---|---|
-| `per_check_timeout_sec` | この行のみ個別タイムアウト（秒） |
+| `per_check_timeout_sec` | この行のみ個別タイムアウト（秒）。ヘッダ値より優先 |
 
-未知のキーが現れた場合は exit 2（パースエラー）として明示的に落とす。
-これは「conf 側の他のキーをここで指定しようとした」誤用を早期検知するため。
+未知のキーが現れた場合は exit 2。
 
-### 5.4 判定基準（全行共通・固定）
+### 5.5 判定基準（v1 と同一）
 
 | type | OK の条件 |
 |---|---|
@@ -130,6 +168,16 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
 | http | HTTP ステータスコードが 2xx であること |
 
 `expected` 列は持たない。すべて「OK 判定」固定。
+
+### 5.6 値の解決順位
+
+```
+1. ターゲット行の per_check_timeout_sec=N オーバーライド（per_check_timeout_sec のみ）
+2. .lst ヘッダの key = value
+3. スクリプトのハードコード既定値（§5.1 表の「既定値」列）
+```
+
+`service_wait.conf` には監視パラメータの既定値を持たないため、解決順位から除外。
 
 ## 6. 動作フロー（5-phase 構造）
 
@@ -141,11 +189,17 @@ Phase 1: ヘッダ・シバン
 Phase 2: 引数・設定読み込み
   - ターゲットリストファイル引数を受領
   - 共通 lib (logging.sh / Logging.psm1) ロード
-  - config 解決: $OPS_CONFIG_DIR → config/<env>/service_wait.conf → config/default/service_wait.conf
-  - ターゲットリストのパース → 内部配列
+  - config 解決: $OPS_CONFIG_DIR → config/<env>/service_wait.conf
+                 → config/default/service_wait.conf
+    （v2: 監視パラメータキーが残っていれば WARN、ログ系のみ採用）
+  - ターゲットリストのパース
+      a. ヘッダブロック: 最初のターゲット行が出るまで key=value をスキャン
+         監視パラメータ 5 項目を内部状態に格納（未指定はハードコード既定値）
+      b. ターゲット行: type/target/desc + 行レベルオーバーライドを内部配列に格納
 
 Phase 3: 事前検査
   - リストファイルの存在・読み取り可能性
+  - ヘッダ各キーの値バリデーション（非負整数、未知キーは exit 2）
   - 各行の type / target 形式バリデーション
   - 各行の key=value バリデーション（未知キーで exit 2）
   - 前提コマンド存在確認:
@@ -275,13 +329,16 @@ ICMP は OS により権限・実装差があるため、PowerShell 5.1 で `Tes
 - PS5.1 互換禁止構文（`??`, `?:`, `?.`, `utf8NoBOM` 等）は使用しない
 - `Start-Job` ではなく必要に応じ `Start-Process`
 
-## 12. 受入条件
+## 12. 受入条件（v2）
 
 1. `scripts_linux/os/service_wait.sh targets.lst` でリスト全行 OK になるまで待ち exit 0
-2. すべてのターゲットが応答しないリストで `timeout_sec=10` を指定し exit 3
+2. すべてのターゲットが応答しないリストでヘッダ `timeout_sec = 10` を指定し exit 3
 3. 不正な type を含むリストで exit 2
 4. ping コマンドを `PATH` から外して実行し exit 10
 5. `per_check_timeout_sec=30` をリスト行に書いた場合、その行のみ 30 秒タイムアウトで動作
-6. Linux / Windows 両方でログフォーマットが規約どおり
-7. bats / Pester テストがローカル・Docker・CI で通る
-8. `ci/template-check` を通る
+6. lst ヘッダに監視パラメータを書かなくてもハードコード既定値で動作（5/3/600/0/5）
+7. 同じ lst を別の引数で渡すと、それぞれのヘッダで挙動が独立に切り替わる
+8. conf に `interval_sec = ...` 等が残っていても WARN を出して無視され、起動はする
+9. Linux / Windows 両方でログフォーマットが規約どおり
+10. bats / Pester テストがローカル・Docker・CI で通る
+11. `ci/template-check` を通る
