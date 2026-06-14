@@ -48,10 +48,22 @@ if (-not $opsLib) {
 Import-Module (Join-Path $opsLib 'Logging.psm1') -Force
 Import-Module (Join-Path $opsLib 'Config.psm1')  -Force
 
+function _Default($value, $fallback) {
+    if ($null -eq $value -or $value -eq '') { return $fallback }
+    return $value
+}
+
 function Emit-Result {
     $elapsed = [int]((Get-Date) - $script:Start).TotalSeconds
     Write-OpsLog -Level INFO -Message ("[RESULT] status={0} rounds={1} elapsed={2}s consec={3}" -f `
         $script:Status, $script:Rounds, $elapsed, $script:Consec)
+}
+
+function Invoke-ParseFail([string]$Message) {
+    Write-OpsLog -Level ERROR -Message $Message
+    $script:Status = 'failed'
+    Emit-Result
+    exit 2
 }
 
 if (-not $TargetList) {
@@ -61,11 +73,11 @@ if (-not $TargetList) {
 
 $cfg = Get-OpsConfig -Name 'service_wait'
 
-$initialWait = [int]($cfg['initial_wait_sec']      | ForEach-Object { if ($_) { $_ } else { 0 } })
-$interval    = [int]($cfg['interval_sec']          | ForEach-Object { if ($_) { $_ } else { 5 } })
-$successN    = [int]($cfg['success_threshold']     | ForEach-Object { if ($_) { $_ } else { 3 } })
-$timeoutSec  = [int]($cfg['timeout_sec']           | ForEach-Object { if ($_) { $_ } else { 600 } })
-$defaultPerCheck = [int]($cfg['per_check_timeout_sec'] | ForEach-Object { if ($_) { $_ } else { 5 } })
+$initialWait     = [int](_Default $cfg['initial_wait_sec']      0)
+$interval        = [int](_Default $cfg['interval_sec']          5)
+$successN        = [int](_Default $cfg['success_threshold']     3)
+$timeoutSec      = [int](_Default $cfg['timeout_sec']           600)
+$defaultPerCheck = [int](_Default $cfg['per_check_timeout_sec'] 5)
 
 # Test hooks
 if ($env:OPS_OVERRIDE_INITIAL_WAIT_SEC)  { $initialWait = [int]$env:OPS_OVERRIDE_INITIAL_WAIT_SEC }
@@ -74,12 +86,11 @@ if ($env:OPS_OVERRIDE_TIMEOUT_SEC)       { $timeoutSec  = [int]$env:OPS_OVERRIDE
 if ($env:OPS_OVERRIDE_SUCCESS_THRESHOLD) { $successN    = [int]$env:OPS_OVERRIDE_SUCCESS_THRESHOLD }
 
 if ($cfg['LogFile']) {
-    try { Set-OpsLogConfig -File $cfg['LogFile'] -Level ($cfg['LogLevel'] | ForEach-Object { if ($_) { $_ } else { 'INFO' } }) } catch { }
+    try { Set-OpsLogConfig -File $cfg['LogFile'] -Level (_Default $cfg['LogLevel'] 'INFO') } catch { }
 }
 
 if (-not (Test-Path -LiteralPath $TargetList -PathType Leaf)) {
-    Write-OpsLog -Level ERROR -Message "Target list file not found: $TargetList"
-    $script:Status = 'failed'; Emit-Result; exit 2
+    Invoke-ParseFail "Target list file not found: $TargetList"
 }
 
 $targets = New-Object System.Collections.Generic.List[hashtable]
@@ -91,22 +102,18 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
     if ($line.StartsWith('#')) { continue }
     $cols = $line -split ',' | ForEach-Object { $_.Trim() }
     if ($cols.Count -lt 3) {
-        Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=need_3_cols raw='$line'"
-        $script:Status = 'failed'; Emit-Result; exit 2
+        Invoke-ParseFail "List parse error: line=$lineno reason=need_3_cols raw='$line'"
     }
     $t = @{ type = $cols[0]; target = $cols[1]; desc = $cols[2]; per_check = $defaultPerCheck }
 
     if ($t.type -notin @('ping','tcp','http')) {
-        Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=unknown_type type='$($t.type)'"
-        $script:Status = 'failed'; Emit-Result; exit 2
+        Invoke-ParseFail "List parse error: line=$lineno reason=unknown_type type='$($t.type)'"
     }
     if ($t.type -eq 'tcp' -and $t.target -notmatch ':\d+$') {
-        Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=tcp_needs_host_port target='$($t.target)'"
-        $script:Status = 'failed'; Emit-Result; exit 2
+        Invoke-ParseFail "List parse error: line=$lineno reason=tcp_needs_host_port target='$($t.target)'"
     }
     if ($t.type -eq 'http' -and $t.target -notmatch '^(http|https)://') {
-        Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=http_needs_url target='$($t.target)'"
-        $script:Status = 'failed'; Emit-Result; exit 2
+        Invoke-ParseFail "List parse error: line=$lineno reason=http_needs_url target='$($t.target)'"
     }
 
     # Columns 4..end may carry key=value tokens (space-separated within a column).
@@ -115,22 +122,19 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
         foreach ($kv in ($extra -split '\s+' | Where-Object { $_ })) {
             $m = [regex]::Match($kv, '^([^=]+)=(.*)$')
             if (-not $m.Success) {
-                Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=bad_token token='$kv'"
-                $script:Status = 'failed'; Emit-Result; exit 2
+                Invoke-ParseFail "List parse error: line=$lineno reason=bad_token token='$kv'"
             }
             $key = $m.Groups[1].Value
             $val = $m.Groups[2].Value
             switch ($key) {
                 'per_check_timeout_sec' {
                     if ($val -notmatch '^\d+$') {
-                        Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=bad_per_check value='$val'"
-                        $script:Status = 'failed'; Emit-Result; exit 2
+                        Invoke-ParseFail "List parse error: line=$lineno reason=bad_per_check value='$val'"
                     }
                     $t.per_check = [int]$val
                 }
                 default {
-                    Write-OpsLog -Level ERROR -Message "List parse error: line=$lineno reason=unknown_key key='$key'"
-                    $script:Status = 'failed'; Emit-Result; exit 2
+                    Invoke-ParseFail "List parse error: line=$lineno reason=unknown_key key='$key'"
                 }
             }
         }
@@ -139,8 +143,7 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
 }
 
 if ($targets.Count -eq 0) {
-    Write-OpsLog -Level ERROR -Message "Target list is empty: $TargetList"
-    $script:Status = 'failed'; Emit-Result; exit 2
+    Invoke-ParseFail "Target list is empty: $TargetList"
 }
 
 Write-OpsLog -Level INFO -Message ("start targets={0} timeout={1} success={2} interval={3} initial={4}" -f `
