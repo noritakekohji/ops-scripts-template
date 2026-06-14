@@ -151,12 +151,15 @@ Write-OpsLog -Level INFO -Message ("start targets={0} timeout={1} success={2} in
 
 function Test-PingHost {
     param([string]$HostName, [int]$TimeoutSec)
+    $p = $null
     try {
         $p = New-Object System.Net.NetworkInformation.Ping
         $r = $p.Send($HostName, ($TimeoutSec * 1000))
         return $r.Status -eq 'Success'
     } catch {
         return $false
+    } finally {
+        if ($p) { $p.Dispose() }
     }
 }
 
@@ -174,7 +177,7 @@ function Test-TcpEndpoint {
     } catch {
         return $false
     } finally {
-        if ($client) { $client.Close() }
+        if ($client) { $client.Dispose() }
     }
 }
 
