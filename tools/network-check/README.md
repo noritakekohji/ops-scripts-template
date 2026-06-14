@@ -142,6 +142,7 @@ chmod +x check_network_connectivity.sh
 
 | 列 | 内容 |
 |---|---|
+| Enabled | `on` / `off`（ドロップダウン）。`on` の行のみ targets.lst に出力。`off` / 空欄はスキップ |
 | Section | 出力時に `# ---- <Section> ----` コメントになるグループ名（任意） |
 | Host | ホスト名または IP（必須） |
 | Port | TCP ポート番号、または `-`（Ping のみ）。空欄は `-` 扱い |
@@ -149,8 +150,9 @@ chmod +x check_network_connectivity.sh
 | Description | 説明 |
 
 - 出力は **UTF-8（BOM なし）+ LF**。リポジトリの LF 統一規約に準拠します
-- 不正な入力（Host 空欄、Port 範囲外、Expected 不正、セルのエラー値）は赤くハイライトされ、
-  修正するまでエクスポートされません
+- 不正な入力（Enabled 不正、Host 空欄、Port 範囲外、Expected 不正、セルのエラー値）は
+  赤くハイライトされ、修正するまでエクスポートされません
+- 一時的に対象から外したい行は Enabled を `off` にすれば、行を削除せずスキップできます
 - 注意: Description に `#` を含めると、パーサ側でコメントとして切り詰められます
 
 ### マクロを修正するとき

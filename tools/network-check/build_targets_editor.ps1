@@ -49,18 +49,19 @@ try {
     $ws.Name = 'Targets'
 
     # --- headers ---
-    $headers = @('Section', 'Host', 'Port', 'Expected', 'Description')
+    $headers = @('Enabled', 'Section', 'Host', 'Port', 'Expected', 'Description')
     for ($i = 0; $i -lt $headers.Count; $i++) {
         $cell = $ws.Cells.Item(1, $i + 1)
         $cell.Value2 = $headers[$i]
         $cell.Font.Bold = $true
         $cell.Interior.Color = 0xD9D9D9
     }
-    $ws.Columns.Item(1).ColumnWidth = 18   # Section
-    $ws.Columns.Item(2).ColumnWidth = 28   # Host
-    $ws.Columns.Item(3).ColumnWidth = 8    # Port
-    $ws.Columns.Item(4).ColumnWidth = 10   # Expected
-    $ws.Columns.Item(5).ColumnWidth = 44   # Description
+    $ws.Columns.Item(1).ColumnWidth = 9    # Enabled
+    $ws.Columns.Item(2).ColumnWidth = 18   # Section
+    $ws.Columns.Item(3).ColumnWidth = 28   # Host
+    $ws.Columns.Item(4).ColumnWidth = 8    # Port
+    $ws.Columns.Item(5).ColumnWidth = 10   # Expected
+    $ws.Columns.Item(6).ColumnWidth = 44   # Description
     $excel.ActiveWindow.SplitRow = 1
     $excel.ActiveWindow.FreezePanes = $true
 
@@ -68,27 +69,34 @@ try {
     # Adding a custom-formula validation to text-formatted cells fails with
     # COM error 0x800A03EC; the validation survives a later format change.
 
+    # --- data validation: Enabled = on / off (rows 2..500) ---
+    $enabledRange = $ws.Range('A2:A500')
+    $enabledRange.Validation.Add(3, 1, 1, 'on,off') | Out-Null   # xlValidateList
+    $enabledRange.Validation.IgnoreBlank = $true
+    $enabledRange.Validation.InCellDropdown = $true
+
     # --- data validation: Expected = ok / ng / - (rows 2..500) ---
-    $expectedRange = $ws.Range('D2:D500')
+    $expectedRange = $ws.Range('E2:E500')
     $expectedRange.Validation.Add(3, 1, 1, 'ok,ng,-') | Out-Null   # xlValidateList
     $expectedRange.Validation.IgnoreBlank = $true
     $expectedRange.Validation.InCellDropdown = $true
 
     # --- data validation: Port = 1-65535 or '-' (custom formula; cells are text) ---
-    $portRange = $ws.Range('C2:C500')
-    $portFormula = '=OR(C2="-",C2="",AND(ISNUMBER(--C2),--C2>=1,--C2<=65535))'
+    $portRange = $ws.Range('D2:D500')
+    $portFormula = '=OR(D2="-",D2="",AND(ISNUMBER(--D2),--D2>=1,--D2<=65535))'
     $portRange.Validation.Add(7, 1, 1, $portFormula) | Out-Null   # xlValidateCustom
     $portRange.Validation.IgnoreBlank = $true
     $portRange.Validation.ErrorMessage = "Port must be 1-65535 or '-'"
 
-    # --- sample rows (mirror tests/fixtures/targets_editor_export_sample.lst) ---
+    # --- sample rows (the 3 'on' rows match tests/fixtures/targets_editor_export_sample.lst) ---
     $samples = @(
-        @('Local',   '127.0.0.1', '-',     'ok', 'Localhost ping'),
-        @('Local',   '127.0.0.1', '65535', 'ng', 'Unused high port (should be closed)'),
-        @('No eval', '127.0.0.1', '-',     '-',  'Localhost (no evaluation)')
+        @('on',  'Local',    '127.0.0.1', '-',     'ok', 'Localhost ping'),
+        @('on',  'Local',    '127.0.0.1', '65535', 'ng', 'Unused high port (should be closed)'),
+        @('on',  'No eval',  '127.0.0.1', '-',     '-',  'Localhost (no evaluation)'),
+        @('off', 'Disabled', '203.0.113.1', '443', 'ok', 'Example of a disabled row (excluded from export)')
     )
     for ($r = 0; $r -lt $samples.Count; $r++) {
-        for ($c = 0; $c -lt 5; $c++) {
+        for ($c = 0; $c -lt 6; $c++) {
             # NumberFormat @ keeps '-' and ports as literal text
             $ws.Cells.Item($r + 2, $c + 1).NumberFormat = '@'
             $ws.Cells.Item($r + 2, $c + 1).Value2 = $samples[$r][$c]

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- network-check: targets-editor.xlsm に Enabled 列（A 列、on/off ドロップダウン）を追加。
+  `on` の行のみ targets.lst に出力されるようになった。行を削除せずに一時的なスキップが可能。
+
 ### Added
 - `scripts_*/os/service-wait` ヘルスチェック待ちスクリプト。Ping / TCP / HTTP の連続成功でブロック解除、タイムアウト時 exit 3。
 - server-snapshot: server-compare と change-detect を統合した自己完結ツール
