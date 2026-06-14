@@ -45,12 +45,30 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
 
 ### Target rows
 
-- `type`: `ping` | `tcp` | `http`
-- `target`: ping=host, tcp=host:port, http=URL
+- `type`: `ping` | `tcp` | `http` | `service` | `process`
+- `target`:
+    - ping = host (DNS name or IP)
+    - tcp  = host:port
+    - http = URL
+    - service = systemd unit name (`[A-Za-z0-9._@-]+`)
+    - process = executable name (`[A-Za-z0-9._-]+`), matched exactly by `pgrep -x`
 - Row-level overrides (column 4+, space-separated): `per_check_timeout_sec=<int>` only
 - Unknown type or unknown row override key → exit 2
 
-Pass criteria (fixed): ping = ICMP reply, tcp = connect success, http = 2xx.
+Pass criteria (fixed):
+- ping = ICMP reply
+- tcp  = TCP connect success
+- http = 2xx status code
+- service = `systemctl is-active --quiet <name>` returns 0
+- process = `pgrep -x <name>` finds ≥ 1 match
+
+Prerequisite commands (exit 10 if missing):
+- ping → `ping`
+- http → `curl`
+- service → `systemctl`
+- process → `pgrep`
+
+`service` and `process` only inspect the **local** node. Same `.lst` is not portable across OSes.
 
 ### Resolution order
 

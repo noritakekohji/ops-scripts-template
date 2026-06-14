@@ -143,6 +143,57 @@ EOF
     [[ "$output" == *"header_after_targets"* ]]
 }
 
+# ---------- v3: local service / process tests ----------
+
+@test "exit 2 when service name contains a space" {
+    tmp=$(new_tmp)
+    printf 'service, bad name, with space\n' > "$tmp"
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"bad_service_name"* ]]
+}
+
+@test "exit 2 when process name contains a space" {
+    tmp=$(new_tmp)
+    printf 'process, bad name, with space\n' > "$tmp"
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"bad_process_name"* ]]
+}
+
+@test "process check succeeds against a known local process (bash)" {
+    if ! command -v pgrep >/dev/null; then skip "pgrep required"; fi
+    # Spawn a long-lived bash subprocess so pgrep -x bash is guaranteed to hit.
+    sleep 60 &
+    sleep_pid=$!
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+timeout_sec      = 5
+interval_sec     = 1
+success_threshold= 1
+initial_wait_sec = 0
+
+process, sleep, sleep subprocess
+EOF
+    run bash "$SCRIPT" "$tmp"
+    kill "$sleep_pid" 2>/dev/null || true
+    [ "$status" -eq 0 ]
+}
+
+@test "process check times out on a non-existent process name" {
+    if ! command -v pgrep >/dev/null; then skip "pgrep required"; fi
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+timeout_sec      = 2
+interval_sec     = 1
+initial_wait_sec = 0
+
+process, nope-does-not-exist, missing
+EOF
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 3 ]
+}
+
 @test "monitoring keys lingering in conf produce a WARN and are ignored" {
     # OPS_CONFIG_DIR points directly at the dir containing service_wait.conf
     # (not at a tree with default/ subdir; see load_ops_config in lib/config.sh).

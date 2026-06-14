@@ -145,6 +145,109 @@ Describe 'ServiceWait.ps1 v2 .lst header' {
     }
 }
 
+Describe 'ServiceWait.ps1 v3 local service / process' {
+    It 'exit 2 when service name contains a space' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'bad-svc.lst'
+            'service, bad name, with space' | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 2
+            $r.Combined | Should -Match 'bad_service_name'
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'exit 2 when process name contains a space' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'bad-proc.lst'
+            'process, bad name, with space' | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 2
+            $r.Combined | Should -Match 'bad_process_name'
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'process check finds the running test host (powershell)' {
+        # powershell.exe must be present because we are running this test.
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'self.lst'
+            @(
+                'timeout_sec      = 5',
+                'interval_sec     = 1',
+                'success_threshold= 1',
+                'initial_wait_sec = 0',
+                '',
+                'process, powershell, current shell'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 0
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'process check times out on a missing name' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'missing-proc.lst'
+            @(
+                'timeout_sec      = 2',
+                'interval_sec     = 1',
+                'initial_wait_sec = 0',
+                '',
+                'process, nope-does-not-exist, missing'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 3
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'service check finds a known Running service (EventLog)' {
+        $eventLog = Get-Service -Name 'EventLog' -ErrorAction SilentlyContinue
+        if (-not $eventLog -or $eventLog.Status -ne 'Running') {
+            Set-ItResult -Skipped -Because 'EventLog service not Running on this host'
+            return
+        }
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'svc-eventlog.lst'
+            @(
+                'timeout_sec      = 5',
+                'interval_sec     = 1',
+                'success_threshold= 1',
+                'initial_wait_sec = 0',
+                '',
+                'service, EventLog, Windows Event Log'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 0
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'service check times out on a missing service' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'svc-missing.lst'
+            @(
+                'timeout_sec      = 2',
+                'interval_sec     = 1',
+                'initial_wait_sec = 0',
+                '',
+                'service, NoSuchServiceXYZ, missing'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 3
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+}
+
 Describe 'ServiceWait.ps1 round semantics' {
     It 'exits 0 when a TCP listener is up' {
         # Bind an ephemeral port and accept once.

@@ -168,7 +168,7 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
     }
     $t = @{ type = $cols[0]; target = $cols[1]; desc = $cols[2]; per_check = $defaultPerCheck }
 
-    if ($t.type -notin @('ping','tcp','http')) {
+    if ($t.type -notin @('ping','tcp','http','service','process')) {
         Invoke-ParseFail "List parse error: line=$lineno reason=unknown_type type='$($t.type)'"
     }
     if ($t.type -eq 'tcp' -and $t.target -notmatch ':\d+$') {
@@ -176,6 +176,12 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
     }
     if ($t.type -eq 'http' -and $t.target -notmatch '^(http|https)://') {
         Invoke-ParseFail "List parse error: line=$lineno reason=http_needs_url target='$($t.target)'"
+    }
+    if ($t.type -eq 'service' -and $t.target -notmatch '^[A-Za-z0-9._@-]+$') {
+        Invoke-ParseFail "List parse error: line=$lineno reason=bad_service_name target='$($t.target)'"
+    }
+    if ($t.type -eq 'process' -and $t.target -notmatch '^[A-Za-z0-9._-]+$') {
+        Invoke-ParseFail "List parse error: line=$lineno reason=bad_process_name target='$($t.target)'"
     }
 
     # Columns 4..end may carry key=value tokens (space-separated within a column).
@@ -267,13 +273,35 @@ function Test-HttpUrl {
     }
 }
 
+function Test-LocalService {
+    param([string]$Name)
+    try {
+        $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        return ($null -ne $svc) -and ($svc.Status -eq 'Running')
+    } catch {
+        return $false
+    }
+}
+
+function Test-LocalProcess {
+    param([string]$Name)
+    try {
+        $procs = @(Get-Process -Name $Name -ErrorAction SilentlyContinue)
+        return $procs.Count -ge 1
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-Check {
     param([hashtable]$T)
     switch ($T.type) {
-        'ping' { return (Test-PingHost     -HostName $T.target -TimeoutSec $T.per_check) }
-        'tcp'  { return (Test-TcpEndpoint  -Target   $T.target -TimeoutSec $T.per_check) }
-        'http' { return (Test-HttpUrl      -Url      $T.target -TimeoutSec $T.per_check) }
-        default { return $false }
+        'ping'    { return (Test-PingHost     -HostName $T.target -TimeoutSec $T.per_check) }
+        'tcp'     { return (Test-TcpEndpoint  -Target   $T.target -TimeoutSec $T.per_check) }
+        'http'    { return (Test-HttpUrl      -Url      $T.target -TimeoutSec $T.per_check) }
+        'service' { return (Test-LocalService -Name     $T.target) }
+        'process' { return (Test-LocalProcess -Name     $T.target) }
+        default   { return $false }
     }
 }
 

@@ -157,7 +157,7 @@ parse_list_line() {
     local p_per_check="$default_per_check"
 
     case "$p_type" in
-        ping|tcp|http) ;;
+        ping|tcp|http|service|process) ;;
         *)
             parse_fail "$lineno" unknown_type "type='$p_type'" ;;
     esac
@@ -167,6 +167,12 @@ parse_list_line() {
     fi
     if [[ "$p_type" == "http" && "$p_target" != http://* && "$p_target" != https://* ]]; then
         parse_fail "$lineno" http_needs_url "target='$p_target'"
+    fi
+    if [[ "$p_type" == "service" && ! "$p_target" =~ ^[A-Za-z0-9._@-]+$ ]]; then
+        parse_fail "$lineno" bad_service_name "target='$p_target'"
+    fi
+    if [[ "$p_type" == "process" && ! "$p_target" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        parse_fail "$lineno" bad_process_name "target='$p_target'"
     fi
 
     # Parse "key=value" tokens in column 4..end (space-separated within a single column).
@@ -256,11 +262,13 @@ for v in initial_wait_sec interval_sec success_threshold timeout_sec default_per
     fi
 done
 
-needs_ping=0; needs_http=0
+needs_ping=0; needs_http=0; needs_systemctl=0; needs_pgrep=0
 while IFS=$'\t' read -r t_type _ _ _; do
     [[ -z "$t_type" ]] && continue
-    [[ "$t_type" == "ping" ]] && needs_ping=1
-    [[ "$t_type" == "http" ]] && needs_http=1
+    [[ "$t_type" == "ping" ]]    && needs_ping=1
+    [[ "$t_type" == "http" ]]    && needs_http=1
+    [[ "$t_type" == "service" ]] && needs_systemctl=1
+    [[ "$t_type" == "process" ]] && needs_pgrep=1
 done <<< "$targets_text"
 
 if [[ "$needs_ping" -eq 1 ]] && ! command -v ping >/dev/null 2>&1; then
@@ -269,6 +277,14 @@ if [[ "$needs_ping" -eq 1 ]] && ! command -v ping >/dev/null 2>&1; then
 fi
 if [[ "$needs_http" -eq 1 ]] && ! command -v curl >/dev/null 2>&1; then
     log_error "Prerequisite missing: curl"
+    status="failed"; exit 10
+fi
+if [[ "$needs_systemctl" -eq 1 ]] && ! command -v systemctl >/dev/null 2>&1; then
+    log_error "Prerequisite missing: systemctl"
+    status="failed"; exit 10
+fi
+if [[ "$needs_pgrep" -eq 1 ]] && ! command -v pgrep >/dev/null 2>&1; then
+    log_error "Prerequisite missing: pgrep"
     status="failed"; exit 10
 fi
 
@@ -295,12 +311,24 @@ check_http() {
     [[ "$code" =~ ^2[0-9][0-9]$ ]]
 }
 
+check_service() {
+    local name="$1" to="$2"
+    timeout "$to" systemctl is-active --quiet -- "$name" >/dev/null 2>&1
+}
+
+check_process() {
+    local name="$1" to="$2"
+    timeout "$to" pgrep -x -- "$name" >/dev/null 2>&1
+}
+
 run_check() {
     local type="$1" target="$2" to="$3"
     case "$type" in
-        ping) check_ping "$target" "$to" ;;
-        tcp)  check_tcp  "$target" "$to" ;;
-        http) check_http "$target" "$to" ;;
+        ping)    check_ping    "$target" "$to" ;;
+        tcp)     check_tcp     "$target" "$to" ;;
+        http)    check_http    "$target" "$to" ;;
+        service) check_service "$target" "$to" ;;
+        process) check_process "$target" "$to" ;;
         *) return 1 ;;
     esac
 }

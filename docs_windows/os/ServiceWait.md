@@ -47,12 +47,24 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
 
 ### Target rows
 
-- `type`: `ping` | `tcp` | `http`
-- `target`: ping=host, tcp=host:port, http=URL
+- `type`: `ping` | `tcp` | `http` | `service` | `process`
+- `target`:
+    - ping = host (DNS name or IP)
+    - tcp  = host:port
+    - http = URL
+    - service = Windows service name (`[A-Za-z0-9._@-]+`) — the short name used by `Get-Service -Name`
+    - process = executable base name (`[A-Za-z0-9._-]+`), no `.exe` suffix
 - Row-level overrides (column 4+, space-separated): `per_check_timeout_sec=<int>` only
 - Unknown type or unknown row override key → exit 2
 
-Pass criteria (fixed): ping = ICMP reply, tcp = connect success, http = 2xx.
+Pass criteria (fixed):
+- ping = ICMP reply
+- tcp  = TCP connect success
+- http = 2xx status code
+- service = `(Get-Service -Name <name>).Status -eq 'Running'`
+- process = `Get-Process -Name <name>` returns ≥ 1 match
+
+Both `service` and `process` use PowerShell built-ins (no external prerequisite). They only inspect the **local** node. Same `.lst` is not portable across OSes.
 
 ### Resolution order
 

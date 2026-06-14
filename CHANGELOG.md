@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- service-wait: type=service / type=process のローカルノードチェックを追加 (v3 仕様)。
+  Linux は `systemctl is-active` / `pgrep -x`、Windows は `Get-Service` / `Get-Process`
+  を使用。OS ごとに別 .lst を用意する前提（service / process 名は OS 固有）。
+
 ### Changed
 - service-wait: 監視パラメータ (initial_wait_sec / interval_sec / success_threshold /
   timeout_sec / per_check_timeout_sec) を `.conf` から **.lst ヘッダに移動 (v2 仕様)**。
