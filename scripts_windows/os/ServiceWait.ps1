@@ -22,6 +22,7 @@ $script:Status  = 'unknown'
 $script:Rounds  = 0
 $script:Consec  = 0
 $script:Start   = Get-Date
+$script:Emitted = $false
 
 # --- lib resolution -----------------------------------------------------------
 function Resolve-OpsLib {
@@ -54,6 +55,8 @@ function _Default($value, $fallback) {
 }
 
 function Emit-Result {
+    if ($script:Emitted) { return }
+    $script:Emitted = $true
     $elapsed = [int]((Get-Date) - $script:Start).TotalSeconds
     Write-OpsLog -Level INFO -Message ("[RESULT] status={0} rounds={1} elapsed={2}s consec={3}" -f `
         $script:Status, $script:Rounds, $elapsed, $script:Consec)
