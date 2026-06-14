@@ -68,23 +68,18 @@ trap cleanup EXIT
 
 load_ops_config "service_wait"
 
-initial_wait_sec="${OPS_CONFIG[initial_wait_sec]:-0}"
-interval_sec="${OPS_CONFIG[interval_sec]:-5}"
-success_threshold="${OPS_CONFIG[success_threshold]:-3}"
-timeout_sec="${OPS_CONFIG[timeout_sec]:-600}"
-default_per_check="${OPS_CONFIG[per_check_timeout_sec]:-5}"
+# Hardcoded defaults; .lst header overrides.
+initial_wait_sec=0
+interval_sec=5
+success_threshold=3
+timeout_sec=600
+default_per_check=5
 
-# Test hooks: env vars can override conf for fast tests.
-[[ -n "${OPS_OVERRIDE_INITIAL_WAIT_SEC:-}"  ]] && initial_wait_sec="$OPS_OVERRIDE_INITIAL_WAIT_SEC"
-[[ -n "${OPS_OVERRIDE_INTERVAL_SEC:-}"      ]] && interval_sec="$OPS_OVERRIDE_INTERVAL_SEC"
-[[ -n "${OPS_OVERRIDE_TIMEOUT_SEC:-}"       ]] && timeout_sec="$OPS_OVERRIDE_TIMEOUT_SEC"
-[[ -n "${OPS_OVERRIDE_SUCCESS_THRESHOLD:-}" ]] && success_threshold="$OPS_OVERRIDE_SUCCESS_THRESHOLD"
-
-for v in initial_wait_sec interval_sec success_threshold timeout_sec default_per_check; do
-    val="${!v}"
-    if ! [[ "$val" =~ ^[0-9]+$ ]]; then
-        log_error "Config $v must be a non-negative integer, got '$val'"
-        status="failed"; exit 1
+# v2: monitoring params moved to the .lst header. Warn (but don't fail) if
+# anyone left them in conf so a stale conf can't silently change behavior.
+for stale_key in initial_wait_sec interval_sec success_threshold timeout_sec per_check_timeout_sec; do
+    if [[ -n "${OPS_CONFIG[$stale_key]:-}" ]]; then
+        log_warn "Conf key '$stale_key' is no longer used; move it to the .lst header. Ignoring."
     fi
 done
 
@@ -103,6 +98,41 @@ parse_fail() {
     log_error "List parse error: line=$lineno reason=$reason${detail:+ $detail}"
     status="failed"
     exit 2
+}
+
+parse_header_line() {
+    local lineno="$1" raw="$2"
+    local key val
+    if [[ ! "$raw" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+        parse_fail "$lineno" bad_header "raw='$raw'"
+    fi
+    key="${BASH_REMATCH[1]}"
+    val="${BASH_REMATCH[2]}"
+    # Strip inline comment and trailing whitespace.
+    val="${val%%#*}"
+    val="${val%"${val##*[![:space:]]}"}"
+    if ! [[ "$val" =~ ^[0-9]+$ ]]; then
+        parse_fail "$lineno" bad_header_value "key=$key value='$val'"
+    fi
+    case "$key" in
+        initial_wait_sec)
+            [[ "$initial_wait_sec_set" -eq 1 ]] && log_warn "Header key '$key' overridden (later value wins)"
+            initial_wait_sec="$val"; initial_wait_sec_set=1 ;;
+        interval_sec)
+            [[ "$interval_sec_set" -eq 1 ]] && log_warn "Header key '$key' overridden (later value wins)"
+            interval_sec="$val"; interval_sec_set=1 ;;
+        success_threshold)
+            [[ "$success_threshold_set" -eq 1 ]] && log_warn "Header key '$key' overridden (later value wins)"
+            success_threshold="$val"; success_threshold_set=1 ;;
+        timeout_sec)
+            [[ "$timeout_sec_set" -eq 1 ]] && log_warn "Header key '$key' overridden (later value wins)"
+            timeout_sec="$val"; timeout_sec_set=1 ;;
+        per_check_timeout_sec)
+            [[ "$default_per_check_set" -eq 1 ]] && log_warn "Header key '$key' overridden (later value wins)"
+            default_per_check="$val"; default_per_check_set=1 ;;
+        *)
+            parse_fail "$lineno" unknown_header_key "key='$key'" ;;
+    esac
 }
 
 parse_list_line() {
@@ -172,6 +202,16 @@ parse_list_line() {
     targets_text+="${p_type}"$'\t'"${p_target}"$'\t'"${p_desc}"$'\t'"${p_per_check}"$'\n'
 }
 
+# Track which header keys were set so duplicates can WARN.
+initial_wait_sec_set=0
+interval_sec_set=0
+success_threshold_set=0
+timeout_sec_set=0
+default_per_check_set=0
+
+# Header phase: key=value before any target row. Switches off as soon as the
+# first CSV-style target row is seen. After that, only CSV rows are accepted.
+header_phase=1
 lineno=0
 while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno+1))
@@ -179,7 +219,19 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" ]] && continue
     [[ "$line" == \#* ]] && continue
-    parse_list_line "$lineno" "$line"
+
+    if [[ "$line" == *,* ]]; then
+        header_phase=0
+        parse_list_line "$lineno" "$line"
+    elif [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*= ]]; then
+        if [[ "$header_phase" -eq 1 ]]; then
+            parse_header_line "$lineno" "$line"
+        else
+            parse_fail "$lineno" header_after_targets "raw='$line'"
+        fi
+    else
+        parse_fail "$lineno" bad_line "raw='$line'"
+    fi
 done < "$list_file"
 
 target_count=$(printf '%s' "$targets_text" | grep -c '^' || true)
@@ -187,6 +239,22 @@ if [[ "$target_count" -eq 0 ]]; then
     log_error "Target list is empty: $list_file"
     status="failed"; exit 2
 fi
+
+# Test hooks: env vars trump anything from the .lst header or hardcoded default.
+[[ -n "${OPS_OVERRIDE_INITIAL_WAIT_SEC:-}"  ]] && initial_wait_sec="$OPS_OVERRIDE_INITIAL_WAIT_SEC"
+[[ -n "${OPS_OVERRIDE_INTERVAL_SEC:-}"      ]] && interval_sec="$OPS_OVERRIDE_INTERVAL_SEC"
+[[ -n "${OPS_OVERRIDE_TIMEOUT_SEC:-}"       ]] && timeout_sec="$OPS_OVERRIDE_TIMEOUT_SEC"
+[[ -n "${OPS_OVERRIDE_SUCCESS_THRESHOLD:-}" ]] && success_threshold="$OPS_OVERRIDE_SUCCESS_THRESHOLD"
+
+# Final numeric validation (covers conf carrying garbage, env-hook typos, and
+# any default we somehow left as non-integer).
+for v in initial_wait_sec interval_sec success_threshold timeout_sec default_per_check; do
+    val="${!v}"
+    if ! [[ "$val" =~ ^[0-9]+$ ]]; then
+        log_error "Config $v must be a non-negative integer, got '$val'"
+        status="failed"; exit 1
+    fi
+done
 
 needs_ping=0; needs_http=0
 while IFS=$'\t' read -r t_type _ _ _; do

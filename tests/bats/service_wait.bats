@@ -94,3 +94,72 @@ EOF
     run bash "$SCRIPT" "$tmp"
     [ "$status" -eq 3 ]
 }
+
+# ---------- v2: .lst header tests ----------
+
+@test "lst header timeout_sec=1 makes the script time out without env override" {
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+initial_wait_sec = 0
+interval_sec     = 1
+timeout_sec      = 1
+
+tcp, 127.0.0.1:1, closed
+EOF
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 3 ]
+}
+
+@test "lst header with unknown key exits 2" {
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+no_such_setting = 99
+tcp, 127.0.0.1:1, closed
+EOF
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"unknown_header_key"* ]]
+}
+
+@test "lst header with non-integer value exits 2" {
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+timeout_sec = abc
+tcp, 127.0.0.1:1, closed
+EOF
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"bad_header_value"* ]]
+}
+
+@test "key=value line appearing after targets is rejected" {
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+tcp, 127.0.0.1:1, closed
+interval_sec = 5
+EOF
+    run bash "$SCRIPT" "$tmp"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"header_after_targets"* ]]
+}
+
+@test "monitoring keys lingering in conf produce a WARN and are ignored" {
+    # OPS_CONFIG_DIR points directly at the dir containing service_wait.conf
+    # (not at a tree with default/ subdir; see load_ops_config in lib/config.sh).
+    work=$(mktemp -d)
+    cat > "$work/service_wait.conf" <<EOF
+interval_sec = 999
+timeout_sec  = 999
+LogLevel     = INFO
+EOF
+    tmp=$(new_tmp)
+    cat > "$tmp" <<EOF
+timeout_sec = 1
+
+tcp, 127.0.0.1:1, closed
+EOF
+    OPS_CONFIG_DIR="$work" run bash "$SCRIPT" "$tmp"
+    rm -rf "$work"
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"no longer used"* ]]
+}

@@ -53,6 +53,98 @@ Describe 'ServiceWait.ps1 argument and list parsing' {
     }
 }
 
+Describe 'ServiceWait.ps1 v2 .lst header' {
+    It 'header timeout_sec=1 makes the script time out without env override' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'hdr-timeout.lst'
+            @(
+                'initial_wait_sec = 0',
+                'interval_sec     = 1',
+                'timeout_sec      = 1',
+                '',
+                'tcp, 127.0.0.1:1, closed'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 3
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'header with unknown key exits 2' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'bad-hdr-key.lst'
+            @(
+                'no_such_setting = 99',
+                'tcp, 127.0.0.1:1, closed'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 2
+            $r.Combined | Should -Match 'unknown_header_key'
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'header with non-integer value exits 2' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'bad-hdr-val.lst'
+            @(
+                'timeout_sec = abc',
+                'tcp, 127.0.0.1:1, closed'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 2
+            $r.Combined | Should -Match 'bad_header_value'
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'key=value line after a target row is rejected' {
+        $work = New-TempWorkdir
+        try {
+            $tmp = Join-Path $work 'hdr-after-target.lst'
+            @(
+                'tcp, 127.0.0.1:1, closed',
+                'interval_sec = 5'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
+            $r.ExitCode | Should -Be 2
+            $r.Combined | Should -Match 'header_after_targets'
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+    It 'monitoring keys lingering in conf produce a WARN and are ignored' {
+        $work = New-TempWorkdir
+        try {
+            # OPS_CONFIG_DIR points directly at the dir containing service_wait.conf
+            # (not at a tree with default/ subdir; see Get-OpsConfig).
+            @(
+                'interval_sec = 999',
+                'timeout_sec  = 999',
+                'LogLevel     = INFO'
+            ) | Set-Content -Path (Join-Path $work 'service_wait.conf') -Encoding ASCII
+
+            $tmp = Join-Path $work 'targets.lst'
+            @(
+                'timeout_sec = 1',
+                '',
+                'tcp, 127.0.0.1:1, closed'
+            ) | Set-Content -Path $tmp -Encoding ASCII
+
+            $env = @{} + $script:BaseEnv
+            $env['OPS_CONFIG_DIR'] = $work
+            $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $env
+            $r.ExitCode | Should -Be 3
+            $r.Combined | Should -Match 'no longer used'
+        } finally {
+            Remove-TempPath $work
+        }
+    }
+}
+
 Describe 'ServiceWait.ps1 round semantics' {
     It 'exits 0 when a TCP listener is up' {
         # Bind an ephemeral port and accept once.

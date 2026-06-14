@@ -87,17 +87,20 @@ if (-not $TargetList) {
 
 $cfg = Get-OpsConfig -Name 'service_wait'
 
-$initialWait     = _IntOrFail $cfg['initial_wait_sec']      0   'initial_wait_sec'
-$interval        = _IntOrFail $cfg['interval_sec']          5   'interval_sec'
-$successN        = _IntOrFail $cfg['success_threshold']     3   'success_threshold'
-$timeoutSec      = _IntOrFail $cfg['timeout_sec']           600 'timeout_sec'
-$defaultPerCheck = _IntOrFail $cfg['per_check_timeout_sec'] 5   'per_check_timeout_sec'
+# Hardcoded defaults; .lst header overrides.
+$initialWait     = 0
+$interval        = 5
+$successN        = 3
+$timeoutSec      = 600
+$defaultPerCheck = 5
 
-# Test hooks
-if ($env:OPS_OVERRIDE_INITIAL_WAIT_SEC)  { $initialWait = [int]$env:OPS_OVERRIDE_INITIAL_WAIT_SEC }
-if ($env:OPS_OVERRIDE_INTERVAL_SEC)      { $interval    = [int]$env:OPS_OVERRIDE_INTERVAL_SEC }
-if ($env:OPS_OVERRIDE_TIMEOUT_SEC)       { $timeoutSec  = [int]$env:OPS_OVERRIDE_TIMEOUT_SEC }
-if ($env:OPS_OVERRIDE_SUCCESS_THRESHOLD) { $successN    = [int]$env:OPS_OVERRIDE_SUCCESS_THRESHOLD }
+# v2: monitoring params moved to the .lst header. WARN-and-ignore any stale
+# keys in conf so behavior is fully determined by the lst.
+foreach ($staleKey in @('initial_wait_sec','interval_sec','success_threshold','timeout_sec','per_check_timeout_sec')) {
+    if ($cfg[$staleKey]) {
+        Write-OpsLog -Level WARN -Message "Conf key '$staleKey' is no longer used; move it to the .lst header. Ignoring."
+    }
+}
 
 if ($cfg['LogFile']) {
     try { Set-OpsLogConfig -LogFile $cfg['LogFile'] -LogLevel (_Default $cfg['LogLevel'] 'INFO') } catch { }
@@ -107,13 +110,58 @@ if (-not (Test-Path -LiteralPath $TargetList -PathType Leaf)) {
     Invoke-ParseFail "Target list file not found: $TargetList"
 }
 
+# Track which header keys were set so duplicates can WARN.
+$headerSet = @{}
+
 $targets = New-Object System.Collections.Generic.List[hashtable]
+$headerPhase = $true
 $lineno  = 0
 foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
     $lineno++
     $line = $raw.Trim()
     if (-not $line)            { continue }
     if ($line.StartsWith('#')) { continue }
+
+    # Header line: key = value, no comma. Only allowed before the first CSV row.
+    if ($line -notmatch ',' -and $line -match '^[A-Za-z_][A-Za-z0-9_]*\s*=') {
+        if (-not $headerPhase) {
+            Invoke-ParseFail "List parse error: line=$lineno reason=header_after_targets raw='$line'"
+        }
+        $m = [regex]::Match($line, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$')
+        if (-not $m.Success) {
+            Invoke-ParseFail "List parse error: line=$lineno reason=bad_header raw='$line'"
+        }
+        $hKey = $m.Groups[1].Value
+        $hVal = $m.Groups[2].Value
+        $hashIdx = $hVal.IndexOf('#')
+        if ($hashIdx -ge 0) { $hVal = $hVal.Substring(0, $hashIdx) }
+        $hVal = $hVal.Trim()
+        if ($hVal -notmatch '^\d+$') {
+            Invoke-ParseFail "List parse error: line=$lineno reason=bad_header_value key=$hKey value='$hVal'"
+        }
+        if ($headerSet.ContainsKey($hKey)) {
+            Write-OpsLog -Level WARN -Message "Header key '$hKey' overridden (later value wins)"
+        }
+        $headerSet[$hKey] = $true
+        switch ($hKey) {
+            'initial_wait_sec'      { $initialWait     = [int]$hVal }
+            'interval_sec'          { $interval        = [int]$hVal }
+            'success_threshold'     { $successN        = [int]$hVal }
+            'timeout_sec'           { $timeoutSec      = [int]$hVal }
+            'per_check_timeout_sec' { $defaultPerCheck = [int]$hVal }
+            default {
+                Invoke-ParseFail "List parse error: line=$lineno reason=unknown_header_key key='$hKey'"
+            }
+        }
+        continue
+    }
+
+    # Anything other than CSV from here on is a parse error.
+    if ($line -notmatch ',') {
+        Invoke-ParseFail "List parse error: line=$lineno reason=bad_line raw='$line'"
+    }
+
+    $headerPhase = $false
     $cols = $line -split ',' | ForEach-Object { $_.Trim() }
     if ($cols.Count -lt 3) {
         Invoke-ParseFail "List parse error: line=$lineno reason=need_3_cols raw='$line'"
@@ -159,6 +207,20 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
 if ($targets.Count -eq 0) {
     Invoke-ParseFail "Target list is empty: $TargetList"
 }
+
+# Test hooks: env vars trump anything from the .lst header or hardcoded default.
+if ($env:OPS_OVERRIDE_INITIAL_WAIT_SEC)  { $initialWait = [int]$env:OPS_OVERRIDE_INITIAL_WAIT_SEC }
+if ($env:OPS_OVERRIDE_INTERVAL_SEC)      { $interval    = [int]$env:OPS_OVERRIDE_INTERVAL_SEC }
+if ($env:OPS_OVERRIDE_TIMEOUT_SEC)       { $timeoutSec  = [int]$env:OPS_OVERRIDE_TIMEOUT_SEC }
+if ($env:OPS_OVERRIDE_SUCCESS_THRESHOLD) { $successN    = [int]$env:OPS_OVERRIDE_SUCCESS_THRESHOLD }
+
+# Final numeric sanity check (header could have set negative-looking strings via
+# extreme edge cases; env-hook typos surface here too).
+$null = _IntOrFail $initialWait     0   'initial_wait_sec'
+$null = _IntOrFail $interval        5   'interval_sec'
+$null = _IntOrFail $successN        3   'success_threshold'
+$null = _IntOrFail $timeoutSec      600 'timeout_sec'
+$null = _IntOrFail $defaultPerCheck 5   'per_check_timeout_sec'
 
 Write-OpsLog -Level INFO -Message ("start targets={0} timeout={1} success={2} interval={3} initial={4}" -f `
     $targets.Count, $timeoutSec, $successN, $interval, $initialWait)

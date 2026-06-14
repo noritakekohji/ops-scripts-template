@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- service-wait: 監視パラメータ (initial_wait_sec / interval_sec / success_threshold /
+  timeout_sec / per_check_timeout_sec) を `.conf` から **.lst ヘッダに移動 (v2 仕様)**。
+  `.conf` は LogFile / LogLevel のみを保持。同じスクリプトで監視タイミングごとに
+  異なるパラメータの `.lst` を渡せるようになった。古い `.conf` に監視キーが残って
+  いれば WARN を出して無視する。
 - network-check: targets-editor.xlsm に Enabled 列（A 列、on/off ドロップダウン）を追加。
   `on` の行のみ targets.lst に出力されるようになった。行を削除せずに一時的なスキップが可能。
 
