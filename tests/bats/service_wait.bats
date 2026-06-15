@@ -46,12 +46,12 @@ new_tmp() {
     [[ "$output" == *"unknown_type"* ]]
 }
 
-@test "exit 2 when list contains unknown override key" {
+@test "exit 2 when row has more than 3 columns (v3.1)" {
     tmp=$(new_tmp)
-    printf 'ping, 127.0.0.1, ok, success_threshold=99\n' > "$tmp"
+    printf 'ping, 127.0.0.1, ok, per_check_timeout_sec=2\n' > "$tmp"
     run bash "$SCRIPT" "$tmp"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"unknown_key"* ]]
+    [[ "$output" == *"extra_columns"* ]]
 }
 
 @test "sample.lst is parsed and start line is logged (1s timeout)" {

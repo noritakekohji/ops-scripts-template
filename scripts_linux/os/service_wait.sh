@@ -151,6 +151,12 @@ parse_list_line() {
     if [[ "${#cols[@]}" -lt 3 ]]; then
         parse_fail "$lineno" need_3_cols "raw='$raw'"
     fi
+    # v3.1: rows are strictly 3 columns. Any trailing content (commas in desc,
+    # leftover key=value etc.) is rejected so timing settings live only in the
+    # .lst header.
+    if [[ "${#cols[@]}" -gt 3 ]]; then
+        parse_fail "$lineno" extra_columns "raw='$raw'"
+    fi
     local p_type="${cols[0]}"
     local p_target="${cols[1]}"
     local p_desc="${cols[2]}"
@@ -171,40 +177,6 @@ parse_list_line() {
     if [[ "$p_type" == "service" && ! "$p_target" =~ ^[A-Za-z0-9._@-]+$ ]]; then
         parse_fail "$lineno" bad_service_name "target='$p_target'"
     fi
-    if [[ "$p_type" == "process" && ! "$p_target" =~ ^[A-Za-z0-9._-]+$ ]]; then
-        parse_fail "$lineno" bad_process_name "target='$p_target'"
-    fi
-
-    # Parse "key=value" tokens in column 4..end (space-separated within a single column).
-    local extra=""
-    if [[ "${#cols[@]}" -ge 4 ]]; then
-        extra="${cols[3]}"
-        # Append any further comma-split columns too, to be permissive.
-        local j
-        for ((j=4; j<${#cols[@]}; j++)); do extra="$extra ${cols[$j]}"; done
-    fi
-    if [[ -n "$extra" ]]; then
-        # shellcheck disable=SC2206
-        local -a kvs=( $extra )
-        local kv key val
-        for kv in "${kvs[@]}"; do
-            if [[ ! "$kv" =~ ^([^=]+)=(.*)$ ]]; then
-                parse_fail "$lineno" bad_token "token='$kv'"
-            fi
-            key="${BASH_REMATCH[1]}"
-            val="${BASH_REMATCH[2]}"
-            case "$key" in
-                per_check_timeout_sec)
-                    if ! [[ "$val" =~ ^[0-9]+$ ]]; then
-                        parse_fail "$lineno" bad_per_check "value='$val'"
-                    fi
-                    p_per_check="$val" ;;
-                *)
-                    parse_fail "$lineno" unknown_key "key='$key'" ;;
-            esac
-        done
-    fi
-
     targets_text+="${p_type}"$'\t'"${p_target}"$'\t'"${p_desc}"$'\t'"${p_per_check}"$'\n'
 }
 

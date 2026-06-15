@@ -31,13 +31,14 @@ Describe 'ServiceWait.ps1 argument and list parsing' {
             Remove-TempPath $work
         }
     }
-    It 'fails with exit 2 on unknown override key' {
+    It 'fails with exit 2 when a row has more than 3 columns (v3.1)' {
         $work = New-TempWorkdir
         try {
-            $tmp = Join-Path $work 'bad-key.lst'
-            'ping, 127.0.0.1, desc, success_threshold=99' | Set-Content -Path $tmp -Encoding ASCII
+            $tmp = Join-Path $work 'extra-col.lst'
+            'ping, 127.0.0.1, desc, per_check_timeout_sec=2' | Set-Content -Path $tmp -Encoding ASCII
             $r = Invoke-Controller -ScriptPath $script:Script -Arguments @('-TargetList', $tmp) -Env $script:BaseEnv
             $r.ExitCode | Should -Be 2
+            $r.Combined | Should -Match 'extra_columns'
         } finally {
             Remove-TempPath $work
         }

@@ -166,6 +166,10 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
     if ($cols.Count -lt 3) {
         Invoke-ParseFail "List parse error: line=$lineno reason=need_3_cols raw='$line'"
     }
+    # v3.1: rows are strictly 3 columns. Trailing columns are rejected.
+    if ($cols.Count -gt 3) {
+        Invoke-ParseFail "List parse error: line=$lineno reason=extra_columns raw='$line'"
+    }
     $t = @{ type = $cols[0]; target = $cols[1]; desc = $cols[2]; per_check = $defaultPerCheck }
 
     if ($t.type -notin @('ping','tcp','http','service','process')) {
@@ -184,29 +188,6 @@ foreach ($raw in (Get-Content -LiteralPath $TargetList)) {
         Invoke-ParseFail "List parse error: line=$lineno reason=bad_process_name target='$($t.target)'"
     }
 
-    # Columns 4..end may carry key=value tokens (space-separated within a column).
-    if ($cols.Count -ge 4) {
-        $extra = ($cols[3..($cols.Count - 1)] -join ' ').Trim()
-        foreach ($kv in ($extra -split '\s+' | Where-Object { $_ })) {
-            $m = [regex]::Match($kv, '^([^=]+)=(.*)$')
-            if (-not $m.Success) {
-                Invoke-ParseFail "List parse error: line=$lineno reason=bad_token token='$kv'"
-            }
-            $key = $m.Groups[1].Value
-            $val = $m.Groups[2].Value
-            switch ($key) {
-                'per_check_timeout_sec' {
-                    if ($val -notmatch '^\d+$') {
-                        Invoke-ParseFail "List parse error: line=$lineno reason=bad_per_check value='$val'"
-                    }
-                    $t.per_check = [int]$val
-                }
-                default {
-                    Invoke-ParseFail "List parse error: line=$lineno reason=unknown_key key='$key'"
-                }
-            }
-        }
-    }
     $targets.Add($t) | Out-Null
 }
 

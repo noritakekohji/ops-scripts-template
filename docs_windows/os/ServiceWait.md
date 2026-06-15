@@ -27,8 +27,10 @@ per_check_timeout_sec = 5
 ping, 10.0.0.1,                node-A
 tcp,  10.0.0.1:8080,           Tomcat
 http, https://api/health,      API
-http, https://slow/health,     slow API,   per_check_timeout_sec=30
 ```
+
+Rows are strictly 3 columns. Per-target overrides are not supported — use a
+separate `.lst` file when you need a different timing profile.
 
 ### Header block
 
@@ -54,8 +56,8 @@ http, https://slow/health,     slow API,   per_check_timeout_sec=30
     - http = URL
     - service = Windows service name (`[A-Za-z0-9._@-]+`) — the short name used by `Get-Service -Name`
     - process = executable base name (`[A-Za-z0-9._-]+`), no `.exe` suffix
-- Row-level overrides (column 4+, space-separated): `per_check_timeout_sec=<int>` only
-- Unknown type or unknown row override key → exit 2
+- Rows are strictly 3 columns. Trailing columns are rejected (`extra_columns` → exit 2)
+- Unknown type → exit 2
 
 Pass criteria (fixed):
 - ping = ICMP reply
@@ -69,10 +71,13 @@ Both `service` and `process` use PowerShell built-ins (no external prerequisite)
 ### Resolution order
 
 ```
-1. Row-level override (per_check_timeout_sec only)
-2. .lst header
-3. Hardcoded default (table above)
+1. .lst header
+2. Hardcoded default (table above)
 ```
+
+All monitoring parameters are resolved at the file level. There are no
+row-level overrides; split your targets into multiple `.lst` files if you
+need different timing for different groups.
 
 ## Implementation notes
 

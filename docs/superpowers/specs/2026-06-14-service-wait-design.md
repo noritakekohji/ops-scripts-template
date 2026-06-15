@@ -1,8 +1,9 @@
 # service-wait 設計仕様書
 
 - 日付: 2026-06-14（初版） / 2026-06-15（v2 監視パラメータ移行） /
-  **2026-06-15（改訂 v3: ローカルノードの service / process チェックを追加）**
-- ステータス: v2 実装済み、v3 仕様確定・実装未着手
+  2026-06-15（v3 ローカル service / process チェック追加） /
+  **2026-06-15（改訂 v3.1: 行レベルオーバーライドを廃止）**
+- ステータス: v3 実装済み、v3.1 仕様確定・実装未着手
 - 配置ドメイン: `scripts_*/os/`
 
 ## 改訂サマリ (v2, 2026-06-15)
@@ -150,12 +151,11 @@ tcp,  10.0.0.1:8080,      Tomcat
 ### 5.2 ターゲット行（v1 と同一）
 
 ```
-# type, target, description [, key=value ...]
+# type, target, description
 ping,    10.0.0.1,                node-A
 ping,    10.0.0.2,                node-B
 tcp,     10.0.0.1:8080,           Tomcat
 http,    https://api/health,      API
-http,    https://slow/health,     slow API,   per_check_timeout_sec=30
 service, httpd,                   Apache HTTP Server (v3)
 process, java,                    JVM process (v3)
 ```
@@ -172,15 +172,13 @@ process, java,                    JVM process (v3)
 | target | チェック対象 | type ごとの形式: ping は host、tcp は host:port、http は URL、service / process は名前（空白・カンマ不可） |
 | description | 説明 | 自由テキスト。ログ表示用 |
 
-### 5.4 行レベルのオプションオーバーライド（v1 と同一）
+### 5.4 行レベルオーバーライド（v3.1 で廃止）
 
-4 列目以降に空白区切りで `key=value` を複数指定可能。
+v1〜v3 では 4 列目以降に `per_check_timeout_sec=N` を書けたが、v3.1 で削除。
+**行は厳密に 3 列**。4 列目以降に文字が入った行は `reason=extra_columns` で exit 2。
 
-| キー | 用途 |
-|---|---|
-| `per_check_timeout_sec` | この行のみ個別タイムアウト（秒）。ヘッダ値より優先 |
-
-未知のキーが現れた場合は exit 2。
+タイミング設定はファイル単位で完結させ、ターゲットごとに別の挙動を必要とする
+ケースは別 `.lst` を作って分離する設計とする。
 
 ### 5.5 判定基準
 
@@ -199,12 +197,13 @@ service / process はローカルノードでしか確認できないため、�
 ### 5.6 値の解決順位
 
 ```
-1. ターゲット行の per_check_timeout_sec=N オーバーライド（per_check_timeout_sec のみ）
-2. .lst ヘッダの key = value
-3. スクリプトのハードコード既定値（§5.1 表の「既定値」列）
+1. .lst ヘッダの key = value
+2. スクリプトのハードコード既定値（§5.1 表の「既定値」列）
 ```
 
 `service_wait.conf` には監視パラメータの既定値を持たないため、解決順位から除外。
+v3.1 で行レベルオーバーライドも廃止したため、すべての監視パラメータは
+ファイル単位（lst ヘッダ）で確定する。
 
 ## 6. 動作フロー（5-phase 構造）
 
