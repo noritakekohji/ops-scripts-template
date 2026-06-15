@@ -658,8 +658,9 @@ function Invoke-Compare {
     }
 
     # Try Python engine first (produces identical output across platforms)
-    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-    $pythonComparator = Join-Path $scriptDir 'compare_server_info.py'
+    # NOTE: use $PSScriptRoot, not $MyInvocation.MyCommand.Path — the latter
+    # is empty when accessed inside a function and triggers a Split-Path error.
+    $pythonComparator = Join-Path $PSScriptRoot 'compare_server_info.py'
     if ((Test-Path $pythonComparator) -and ($Categories -contains 'all' -or $Categories.Count -eq 0)) {
         $py = Get-Command python3 -ErrorAction SilentlyContinue
         if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
