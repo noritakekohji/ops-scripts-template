@@ -1,8 +1,9 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    CollectSnapshot.ps1 縺ｮ蜊倅ｽ薙ユ繧ｹ繝・    - 繝ｩ繝吶Ν縺ゅｊ/縺ｪ縺・ZIP 逕滓・
-    - 繝・・繝ｫ螟ｱ謨玲凾縺ｮ繧ｨ繝ｩ繝ｼ邯咏ｶ壼虚菴・#>
+    Unit tests for CollectSnapshot.ps1.
+    Covers: label/no-label ZIP naming, tool failure continuation, all-fail ZIP, missing script.
+#>
 
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force

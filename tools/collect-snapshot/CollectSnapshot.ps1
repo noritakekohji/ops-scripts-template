@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Snapshot collection wrapper 窶・runs server-snapshot, port-inventory,
+    Snapshot collection wrapper - runs server-snapshot, port-inventory,
     aws-instance-audit in sequence and packages results into a ZIP file.
 
 .DESCRIPTION
@@ -29,7 +29,7 @@
     Exit codes:
       0  All tools succeeded
       1  One or more tools returned non-zero (ZIP still created)
-     10  No PowerShell host found
+     10  Compress-Archive cmdlet not available (PowerShell 5.1+ required)
 #>
 [CmdletBinding()]
 param(
