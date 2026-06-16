@@ -66,12 +66,16 @@ fi
 
 # ── Helper: build snapshot name ──────────────────────────────────────────────
 
+make_timestamp() {
+    date '+%Y%m%d-%H%M%S'
+}
+
+# make_snap_name <label> <ts>
 make_snap_name() {
     local label="$1"
+    local ts="$2"
     local hostname
     hostname="$(hostname -s 2>/dev/null || hostname)"
-    local ts
-    ts="$(date '+%Y%m%d-%H%M%S')"
     if [[ -n "$label" ]]; then
         echo "${hostname}_${label}_${ts}"
     else
@@ -140,15 +144,15 @@ run_all() {
     for tool_name in "${tools[@]}"; do
         idx=$((idx + 1))
         printf "[%d/%d] %-22s ... " "$idx" "$total" "$tool_name"
-        local tool_exit=0
-        if run_tool "$tool_name" "$snap_dir" "$ts" >> "$log_file" 2>&1; then
+        run_tool "$tool_name" "$snap_dir" "$ts" >> "$log_file" 2>&1
+        local tool_exit=$?
+        if [[ $tool_exit -eq 0 ]]; then
             echo "done (exit=0)"
             printf '[%s] %s: exit=0\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$tool_name" >> "$log_file"
         else
-            tool_exit=$?
+            overall_exit=1
             echo "WARN (exit=${tool_exit})"
             printf '[%s] %s: exit=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$tool_name" "$tool_exit" >> "$log_file"
-            overall_exit=1
         fi
     done
 
@@ -202,7 +206,7 @@ do_menu() {
     [[ -n "$input_label" ]] && LABEL="$input_label"
 
     # Step 2: output directory
-    read -r -p "保存先 [Enter で ${OUTPUT_DIR}] > " input_out
+    read -r -p "Output directory [Enter for ${OUTPUT_DIR}]: " input_out
     [[ -n "$input_out" ]] && OUTPUT_DIR="$input_out"
 
     # Step 3: tool selection
@@ -239,13 +243,13 @@ do_menu() {
     do_run "${selected_tools[@]}"
     local run_status=$?
 
-    # Japanese completion message (TUI mode) — find the newly created archive
+    # Completion message (TUI mode) — find the newly created archive
     local after_list zip_name
     after_list=$(find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.zip" -o -name "*.tar.gz" \) \
         2>/dev/null | sort || true)
     zip_name=$(comm -13 <(echo "$before_list") <(echo "$after_list") | head -1 | xargs basename 2>/dev/null || true)
     if [[ -n "$zip_name" ]]; then
-        echo "完了: ${zip_name} を作成しました。"
+        echo "Done: created ${zip_name}"
     fi
 
     return $run_status
@@ -256,10 +260,10 @@ do_menu() {
 do_run() {
     local tools=("$@")
 
-    local snap_name
-    snap_name="$(make_snap_name "$LABEL")"
     local ts
-    ts="$(echo "$snap_name" | grep -oE '[0-9]{8}-[0-9]{6}$')"
+    ts="$(make_timestamp)"
+    local snap_name
+    snap_name="$(make_snap_name "$LABEL" "$ts")"
     local out_dir="$OUTPUT_DIR"
     local snap_dir="${out_dir}/${snap_name}"
     local log_file="${snap_dir}/collect-snapshot.log"

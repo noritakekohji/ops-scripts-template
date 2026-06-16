@@ -129,12 +129,12 @@ require_compress() {
 
 @test "collect_snapshot: no --output → saved in ./snapshots/" {
     require_compress
-    run bash -c "
-        cd '$WORK'
-        COLLECT_SNAPSHOT_TOOLS_DIR='$MOCK_TOOLS_DIR' \
-        MOCK_CALL_LOG='$MOCK_CALL_LOG' \
-        bash '$CTL'
-    "
+    local wrapper="${WORK}/run_from_work.sh"
+    printf '#!/usr/bin/env bash\ncd "%s" && exec bash "%s" "$@"\n' "$WORK" "$CTL" > "$wrapper"
+    chmod +x "$wrapper"
+    run env COLLECT_SNAPSHOT_TOOLS_DIR="$MOCK_TOOLS_DIR" \
+            MOCK_CALL_LOG="$MOCK_CALL_LOG" \
+            bash "$wrapper"
     [ "$status" -eq 0 ]
     [ -d "$WORK/snapshots" ]
     local count
@@ -199,7 +199,7 @@ MOCK
 
 # ── Test 6b: All tools fail → ZIP generated + exit 1 ─────────────────────────
 
-@test "全ツール失敗でも ZIP が生成され exit 1 になる" {
+@test "collect_snapshot: all tools fail → ZIP generated, exit 1" {
     require_compress
     # Make all 3 mock tools fail
     mkdir -p "${MOCK_TOOLS_DIR}/server-snapshot" \
