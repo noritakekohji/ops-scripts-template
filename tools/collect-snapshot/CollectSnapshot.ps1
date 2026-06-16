@@ -118,7 +118,7 @@ function Invoke-SnapTool {
                 Write-Warning "not found: $script"
                 return 1
             }
-            $json = & $psExe -NoProfile -ExecutionPolicy Bypass -File $script -Json 2>$null
+            $json = & $psExe -NoProfile -ExecutionPolicy Bypass -File $script -Json
             $ec = $LASTEXITCODE
             if ($null -eq $ec) { $ec = 0 }
             if ($ec -eq 0) {
@@ -204,10 +204,10 @@ function Invoke-AllTools {
         Write-Host '[collect-snapshot] all done.'
     } catch {
         Write-Host ('ERROR: compression failed: {0}' -f $_) -ForegroundColor Red
-        exit 1
+        return 1
     }
 
-    exit $overall
+    return $overall
 }
 
 function Invoke-TuiMenu {
@@ -250,12 +250,15 @@ function Invoke-TuiMenu {
     }
 
     Write-Host ''
-    Invoke-AllTools -OutDir $tuiOutput -SnapName (Get-SnapName $tuiLabel) -Tools @($selected)
+    $exitCode = Invoke-AllTools -OutDir $tuiOutput -SnapName (Get-SnapName $tuiLabel) -Tools @($selected)
+    return $exitCode
 }
 
 # 笏笏笏 Main 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 if ($Menu) {
-    Invoke-TuiMenu
+    $exitCode = Invoke-TuiMenu
+    exit $exitCode
 } else {
-    Invoke-AllTools -OutDir $Output -SnapName (Get-SnapName $Label) -Tools $AllTools
+    $exitCode = Invoke-AllTools -OutDir $Output -SnapName (Get-SnapName $Label) -Tools $AllTools
+    exit $exitCode
 }

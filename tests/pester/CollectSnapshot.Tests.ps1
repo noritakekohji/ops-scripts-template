@@ -64,7 +64,6 @@ exit 0
         return $mockRoot
     }
 
-    $script:NewMockToolsDir = Get-Item -LiteralPath Function:\New-MockToolsDir
 }
 
 Describe 'CollectSnapshot: Label in folder name' {
