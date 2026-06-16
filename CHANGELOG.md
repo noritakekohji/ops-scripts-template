@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `tools/collect-snapshot` — 断面情報収集ラッパー（server-snapshot / port-inventory / aws-instance-audit を一括実行し ZIP で保存）。CUI（全自動）と TUI（対話メニュー）に対応
 - service-wait: type=service / type=process のローカルノードチェックを追加 (v3 仕様)。
   Linux は `systemctl is-active` / `pgrep -x`、Windows は `Get-Service` / `Get-Process`
   を使用。OS ごとに別 .lst を用意する前提（service / process 名は OS 固有）。
