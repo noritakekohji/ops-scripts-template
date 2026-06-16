@@ -59,6 +59,11 @@ if ! command -v zip &>/dev/null && ! command -v tar &>/dev/null; then
     exit 10
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "WARN: python3 not found; server-snapshot compare engine may be unavailable" >&2
+    # Note: this is a warning, not fatal - server-snapshot collect still works without python3
+fi
+
 # ── Helper: build snapshot name ──────────────────────────────────────────────
 
 make_snap_name() {
@@ -169,7 +174,7 @@ compress_snap() {
             echo "${snap_name}.zip"
             rm -rf "$snap_dir"
         else
-            echo "WARN: zip failed (exit=${compress_exit})" >&2
+            echo "ERROR: zip failed (exit=${compress_exit})" >&2
         fi
     elif command -v tar &>/dev/null; then
         (cd "$out_dir" && tar -czf "${snap_name}.tar.gz" "$snap_name") || compress_exit=$?
@@ -177,7 +182,7 @@ compress_snap() {
             echo "${snap_name}.tar.gz"
             rm -rf "$snap_dir"
         else
-            echo "WARN: tar failed (exit=${compress_exit})" >&2
+            echo "ERROR: tar failed (exit=${compress_exit})" >&2
         fi
     fi
 
@@ -197,9 +202,7 @@ do_menu() {
     [[ -n "$input_label" ]] && LABEL="$input_label"
 
     # Step 2: output directory
-    printf "Output directory [./snapshots]: "
-    local input_out=""
-    read -r input_out
+    read -r -p "保存先 [Enter で ${OUTPUT_DIR}] > " input_out
     [[ -n "$input_out" ]] && OUTPUT_DIR="$input_out"
 
     # Step 3: tool selection
@@ -228,16 +231,24 @@ do_menu() {
         [[ ${#selected_tools[@]} -eq 0 ]] && selected_tools=("${TOOL_LIST[@]}")
     fi
 
-    # Step 4: confirm and run
-    printf "\nRun %d tool(s)? [Y/n]: " "${#selected_tools[@]}"
-    local input_confirm=""
-    read -r input_confirm
-    if [[ "${input_confirm,,}" == "n" ]]; then
-        echo "Aborted."
-        exit 0
-    fi
+    # Snapshot archives present before run (for diff detection)
+    local before_list
+    before_list=$(find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.zip" -o -name "*.tar.gz" \) \
+        2>/dev/null | sort || true)
 
     do_run "${selected_tools[@]}"
+    local run_status=$?
+
+    # Japanese completion message (TUI mode) — find the newly created archive
+    local after_list zip_name
+    after_list=$(find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.zip" -o -name "*.tar.gz" \) \
+        2>/dev/null | sort || true)
+    zip_name=$(comm -13 <(echo "$before_list") <(echo "$after_list") | head -1 | xargs basename 2>/dev/null || true)
+    if [[ -n "$zip_name" ]]; then
+        echo "完了: ${zip_name} を作成しました。"
+    fi
+
+    return $run_status
 }
 
 # ── Phase 4b: CUI (main run) logic ───────────────────────────────────────────

@@ -197,17 +197,52 @@ MOCK
     grep -q "aws-instance-audit" "$MOCK_CALL_LOG"
 }
 
+# ── Test 6b: All tools fail → ZIP generated + exit 1 ─────────────────────────
+
+@test "全ツール失敗でも ZIP が生成され exit 1 になる" {
+    require_compress
+    # Make all 3 mock tools fail
+    mkdir -p "${MOCK_TOOLS_DIR}/server-snapshot" \
+             "${MOCK_TOOLS_DIR}/port-inventory" \
+             "${MOCK_TOOLS_DIR}/aws-instance-audit"
+    printf '#!/usr/bin/env bash\necho "server-snapshot mock: forced fail" >&2\nexit 1\n' \
+        > "${MOCK_TOOLS_DIR}/server-snapshot/server_snapshot.sh"
+    chmod +x "${MOCK_TOOLS_DIR}/server-snapshot/server_snapshot.sh"
+    printf '#!/usr/bin/env bash\necho "port-inventory mock: forced fail" >&2\nexit 1\n' \
+        > "${MOCK_TOOLS_DIR}/port-inventory/port_inventory.sh"
+    chmod +x "${MOCK_TOOLS_DIR}/port-inventory/port_inventory.sh"
+    printf '#!/usr/bin/env bash\necho "aws-instance-audit mock: forced fail" >&2\nexit 1\n' \
+        > "${MOCK_TOOLS_DIR}/aws-instance-audit/aws_instance_audit.sh"
+    chmod +x "${MOCK_TOOLS_DIR}/aws-instance-audit/aws_instance_audit.sh"
+
+    run env COLLECT_SNAPSHOT_TOOLS_DIR="$MOCK_TOOLS_DIR" \
+        bash "$CTL" --output "$WORK/out"
+    [ "$status" -eq 1 ]
+    # ZIP (or tar.gz) must still be generated
+    local count
+    count=$(find "$WORK/out" \( -name "*.zip" -o -name "*.tar.gz" \) | wc -l)
+    [ "$count" -ge 1 ]
+}
+
 # ── Test 7: --menu flag accepted (TUI reads defaults and exits 0) ─────────────
 
 @test "collect_snapshot: --menu flag accepted, TUI reads defaults and exits 0" {
     require_compress
     local out_dir="$WORK/menu-out"
-    # Supply 4 empty Enter presses for each read prompt in do_menu
+    # Supply 3 empty Enter presses for each read prompt in do_menu (label, dir, tools)
     run bash -c "
-        printf '\n\n\n\n' | \
+        printf '\n\n\n' | \
         COLLECT_SNAPSHOT_TOOLS_DIR='$MOCK_TOOLS_DIR' \
         MOCK_CALL_LOG='$MOCK_CALL_LOG' \
         bash '$CTL' --menu --output '$out_dir'
     "
     [ "$status" -eq 0 ]
+    # Verify tools were invoked
+    grep -q "server-snapshot" "$MOCK_CALL_LOG"
+    grep -q "port-inventory" "$MOCK_CALL_LOG"
+    grep -q "aws-instance-audit" "$MOCK_CALL_LOG"
+    # Verify archive was created
+    local count
+    count=$(find "$out_dir" \( -name "*.zip" -o -name "*.tar.gz" \) | wc -l)
+    [ "$count" -ge 1 ]
 }
