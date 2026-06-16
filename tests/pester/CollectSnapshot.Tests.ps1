@@ -132,3 +132,43 @@ Describe 'CollectSnapshot: Tool failure' {
         }
     }
 }
+
+Describe 'CollectSnapshot: All tools fail' {
+    It 'all tools fail → ZIP still generated, exit 1' {
+        $work = New-TempWorkdir
+        $mock = New-MockToolsDir
+        $callLog = Join-Path $work 'mock_calls.log'
+        # Make all 3 tools fail
+        'exit 1' | Set-Content -Path (Join-Path $mock 'server-snapshot\ServerSnapshot.ps1') -Encoding UTF8
+        'exit 1' | Set-Content -Path (Join-Path $mock 'port-inventory\PortInventory.ps1') -Encoding UTF8
+        'exit 1' | Set-Content -Path (Join-Path $mock 'aws-instance-audit\Get-AwsInstanceAudit.ps1') -Encoding UTF8
+        try {
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('-Output', "$work\out") `
+                -Env @{ COLLECT_SNAPSHOT_TOOLS_DIR = $mock; MOCK_CALL_LOG = $callLog }
+            $r.ExitCode | Should -Be 1
+            $zips = @(Get-ChildItem -Path "$work\out" -Filter '*.zip' -ErrorAction SilentlyContinue)
+            $zips.Count | Should -BeGreaterThan 0
+        } finally { Remove-TempPath $work; Remove-TempPath $mock }
+    }
+}
+
+Describe 'CollectSnapshot: Missing tool script' {
+    It 'missing tool script is skipped, other tools run, exit 1' {
+        $work = New-TempWorkdir
+        $mock = New-MockToolsDir
+        $callLog = Join-Path $work 'mock_calls.log'
+        # Remove port-inventory script
+        Remove-Item -Path (Join-Path $mock 'port-inventory\PortInventory.ps1') -Force
+        try {
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('-Output', "$work\out") `
+                -Env @{ COLLECT_SNAPSHOT_TOOLS_DIR = $mock; MOCK_CALL_LOG = $callLog }
+            $r.ExitCode | Should -Be 1
+            # Other tools still ran
+            $log = Get-Content $callLog -ErrorAction SilentlyContinue
+            ($log -join "`n") | Should -Match 'server-snapshot'
+            ($log -join "`n") | Should -Match 'aws-instance-audit'
+        } finally { Remove-TempPath $work; Remove-TempPath $mock }
+    }
+}

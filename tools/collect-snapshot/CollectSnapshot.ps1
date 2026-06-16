@@ -58,6 +58,12 @@ $Timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 
 if (-not $Output) { $Output = '.\snapshots' }
 
+# Phase 3: prerequisite check
+if (-not (Get-Command 'Compress-Archive' -ErrorAction SilentlyContinue)) {
+    Write-Error '[collect-snapshot] ERROR: Compress-Archive cmdlet not available (requires PowerShell 5.1+)'
+    exit 10
+}
+
 # 笏笏笏 Helpers 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 function Get-SnapName {
     param([string]$Lbl)
@@ -184,7 +190,7 @@ function Invoke-AllTools {
             Write-Host ('WARN (exit={0})' -f $exitCode) -ForegroundColor Yellow
             $overall = 1
         }
-        Add-Content -Path $logFile -Value ('[$tStart] {0}: exit={1}' -f $tool, $exitCode)
+        Add-Content -Path $logFile -Value "[$tStart] ${tool}: exit=$exitCode"
     }
 
     # Compress
