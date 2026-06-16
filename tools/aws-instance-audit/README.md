@@ -8,11 +8,10 @@ EC2 インスタンス上の OS から、**自分自身の AWS コンテキス�
 
 ```
 tools/aws-instance-audit/
-├── aws_instance_audit.sh       # Linux 本体
-├── Get-AwsInstanceAudit.ps1    # Windows 本体
+├── aws_instance_audit.sh       # Linux 本体（JSON 組み立てまで自己完結）
+├── Get-AwsInstanceAudit.ps1    # Windows 本体（JSON 組み立てまで自己完結）
 ├── aws_instance_audit.bat      # Windows 起動用バッチ
-├── _assemble_json.py           # JSON 組み立て（両 OS 共通の内部ヘルパー）
-├── render_report.py            # HTML レポート生成（両 OS 共通）
+├── render_report.py            # HTML レポート生成（--html / -HtmlReport 指定時のみ使用）
 └── README.md
 ```
 
@@ -35,12 +34,18 @@ tools/aws-instance-audit/
 | 項目 | 内容 |
 |---|---|
 | 実行場所 | **EC2 インスタンス上**（IMDS `169.254.169.254` に到達できること） |
-| 必須 | AWS CLI v2、`python3`（JSON 組み立て・HTML 生成に使用） |
-| Linux | Bash 4+、`curl` |
+| 必須 | AWS CLI v2 |
+| 任意 | `python3`（**HTML レポート `--html` / `-HtmlReport` を出すときだけ** 必要。JSON 出力には不要） |
+| Linux | Bash 4.4+、`curl` |
 | Windows | PowerShell 5.1+ |
 | IAM 権限 | インスタンスプロファイルのロールに読み取り権限が必要：<br>`ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeRouteTables`, `ec2:DescribeTags`, `iam:GetRole`, `iam:ListAttachedRolePolicies`, `iam:ListRolePolicies`, `sts:GetCallerIdentity` |
 
 > IMDSv2（トークン必須）に対応しています。IMDSv1 のみ許可の環境でも動作します。
+
+> **JSON 出力は python3 / jq に依存しません。** Linux 版は `aws --query`（JMESPath）+
+> `--output text` で値を抽出し、Windows 版は `ConvertFrom-Json` / `ConvertTo-Json` で
+> 組み立てます。python3 が制限される環境でも JSON 棚卸しはそのまま使えます
+> （`--html` / `-HtmlReport` を付けたときだけ python3 が必要）。
 
 ---
 
@@ -105,6 +110,10 @@ aws_instance_audit.bat -Category iam,sg -HtmlReport audit.html
 }
 ```
 
+> 上記は整形例です。Linux 版（Bash ネイティブ）は依存を増やさないため **1 行のコンパクト
+> JSON** を出力します（内容・スキーマは同一）。Windows 版（`ConvertTo-Json`）はインデント
+> 付きで出力します。いずれも `render_report.py` で同じ HTML になります。
+
 HTML レポート（`--html` / `-HtmlReport`）は同じ内容を表形式で見やすく整形します。
 
 ---
@@ -117,7 +126,7 @@ HTML レポート（`--html` / `-HtmlReport`）は同じ内容を表形式で見
 | 1  | 引数不正 |
 | 2  | IMDS 到達不可（EC2 外 or IMDS 無効）|
 | 5  | 出力書き込み / HTML 生成失敗 |
-| 10 | 前提コマンド不在（aws CLI / python3）|
+| 10 | 前提コマンド不在（aws CLI / `--html` 指定時のみ python3）|
 | 20 | AWS 認証・権限エラー |
 
 ---

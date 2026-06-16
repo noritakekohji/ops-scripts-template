@@ -8,6 +8,8 @@
 .DESCRIPTION
     tools/ 配下の自己完結スクリプト（lib 非依存）。EC2 インスタンス上で実行する
     ことを前提とし、IMDSv2 で自分のメタデータを取得し、aws CLI で詳細を引く。
+    JSON 組み立ては PowerShell ネイティブ（ConvertTo-Json）で行うため python3 は
+    不要。HTML レポート（-HtmlReport）を生成するときだけ python3 が必要。
 
 .PARAMETER Category
     収集カテゴリ。all / instance / iam / sg / network（カンマ区切り可）。既定: all
@@ -27,7 +29,7 @@
 
 .NOTES
     終了コード: 0 成功 / 1 引数不正 / 2 IMDS 到達不可 / 5 出力失敗 /
-                10 aws CLI / python3 不在 / 20 認証・権限エラー
+                10 aws CLI 不在（HTML 指定時は python3 不在）/ 20 認証・権限エラー
 #>
 [CmdletBinding()]
 param(
@@ -56,13 +58,26 @@ function Want([string]$cat) {
     return ($Category -split ',' | ForEach-Object { $_.Trim() }) -contains $cat
 }
 
+# StrictMode 下で「存在しないプロパティ」へのアクセスは例外になるため、
+# aws CLI の JSON から省略されうるフィールドはこのヘルパー経由で安全に取り出す。
+function Get-Prop($obj, [string]$name) {
+    if ($null -eq $obj) { return $null }
+    $pp = $obj.PSObject.Properties[$name]
+    if ($pp) { return $pp.Value }
+    return $null
+}
+
 # ── 前提チェック ───────────────────────────────────────────────
 $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
 if (-not $awsCmd) { Write-Log 'ERROR' 'aws CLI not found in PATH'; exit 10 }
 
-$pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
-if (-not $pyCmd) { $pyCmd = Get-Command python -ErrorAction SilentlyContinue }
-if (-not $pyCmd) { Write-Log 'ERROR' 'python3 not found (required to assemble JSON)'; exit 10 }
+# python3 は HTML レポート生成にのみ使用する。JSON 出力だけなら不要。
+$pyCmd = $null
+if ($HtmlReport) {
+    $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $pyCmd) { $pyCmd = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $pyCmd) { Write-Log 'ERROR' 'python3 not found (required for HTML report)'; exit 10 }
+}
 
 # ── AWS CLI 挙動の安定化 ───────────────────────────────────────
 # AWS_PAGER='' : v2 のページャー入力待ちで固まるのを防ぐ
@@ -131,92 +146,217 @@ if (-not $OutputPath) {
     $OutputPath = "aws_audit_${idPart}_${ts}.json"
 }
 
-# ── 一時ディレクトリ ───────────────────────────────────────────
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("aws-audit-" + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-
-function Invoke-AwsJson {
-    param([string[]]$AwsArgs, [string]$OutFile)
+# ── aws CLI 呼び出し（生 JSON を ConvertFrom-Json で解析して返す）──
+function Invoke-AwsObj {
+    param([string[]]$AwsArgs)
     try {
         $raw = & aws @AwsArgs @AwsTimeoutOpts --output json 2>$null
         if ($LASTEXITCODE -eq 0 -and $raw) {
-            $raw | Out-File -LiteralPath $OutFile -Encoding utf8
-        } else {
-            'null' | Out-File -LiteralPath $OutFile -Encoding utf8
-            Write-Log 'WARN' "aws $($AwsArgs -join ' ') failed (exit $LASTEXITCODE)"
+            return ($raw | ConvertFrom-Json)
         }
+        Write-Log 'WARN' "aws $($AwsArgs -join ' ') failed (exit $LASTEXITCODE)"
+        return $null
     } catch {
-        'null' | Out-File -LiteralPath $OutFile -Encoding utf8
         Write-Log 'WARN' "aws $($AwsArgs -join ' ') error: $($_.Exception.Message)"
+        return $null
     }
 }
 
+# SG の IpPermissions / IpPermissionsEgress を共通スキーマに正規化する。
+# 戻り値はカンマ演算子 (, $out) で配列性を保ち、単一要素のアンロールを防ぐ。
+function Convert-Perms($perms) {
+    $out = @()
+    foreach ($p in @($perms)) {
+        if ($null -eq $p) { continue }
+        $proto = [string](Get-Prop $p 'IpProtocol')
+        if ($proto -eq '-1') { $proto = 'all' }
+
+        $cidrs = @()
+        foreach ($r in @(Get-Prop $p 'IpRanges'))    { $c = [string](Get-Prop $r 'CidrIp');    if ($c) { $cidrs += $c } }
+        foreach ($r in @(Get-Prop $p 'Ipv6Ranges'))  { $c = [string](Get-Prop $r 'CidrIpv6');  if ($c) { $cidrs += $c } }
+
+        $sgRefs = @()
+        foreach ($g in @(Get-Prop $p 'UserIdGroupPairs')) { $s = [string](Get-Prop $g 'GroupId'); if ($s) { $sgRefs += $s } }
+
+        $out += ,([ordered]@{
+            protocol  = $proto
+            from_port = Get-Prop $p 'FromPort'
+            to_port   = Get-Prop $p 'ToPort'
+            cidrs     = @($cidrs)
+            sg_refs   = @($sgRefs)
+        })
+    }
+    return ,@($out)
+}
+
 try {
-    # 認証確認（PS5.1 では `> (式)` のリダイレクトは不可。変数経由で Out-File する）
-    $callerFile = Join-Path $tmp 'caller.json'
-    $callerRaw = & aws sts get-caller-identity @AwsTimeoutOpts --output json 2>$null
+    # 認証確認（生データは使わず、戻りコードのみ見る）
+    & aws sts get-caller-identity @AwsTimeoutOpts --output json > $null 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Log 'ERROR' 'AWS auth failed (sts get-caller-identity)'
         exit 20
     }
-    $callerRaw | Out-File -LiteralPath $callerFile -Encoding utf8
 
-    foreach ($f in 'iam_attached','iam_inline','iam_role','sg','vpc','subnet','eni','rt','tags') {
-        'null' | Out-File -LiteralPath (Join-Path $tmp "$f.json") -Encoding utf8
-    }
-
-    if ((Want 'iam') -and $iamRole) {
-        Write-Log 'INFO' "Collecting IAM role/policies: $iamRole"
-        Invoke-AwsJson @('iam','list-attached-role-policies','--role-name',$iamRole) (Join-Path $tmp 'iam_attached.json')
-        Invoke-AwsJson @('iam','list-role-policies','--role-name',$iamRole)          (Join-Path $tmp 'iam_inline.json')
-        Invoke-AwsJson @('iam','get-role','--role-name',$iamRole)                    (Join-Path $tmp 'iam_role.json')
-    }
-
-    if (Want 'sg') {
-        Write-Log 'INFO' 'Collecting security groups'
-        if ($sgIdsRaw) {
-            $sgIds = $sgIdsRaw -split "`n" | Where-Object { $_ }
-            Invoke-AwsJson (@('ec2','describe-security-groups','--group-ids') + $sgIds) (Join-Path $tmp 'sg.json')
+    $nowJst = (Get-Date).ToUniversalTime().AddHours(9).ToString('yyyy-MM-dd HH:mm:ss')
+    $result = [ordered]@{
+        meta = [ordered]@{
+            tool         = 'aws_instance_audit'
+            collected_at = $nowJst
+            hostname     = [string]$env:COMPUTERNAME
+            region       = $Region
+            instance_id  = $instanceId
+            categories   = if ($Category) { $Category } else { 'all' }
         }
     }
 
+    # ── instance + tags ────────────────────────────────────────
+    if (Want 'instance') {
+        $tags = [ordered]@{}
+        if ($instanceId) {
+            $td = Invoke-AwsObj @('ec2','describe-tags','--filters',"Name=resource-id,Values=$instanceId")
+            foreach ($t in @(Get-Prop $td 'Tags')) {
+                $k = [string](Get-Prop $t 'Key')
+                if ($k) { $tags[$k] = [string](Get-Prop $t 'Value') }
+            }
+        }
+        $result.instance = [ordered]@{
+            instance_id       = $instanceId
+            instance_type     = $instanceType
+            ami_id            = $amiId
+            availability_zone = $az
+            region            = $Region
+            private_ip        = $localIp
+            public_ip         = $publicIp
+            vpc_id            = $vpcId
+            subnet_id         = $subnetId
+            tags              = $tags
+        }
+    }
+
+    # ── IAM ────────────────────────────────────────────────────
+    if (Want 'iam') {
+        $iam = [ordered]@{
+            role_name         = $iamRole
+            role_arn          = ''
+            attached_policies = @()
+            inline_policies   = @()
+        }
+        if ($iamRole) {
+            Write-Log 'INFO' "Collecting IAM role/policies: $iamRole"
+            $rj = Invoke-AwsObj @('iam','get-role','--role-name',$iamRole)
+            $role = Get-Prop $rj 'Role'
+            if ($role) {
+                $iam.role_arn     = [string](Get-Prop $role 'Arn')
+                $iam.create_date  = [string](Get-Prop $role 'CreateDate')
+            }
+            $aj = Invoke-AwsObj @('iam','list-attached-role-policies','--role-name',$iamRole)
+            $att = @()
+            foreach ($p in @(Get-Prop $aj 'AttachedPolicies')) {
+                $att += ,([ordered]@{ name = [string](Get-Prop $p 'PolicyName'); arn = [string](Get-Prop $p 'PolicyArn') })
+            }
+            $iam.attached_policies = @($att)
+            $ij = Invoke-AwsObj @('iam','list-role-policies','--role-name',$iamRole)
+            $iam.inline_policies   = @(@(Get-Prop $ij 'PolicyNames') | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        }
+        $result.iam = $iam
+    }
+
+    # ── Security Groups ────────────────────────────────────────
+    if (Want 'sg') {
+        $sgs = @()
+        if ($sgIdsRaw) {
+            Write-Log 'INFO' 'Collecting security groups'
+            $sgIds = @($sgIdsRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            $sj = Invoke-AwsObj (@('ec2','describe-security-groups','--group-ids') + $sgIds)
+            foreach ($g in @(Get-Prop $sj 'SecurityGroups')) {
+                $sgs += ,([ordered]@{
+                    group_id    = [string](Get-Prop $g 'GroupId')
+                    group_name  = [string](Get-Prop $g 'GroupName')
+                    description = [string](Get-Prop $g 'Description')
+                    vpc_id      = [string](Get-Prop $g 'VpcId')
+                    ingress     = Convert-Perms (Get-Prop $g 'IpPermissions')
+                    egress      = Convert-Perms (Get-Prop $g 'IpPermissionsEgress')
+                })
+            }
+        }
+        $result.security_groups = @($sgs)
+    }
+
+    # ── Network ────────────────────────────────────────────────
     if (Want 'network') {
         Write-Log 'INFO' 'Collecting network (vpc/subnet/eni/route)'
-        if ($vpcId)    { Invoke-AwsJson @('ec2','describe-vpcs','--vpc-ids',$vpcId)          (Join-Path $tmp 'vpc.json') }
-        if ($subnetId) { Invoke-AwsJson @('ec2','describe-subnets','--subnet-ids',$subnetId) (Join-Path $tmp 'subnet.json') }
+        $net = [ordered]@{}
+
+        if ($vpcId) {
+            $vj = Invoke-AwsObj @('ec2','describe-vpcs','--vpc-ids',$vpcId)
+            $v = @(Get-Prop $vj 'Vpcs') | Select-Object -First 1
+            if ($v) {
+                $net.vpc = [ordered]@{
+                    vpc_id     = [string](Get-Prop $v 'VpcId')
+                    cidr       = [string](Get-Prop $v 'CidrBlock')
+                    is_default = [bool](Get-Prop $v 'IsDefault')
+                }
+            }
+        }
+        if ($subnetId) {
+            $sj = Invoke-AwsObj @('ec2','describe-subnets','--subnet-ids',$subnetId)
+            $s = @(Get-Prop $sj 'Subnets') | Select-Object -First 1
+            if ($s) {
+                $net.subnet = [ordered]@{
+                    subnet_id     = [string](Get-Prop $s 'SubnetId')
+                    cidr          = [string](Get-Prop $s 'CidrBlock')
+                    az            = [string](Get-Prop $s 'AvailabilityZone')
+                    map_public_ip = [bool](Get-Prop $s 'MapPublicIpOnLaunch')
+                }
+            }
+        }
         if ($instanceId) {
-            Invoke-AwsJson @('ec2','describe-network-interfaces','--filters',"Name=attachment.instance-id,Values=$instanceId") (Join-Path $tmp 'eni.json')
+            $ej = Invoke-AwsObj @('ec2','describe-network-interfaces','--filters',"Name=attachment.instance-id,Values=$instanceId")
+            $enis = @()
+            foreach ($e in @(Get-Prop $ej 'NetworkInterfaces')) {
+                $groups = @()
+                foreach ($g in @(Get-Prop $e 'Groups')) { $gid = [string](Get-Prop $g 'GroupId'); if ($gid) { $groups += $gid } }
+                $enis += ,([ordered]@{
+                    eni_id      = [string](Get-Prop $e 'NetworkInterfaceId')
+                    private_ip  = [string](Get-Prop $e 'PrivateIpAddress')
+                    subnet_id   = [string](Get-Prop $e 'SubnetId')
+                    description = [string](Get-Prop $e 'Description')
+                    groups      = @($groups)
+                })
+            }
+            $net.enis = @($enis)
         }
         if ($vpcId) {
-            Invoke-AwsJson @('ec2','describe-route-tables','--filters',"Name=vpc-id,Values=$vpcId") (Join-Path $tmp 'rt.json')
+            $rj = Invoke-AwsObj @('ec2','describe-route-tables','--filters',"Name=vpc-id,Values=$vpcId")
+            $rts = @()
+            foreach ($r in @(Get-Prop $rj 'RouteTables')) {
+                $routes = @()
+                foreach ($rt in @(Get-Prop $r 'Routes')) {
+                    $dest = [string](Get-Prop $rt 'DestinationCidrBlock')
+                    if (-not $dest) { $dest = [string](Get-Prop $rt 'DestinationPrefixListId') }
+                    $target = ''
+                    foreach ($k in 'GatewayId','NatGatewayId','NetworkInterfaceId','TransitGatewayId') {
+                        $tv = [string](Get-Prop $rt $k)
+                        if ($tv) { $target = $tv; break }
+                    }
+                    $routes += ,([ordered]@{ dest = $dest; target = $target })
+                }
+                $rts += ,([ordered]@{ route_table_id = [string](Get-Prop $r 'RouteTableId'); routes = @($routes) })
+            }
+            $net.route_tables = @($rts)
         }
+        $result.network = $net
     }
 
-    if ((Want 'instance') -and $instanceId) {
-        Invoke-AwsJson @('ec2','describe-tags','--filters',"Name=resource-id,Values=$instanceId") (Join-Path $tmp 'tags.json')
-    }
-
-    # ── python3 で JSON 束ね（Linux 版と同じアセンブラを使う）──────
-    $assembler = Join-Path $scriptDir '_assemble_json.py'
-    $env:TMPD       = $tmp
-    $env:INST_ID    = $instanceId
-    $env:INST_TYPE  = $instanceType
-    $env:AMI        = $amiId
-    $env:AZ         = $az
-    $env:REGION     = $Region
-    $env:LOCAL_IP   = $localIp
-    $env:PUBLIC_IP  = $publicIp
-    $env:VPC_ID     = $vpcId
-    $env:SUBNET_ID  = $subnetId
-    $env:IAM_ROLE   = $iamRole
-    $env:CATS       = $Category
-    $env:HOSTNAME_S = $env:COMPUTERNAME
-    $env:OUT        = $OutputPath
-
-    & $pyCmd.Source $assembler
-    if ($LASTEXITCODE -ne 0) { Write-Log 'ERROR' 'Failed to assemble JSON output'; exit 5 }
+    # ── JSON 出力（PowerShell ネイティブ）──────────────────────
+    $outDir = Split-Path -Parent $OutputPath
+    if ($outDir -and -not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+    $json = $result | ConvertTo-Json -Depth 12
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($OutputPath, $json, $utf8NoBom)
     Write-Log 'INFO' "JSON written: $OutputPath"
 
+    # ── HTML レポート（python3 + render_report.py）─────────────
     if ($HtmlReport) {
         if (Test-Path $renderPy) {
             & $pyCmd.Source $renderPy $OutputPath $HtmlReport
@@ -235,7 +375,6 @@ try {
     exit 0
 }
 finally {
-    if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     # IMDS 用に無効化した既定プロキシを元に戻す
     try { [System.Net.WebRequest]::DefaultWebProxy = $script:savedProxy } catch {}
 }

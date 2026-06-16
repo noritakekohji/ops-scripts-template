@@ -12,7 +12,7 @@
 ::   aws_instance_audit.bat -Category iam,sg -HtmlReport audit.html
 ::   aws_instance_audit.bat -OutputPath C:\reports\audit.json
 ::
-:: Requirements: PowerShell 5.1+, AWS CLI v2, python3 (for JSON assemble / HTML)
+:: Requirements: PowerShell 5.1+, AWS CLI v2 (python3 only for -HtmlReport)
 :: Exit codes  : forwarded from Get-AwsInstanceAudit.ps1
 :: ============================================================================
 setlocal

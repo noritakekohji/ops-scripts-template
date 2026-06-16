@@ -13,11 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   を使用。OS ごとに別 .lst を用意する前提（service / process 名は OS 固有）。
 
 ### Removed
+- aws-instance-audit: 内部ヘルパー `_assemble_json.py` を削除（JSON 組み立てが
+  両 OS でネイティブ化され不要になったため）。`render_report.py`(HTML) は維持。
 - service-wait: 行レベルオーバーライド (`per_check_timeout_sec=N` を 4 列目に書く形式)
   を **v3.1 で廃止**。タイミング設定はすべて `.lst` ヘッダで完結させる。
   4 列目以降の文字列を含む行は `extra_columns` で exit 2。
 
 ### Changed
+- aws-instance-audit: **JSON 出力を python3 / jq に非依存化**。Linux 版は
+  `aws --query`(JMESPath) + `--output text` で値を抽出し bash ネイティブで JSON を
+  組み立て、Windows 版は `ConvertFrom-Json` / `ConvertTo-Json` で組み立てる。
+  python3 は HTML レポート (`--html` / `-HtmlReport`) を出すときだけ必要になった。
+  終了コード 10 の意味を「aws CLI 不在（--html 指定時のみ python3 不在）」に変更。
+  Bash 版は依存を増やさないため 1 行のコンパクト JSON を出力する（スキーマは従来と同一）。
 - service-wait: 監視パラメータ (initial_wait_sec / interval_sec / success_threshold /
   timeout_sec / per_check_timeout_sec) を `.conf` から **.lst ヘッダに移動 (v2 仕様)**。
   `.conf` は LogFile / LogLevel のみを保持。同じスクリプトで監視タイミングごとに
