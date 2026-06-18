@@ -50,12 +50,21 @@
 param(
     [string]$ExpectedList = '',
     [string]$HtmlReport   = '',
+    [string]$FromJson     = '',
     [switch]$Json,
     [switch]$FailOnly
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# StrictMode 下で JSON オブジェクトの欠落プロパティを安全に取得する
+function Get-JsonProp($obj, [string]$name) {
+    if ($null -eq $obj) { return $null }
+    $pp = $obj.PSObject.Properties[$name]
+    if ($pp) { return $pp.Value }
+    return $null
+}
 
 # ============================================================
 # Phase 2: Helper functions — port collection
@@ -505,48 +514,89 @@ if ($ExpectedList) {
 # Phase 4: Main processing — collect ports
 # ============================================================
 
-Write-Host ''
-Write-Host 'Port Inventory - Collecting listening ports...' -ForegroundColor Cyan
-Write-Host ('=' * 60)
+$fromJsonMode = [bool]$FromJson
 
-$actual = Get-ListeningPorts
-
-Write-Host "  Found $($actual.Count) unique listening port(s)." -ForegroundColor Green
-
-# Audit or inventory-only
-$auditResults = $null
-
-if ($hasExpectedList) {
-    $expected = Read-ExpectedList $ExpectedList
-    if ($expected.Count -eq 0) {
-        Write-Host '  WARNING: Expected list is empty, showing inventory only.' -ForegroundColor Yellow
+if ($FromJson) {
+    # ── FromJson: 収集を JSON 読み込みに差し替える ──
+    if (-not (Test-Path -LiteralPath $FromJson)) {
+        Write-Host "ERROR: FromJson file not found: $FromJson" -ForegroundColor Red
+        exit 2
     }
-    else {
-        Write-Host "  Comparing against $($expected.Count) expected entry(ies)..." -ForegroundColor Cyan
-        $auditResults = Invoke-PortAudit -Actual $actual -Expected $expected
+    try {
+        $rawJson = Get-Content -LiteralPath $FromJson -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Host "ERROR: Failed to parse JSON: $FromJson" -ForegroundColor Red
+        exit 1
     }
-}
-
-# Build final row set for output
-if ($null -ne $auditResults) {
-    $outputRows = $auditResults
-}
-else {
-    # Inventory-only mode: wrap actual ports as INFO rows
     $outputRows = @(
-        foreach ($a in $actual) {
+        foreach ($o in @($rawJson)) {
+            $portVal = Get-JsonProp $o 'port'
+            $pidVal  = Get-JsonProp $o 'pid'
             [ordered]@{
-                port        = $a.port
-                proto       = $a.proto
-                address     = $a.address
-                process     = $a.process
-                pid         = $a.pid
-                path        = $a.path
-                status      = 'INFO'
-                description = ''
+                port        = if ($null -ne $portVal) { [int]$portVal } else { 0 }
+                proto       = [string](Get-JsonProp $o 'proto')
+                address     = [string](Get-JsonProp $o 'address')
+                process     = [string](Get-JsonProp $o 'process')
+                pid         = if ($null -ne $pidVal) { [int]$pidVal } else { 0 }
+                path        = [string](Get-JsonProp $o 'path')
+                status      = [string](Get-JsonProp $o 'status')
+                description = [string](Get-JsonProp $o 'description')
             }
         }
     )
+}
+else {
+    if (-not $Json) {
+        Write-Host ''
+        Write-Host 'Port Inventory - Collecting listening ports...' -ForegroundColor Cyan
+        Write-Host ('=' * 60)
+    }
+
+    $actual = Get-ListeningPorts
+
+    if (-not $Json) {
+        Write-Host "  Found $($actual.Count) unique listening port(s)." -ForegroundColor Green
+    }
+
+    # Audit or inventory-only
+    $auditResults = $null
+
+    if ($hasExpectedList) {
+        $expected = Read-ExpectedList $ExpectedList
+        if ($expected.Count -eq 0) {
+            if (-not $Json) {
+                Write-Host '  WARNING: Expected list is empty, showing inventory only.' -ForegroundColor Yellow
+            }
+        }
+        else {
+            if (-not $Json) {
+                Write-Host "  Comparing against $($expected.Count) expected entry(ies)..." -ForegroundColor Cyan
+            }
+            $auditResults = Invoke-PortAudit -Actual $actual -Expected $expected
+        }
+    }
+
+    # Build final row set for output
+    if ($null -ne $auditResults) {
+        $outputRows = $auditResults
+    }
+    else {
+        # Inventory-only mode: wrap actual ports as INFO rows
+        $outputRows = @(
+            foreach ($a in $actual) {
+                [ordered]@{
+                    port        = $a.port
+                    proto       = $a.proto
+                    address     = $a.address
+                    process     = $a.process
+                    pid         = $a.pid
+                    path        = $a.path
+                    status      = 'INFO'
+                    description = ''
+                }
+            }
+        )
+    }
 }
 
 # ============================================================
@@ -560,8 +610,10 @@ $displayRows = if ($FailOnly) {
     @($outputRows)
 }
 
-Write-Host ''
-Write-Host ('=' * 60)
+if (-not $Json) {
+    Write-Host ''
+    Write-Host ('=' * 60)
+}
 
 if ($Json) {
     # JSON output
@@ -629,8 +681,12 @@ if ($HtmlReport) {
     }
     $meta = @{
         hostname = $env:COMPUTERNAME
-        listFile = if ($hasExpectedList) { [System.IO.Path]::GetFileName($ExpectedList) } else { '(none)' }
-        mode     = if ($hasExpectedList) { 'Audit' } else { 'Inventory' }
+        listFile = if ($fromJsonMode) { [System.IO.Path]::GetFileName($FromJson) }
+                   elseif ($hasExpectedList) { [System.IO.Path]::GetFileName($ExpectedList) }
+                   else { '(none)' }
+        mode     = if ($fromJsonMode) { 'FromJson' }
+                   elseif ($hasExpectedList) { 'Audit' }
+                   else { 'Inventory' }
     }
     $htmlContent = New-PortHtmlReport $displayRows $meta
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -645,14 +701,19 @@ $warnCount = @($outputRows | Where-Object { $_.status -eq 'WARN' }).Count
 $okCount   = @($outputRows | Where-Object { $_.status -eq 'OK'   }).Count
 $infoCount = @($outputRows | Where-Object { $_.status -eq 'INFO' }).Count
 
-Write-Host ''
-if ($hasExpectedList) {
-    Write-Host "Summary: $($outputRows.Count) entries / OK=$okCount / NG=$ngCount / WARN=$warnCount / INFO=$infoCount"
+if (-not $Json) {
+    Write-Host ''
+    if ($fromJsonMode) {
+        Write-Host "Summary (from JSON): $($outputRows.Count) entries / OK=$okCount / NG=$ngCount / WARN=$warnCount / INFO=$infoCount"
+    }
+    elseif ($hasExpectedList) {
+        Write-Host "Summary: $($outputRows.Count) entries / OK=$okCount / NG=$ngCount / WARN=$warnCount / INFO=$infoCount"
+    }
+    else {
+        Write-Host "Summary: $($actual.Count) listening port(s) discovered (inventory only)"
+    }
+    Write-Host ''
 }
-else {
-    Write-Host "Summary: $($actual.Count) listening port(s) discovered (inventory only)"
-}
-Write-Host ''
 
 if ($ngCount -gt 0 -or $warnCount -gt 0) {
     exit 1

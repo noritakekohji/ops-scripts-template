@@ -1,0 +1,32 @@
+[
+  {
+    "port": 443,
+    "proto": "tcp",
+    "address": "0.0.0.0",
+    "process": "nginx",
+    "pid": 1234,
+    "path": "/usr/sbin/nginx",
+    "status": "OK",
+    "description": "HTTPS"
+  },
+  {
+    "port": 23,
+    "proto": "tcp",
+    "address": "0.0.0.0",
+    "process": "telnetd",
+    "pid": 666,
+    "path": "/usr/sbin/telnetd",
+    "status": "NG",
+    "description": "Telnet must be closed"
+  },
+  {
+    "port": 8080,
+    "proto": "tcp",
+    "address": "127.0.0.1",
+    "process": "java",
+    "pid": 4321,
+    "path": "/usr/bin/java",
+    "status": "INFO",
+    "description": ""
+  }
+]
