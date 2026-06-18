@@ -97,6 +97,20 @@ Describe 'ServerSnapshot filesystem expansion' {
     }
 }
 
+Describe 'ServerSnapshot security expansion' {
+    It 'security has uac (Windows)' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','security','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $sec = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).security
+            $sec.PSObject.Properties.Name | Should -Contain 'uac'
+        } finally { Remove-TempPath $work }
+    }
+}
+
 Describe 'ServerSnapshot scheduled' {
     It 'scheduled has scheduled_tasks and startup keys' {
         $work = New-TempWorkdir

@@ -451,6 +451,19 @@ def collect_security():
         result['firewall_rules'] = []
     selinux = run('getenforce 2>/dev/null', '')
     if selinux: result['selinux'] = selinux.lower()
+    # AppArmor
+    result['apparmor'] = {}
+    try:
+        import shutil as _shutil
+        if _shutil.which('aa-status'):
+            r = subprocess.run(['aa-status'], capture_output=True, text=True, timeout=5)
+            result['apparmor']['available'] = (r.returncode == 0)
+            result['apparmor']['summary'] = r.stdout.strip().splitlines()[0] if r.stdout else ''
+        else:
+            r = subprocess.run(['systemctl', 'is-active', 'apparmor'], capture_output=True, text=True, timeout=5)
+            result['apparmor']['active'] = r.stdout.strip()
+    except Exception:
+        pass
     return result
 
 def collect_patches():

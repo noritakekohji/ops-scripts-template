@@ -300,6 +300,15 @@ function Get-SecurityInfo {
             signature_age_days  = $defender.AntivirusSignatureAge
         }
     }
+    $r['uac'] = Safe-Exec -Label 'security.uac' -Block {
+        $p = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+        $item = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue
+        $h = @{}
+        foreach ($k in 'EnableLUA','ConsentPromptBehaviorAdmin') {
+            $pp = $item.PSObject.Properties[$k]; if ($pp) { $h[$k] = [int]$pp.Value }
+        }
+        $h
+    }
     $r
 }
 
