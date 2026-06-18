@@ -57,3 +57,11 @@ assert d['meta']['categories'] == ['os'], 'unexpected categories: ' + str(d['met
     [ "$status" -eq 0 ]
     [[ "$output" =~ "No snapshots found" ]]
 }
+
+@test "server_snapshot: patches category returns a JSON array" {
+    if [[ "$(uname -s)" != "Linux" ]]; then skip "Linux only"; fi
+    if ! command -v python3 >/dev/null; then skip "python3 required"; fi
+    run bash "$CTL" collect --category patches --output "$WORK/snap.json"
+    [ "$status" -eq 0 ]
+    python3 -c "import json,sys; d=json.load(open('$WORK/snap.json')); assert isinstance(d.get('patches'), list)"
+}

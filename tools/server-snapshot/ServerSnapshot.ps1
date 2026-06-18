@@ -248,7 +248,24 @@ function Get-SecurityInfo {
     $r
 }
 
-function Get-PatchesInfo   { Write-Host '  Collecting: patches ...';   @() }
+function Get-PatchesInfo {
+    Write-Host '  Collecting: patches ...'
+    @(Safe-Exec -Label 'patches' -Block {
+        $hotfixes = $null
+        try { $hotfixes = Get-HotFix -ErrorAction Stop }
+        catch { try { $hotfixes = Get-CimInstance Win32_QuickFixEngineering -ErrorAction Stop } catch {} }
+        if ($null -eq $hotfixes) { return @() }
+        $hotfixes | ForEach-Object {
+            $installed = ''
+            try { if ($_.InstalledOn) { $installed = ([datetime]$_.InstalledOn).ToString('yyyy-MM-dd') } } catch {}
+            @{
+                id          = "$($_.HotFixID)"
+                description = "$($_.Description)"
+                installed_on = $installed
+            }
+        } | Sort-Object { $_['id'] }
+    })
+}
 function Get-TuningInfo    { Write-Host '  Collecting: tuning ...';    @{} }
 function Get-ScheduledInfo { Write-Host '  Collecting: scheduled ...'; @{} }
 

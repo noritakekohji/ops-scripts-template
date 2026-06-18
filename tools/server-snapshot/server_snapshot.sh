@@ -393,7 +393,27 @@ def collect_security():
     if selinux: result['selinux'] = selinux.lower()
     return result
 
-def collect_patches():   return []
+def collect_patches():
+    import shutil
+    out = []
+    try:
+        if shutil.which('rpm'):
+            r = subprocess.run(['rpm','-qa','--last'], capture_output=True, text=True, timeout=30)
+            for line in r.stdout.splitlines():
+                parts = line.split(None, 1)
+                if not parts: continue
+                nv = parts[0]; when = parts[1].strip() if len(parts) > 1 else ''
+                out.append({'name': nv, 'version': '', 'installed_on': when})
+        elif shutil.which('dpkg-query'):
+            r = subprocess.run(['dpkg-query','-W','-f=${Package}\t${Version}\n'],
+                               capture_output=True, text=True, timeout=30)
+            for line in r.stdout.splitlines():
+                p = line.split('\t')
+                if len(p) >= 2:
+                    out.append({'name': p[0], 'version': p[1], 'installed_on': ''})
+    except Exception as e:
+        sys.stderr.write('patches: %s\n' % e)
+    return out
 def collect_tuning():    return {}
 def collect_scheduled(): return {}
 

@@ -18,3 +18,17 @@ Describe 'ServerSnapshot new categories scaffold' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot patches' {
+    It 'patches is an array and survives when Get-HotFix is unavailable' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','patches','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $obj = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
+            ,$obj.patches | Should -BeOfType [System.Array]
+        } finally { Remove-TempPath $work }
+    }
+}
