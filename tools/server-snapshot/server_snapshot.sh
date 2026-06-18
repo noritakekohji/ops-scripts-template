@@ -398,6 +398,8 @@ def collect_patches():
     out = []
     try:
         if shutil.which('rpm'):
+            # rpm: NVR goes in 'name' (no clean version split), and 'installed_on'
+            # keeps rpm's human date tail (e.g. "Mon 17 Jun 2026 ..."), unnormalized.
             r = subprocess.run(['rpm','-qa','--last'], capture_output=True, text=True, timeout=30)
             for line in r.stdout.splitlines():
                 parts = line.split(None, 1)
@@ -411,8 +413,9 @@ def collect_patches():
                 p = line.split('\t')
                 if len(p) >= 2:
                     out.append({'name': p[0], 'version': p[1], 'installed_on': ''})
-    except Exception as e:
-        sys.stderr.write('patches: %s\n' % e)
+    except Exception:
+        # Swallow silently like the sibling collectors; return whatever we gathered.
+        pass
     return out
 def collect_tuning():    return {}
 def collect_scheduled(): return {}
