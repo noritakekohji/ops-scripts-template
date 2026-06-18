@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "tool": "aws_instance_audit",
+    "collected_at": "2026-06-17 10:00:00",
+    "hostname": "web01",
+    "region": "ap-northeast-1",
+    "instance_id": "i-0abc123def456",
+    "categories": "all"
+  },
+  "instance": {
+    "instance_id": "i-0abc123def456",
+    "instance_type": "t3.medium",
+    "ami_id": "ami-0123456789",
+    "availability_zone": "ap-northeast-1a",
+    "region": "ap-northeast-1",
+    "private_ip": "10.0.1.10",
+    "public_ip": "",
+    "vpc_id": "vpc-0aaa",
+    "subnet_id": "subnet-0bbb",
+    "tags": { "Name": "web01" }
+  }
+}

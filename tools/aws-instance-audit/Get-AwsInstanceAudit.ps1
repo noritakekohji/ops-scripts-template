@@ -36,7 +36,8 @@ param(
     [string]$Category = 'all',
     [string]$OutputPath = '',
     [string]$HtmlReport = '',
-    [string]$Region = ''
+    [string]$Region = '',
+    [string]$FromJson = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +66,53 @@ function Get-Prop($obj, [string]$name) {
     $pp = $obj.PSObject.Properties[$name]
     if ($pp) { return $pp.Value }
     return $null
+}
+
+# ── FromJson: 保存済み JSON からレポートを再生成（収集・aws CLI 不要）──
+if ($FromJson) {
+    if (-not (Test-Path -LiteralPath $FromJson)) {
+        Write-Log 'ERROR' "FromJson file not found: $FromJson"
+        exit 2
+    }
+    try {
+        $fj = Get-Content -LiteralPath $FromJson -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Log 'ERROR' "Failed to parse JSON: $FromJson"
+        exit 1
+    }
+    if (-not (Get-Prop $fj 'meta')) {
+        Write-Log 'ERROR' 'Invalid structure: top-level "meta" object not found'
+        exit 1
+    }
+
+    # HTML レポート（python3 + render_report.py、入力は FromJson 自身）
+    if ($HtmlReport) {
+        $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
+        if (-not $pyCmd) { $pyCmd = Get-Command python -ErrorAction SilentlyContinue }
+        if (-not $pyCmd) { Write-Log 'ERROR' 'python3 not found (required for HTML report)'; exit 10 }
+        if (-not (Test-Path $renderPy)) { Write-Log 'ERROR' "render_report.py not found: $renderPy"; exit 5 }
+        & $pyCmd.Source $renderPy $FromJson $HtmlReport
+        if ($LASTEXITCODE -ne 0) { Write-Log 'ERROR' 'HTML render failed'; exit 5 }
+        Write-Log 'INFO' "HTML report: $HtmlReport"
+    }
+
+    # OutputPath 指定時は JSON をコピー
+    if ($OutputPath) {
+        $outDir = Split-Path -Parent $OutputPath
+        if ($outDir -and -not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+        Copy-Item -LiteralPath $FromJson -Destination $OutputPath -Force
+        Write-Log 'INFO' "JSON copied: $OutputPath"
+    }
+
+    $m = Get-Prop $fj 'meta'
+    Write-Host ''
+    Write-Host '  AWS instance audit (from JSON)'
+    Write-Host "  instance_id : $([string](Get-Prop $m 'instance_id'))"
+    Write-Host "  collected_at: $([string](Get-Prop $m 'collected_at'))"
+    if ($OutputPath) { Write-Host "  JSON: $OutputPath" }
+    if ($HtmlReport) { Write-Host "  HTML: $HtmlReport" }
+    Write-Host ''
+    exit 0
 }
 
 # ── 前提チェック ───────────────────────────────────────────────
