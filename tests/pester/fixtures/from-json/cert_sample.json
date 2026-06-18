@@ -1,0 +1,41 @@
+[
+  {
+    "host": "ok.example.com",
+    "port": 443,
+    "description": "Healthy cert",
+    "subject": "CN=ok.example.com",
+    "issuer": "CN=Test CA",
+    "not_after": "2027-01-01 00:00:00",
+    "days_remaining": 200,
+    "warn_days": 30,
+    "san": ["ok.example.com"],
+    "status": "OK",
+    "message": ""
+  },
+  {
+    "host": "warn.example.com",
+    "port": 443,
+    "description": "Expiring soon",
+    "subject": "CN=warn.example.com",
+    "issuer": "CN=Test CA",
+    "not_after": "2026-07-01 00:00:00",
+    "days_remaining": 13,
+    "warn_days": 30,
+    "san": ["warn.example.com"],
+    "status": "WARN",
+    "message": "Expires in 13 days (threshold: 30)"
+  },
+  {
+    "host": "ng.example.com",
+    "port": 443,
+    "description": "Expired",
+    "subject": "CN=ng.example.com",
+    "issuer": "CN=Test CA",
+    "not_after": "2026-01-01 00:00:00",
+    "days_remaining": -5,
+    "warn_days": 30,
+    "san": [],
+    "status": "NG",
+    "message": "Certificate expired"
+  }
+]

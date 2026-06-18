@@ -44,15 +44,24 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$TargetList,
+    [string]$TargetList = '',
     [int]$TimeoutSec    = 10,
     [string]$HtmlReport = '',
+    [string]$FromJson   = '',
     [switch]$Json,
     [switch]$FailOnly
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# StrictMode 下で JSON オブジェクトの欠落プロパティを安全に取得する
+function Get-JsonProp($obj, [string]$name) {
+    if ($null -eq $obj) { return $null }
+    $pp = $obj.PSObject.Properties[$name]
+    if ($pp) { return $pp.Value }
+    return $null
+}
 
 # ============================================================
 # Phase 2: Target list parser
@@ -343,81 +352,116 @@ function filterRows(cls,btn){
 }
 
 # ============================================================
-# Phase 3: Validation
+# Phase 4: Main processing (collection or FromJson restore)
 # ============================================================
-
-if (-not (Test-Path $TargetList)) {
-    Write-Host "ERROR: Target list not found: $TargetList" -ForegroundColor Red
-    exit 2
-}
-
-# Resolve to absolute path
-$TargetList = (Resolve-Path $TargetList).Path
-
-# ============================================================
-# Phase 4: Main processing
-# ============================================================
-
-$targets = Read-CertTargetList $TargetList
-
-if ($targets.Count -eq 0) {
-    Write-Host 'WARNING: No targets found in the list file.' -ForegroundColor Yellow
-    exit 0
-}
-
-Write-Host ''
-Write-Host "TLS Certificate Check - $($targets.Count) target(s)" -ForegroundColor Cyan
-Write-Host ('=' * 60)
 
 $results = [System.Collections.Generic.List[hashtable]]::new()
-$currentSection = ''
 
-foreach ($t in $targets) {
-    if ($t.section -and $t.section -ne $currentSection) {
-        $currentSection = $t.section
-        Write-Host ''
-        Write-Host "  ---- $currentSection ----" -ForegroundColor DarkCyan
+if ($FromJson) {
+    # ── FromJson: 収集を JSON 読み込みに差し替える ──
+    if (-not (Test-Path -LiteralPath $FromJson)) {
+        Write-Host "ERROR: FromJson file not found: $FromJson" -ForegroundColor Red
+        exit 2
+    }
+    try {
+        $rawJson = Get-Content -LiteralPath $FromJson -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Host "ERROR: Failed to parse JSON: $FromJson" -ForegroundColor Red
+        exit 1
+    }
+    foreach ($o in @($rawJson)) {
+        $portVal = Get-JsonProp $o 'port'
+        $drVal   = Get-JsonProp $o 'days_remaining'
+        $wdVal   = Get-JsonProp $o 'warn_days'
+        $results.Add(@{
+            host           = [string](Get-JsonProp $o 'host')
+            port           = if ($null -ne $portVal) { [int]$portVal } else { 0 }
+            desc           = [string](Get-JsonProp $o 'description')
+            subject        = [string](Get-JsonProp $o 'subject')
+            issuer         = [string](Get-JsonProp $o 'issuer')
+            not_after      = [string](Get-JsonProp $o 'not_after')
+            days_remaining = if ($null -ne $drVal) { [int]$drVal } else { -1 }
+            warn_days      = if ($null -ne $wdVal) { [int]$wdVal } else { 30 }
+            san            = @(Get-JsonProp $o 'san')
+            status         = [string](Get-JsonProp $o 'status')
+            message        = [string](Get-JsonProp $o 'message')
+            section        = ''
+        })
+    }
+}
+else {
+    if (-not $TargetList) {
+        Write-Host 'ERROR: Either -TargetList or -FromJson is required' -ForegroundColor Red
+        exit 1
+    }
+    if (-not (Test-Path $TargetList)) {
+        Write-Host "ERROR: Target list not found: $TargetList" -ForegroundColor Red
+        exit 2
     }
 
-    $hostPort = "$($t.host):$($t.port)"
-    Write-Host -NoNewline "  Checking $hostPort ... "
+    # Resolve to absolute path
+    $TargetList = (Resolve-Path $TargetList).Path
 
-    $certResult = Test-Certificate -HostName $t.host -Port $t.port -Timeout $TimeoutSec
+    $targets = Read-CertTargetList $TargetList
 
-    # Apply judgment using per-target warn_days
-    if ($certResult.days_remaining -lt 0 -and -not $certResult.subject) {
-        # Connection failed or no cert retrieved
-        $certResult.status = 'NG'
-    }
-    elseif ($certResult.days_remaining -lt 0) {
-        # Cert expired
-        $certResult.status = 'NG'
-        if (-not $certResult.message) { $certResult.message = 'Certificate expired' }
-    }
-    elseif ($certResult.days_remaining -lt $t.warn_days) {
-        $certResult.status = 'WARN'
-        $certResult.message = "Expires in $($certResult.days_remaining) days (threshold: $($t.warn_days))"
-    }
-    else {
-        $certResult.status = 'OK'
+    if ($targets.Count -eq 0) {
+        Write-Host 'WARNING: No targets found in the list file.' -ForegroundColor Yellow
+        exit 0
     }
 
-    # Attach target metadata
-    $certResult.desc      = $t.desc
-    $certResult.warn_days = $t.warn_days
-    $certResult.section   = $t.section
+    Write-Host ''
+    Write-Host "TLS Certificate Check - $($targets.Count) target(s)" -ForegroundColor Cyan
+    Write-Host ('=' * 60)
 
-    # Console progress
-    $color = switch ($certResult.status) {
-        'OK'   { 'Green'  }
-        'WARN' { 'Yellow' }
-        'NG'   { 'Red'    }
-        default { 'White' }
+    $currentSection = ''
+
+    foreach ($t in $targets) {
+        if ($t.section -and $t.section -ne $currentSection) {
+            $currentSection = $t.section
+            Write-Host ''
+            Write-Host "  ---- $currentSection ----" -ForegroundColor DarkCyan
+        }
+
+        $hostPort = "$($t.host):$($t.port)"
+        Write-Host -NoNewline "  Checking $hostPort ... "
+
+        $certResult = Test-Certificate -HostName $t.host -Port $t.port -Timeout $TimeoutSec
+
+        # Apply judgment using per-target warn_days
+        if ($certResult.days_remaining -lt 0 -and -not $certResult.subject) {
+            # Connection failed or no cert retrieved
+            $certResult.status = 'NG'
+        }
+        elseif ($certResult.days_remaining -lt 0) {
+            # Cert expired
+            $certResult.status = 'NG'
+            if (-not $certResult.message) { $certResult.message = 'Certificate expired' }
+        }
+        elseif ($certResult.days_remaining -lt $t.warn_days) {
+            $certResult.status = 'WARN'
+            $certResult.message = "Expires in $($certResult.days_remaining) days (threshold: $($t.warn_days))"
+        }
+        else {
+            $certResult.status = 'OK'
+        }
+
+        # Attach target metadata
+        $certResult.desc      = $t.desc
+        $certResult.warn_days = $t.warn_days
+        $certResult.section   = $t.section
+
+        # Console progress
+        $color = switch ($certResult.status) {
+            'OK'   { 'Green'  }
+            'WARN' { 'Yellow' }
+            'NG'   { 'Red'    }
+            default { 'White' }
+        }
+        $daysText = if ($certResult.days_remaining -ge 0) { "$($certResult.days_remaining) days" } else { 'N/A' }
+        Write-Host "$($certResult.status) ($daysText)" -ForegroundColor $color
+
+        $results.Add($certResult)
     }
-    $daysText = if ($certResult.days_remaining -ge 0) { "$($certResult.days_remaining) days" } else { 'N/A' }
-    Write-Host "$($certResult.status) ($daysText)" -ForegroundColor $color
-
-    $results.Add($certResult)
 }
 
 # ============================================================
@@ -431,8 +475,10 @@ $displayResults = if ($FailOnly) {
     @($results)
 }
 
-Write-Host ''
-Write-Host ('=' * 60)
+if (-not $Json) {
+    Write-Host ''
+    Write-Host ('=' * 60)
+}
 
 if ($Json) {
     # JSON output
@@ -507,7 +553,7 @@ if ($HtmlReport) {
         $htmlPath = Join-Path (Get-Location).Path $htmlPath
     }
     $meta = @{
-        listFile = [System.IO.Path]::GetFileName($TargetList)
+        listFile = if ($FromJson) { [System.IO.Path]::GetFileName($FromJson) } else { [System.IO.Path]::GetFileName($TargetList) }
         timeout  = $TimeoutSec
         hostname = $env:COMPUTERNAME
     }
@@ -523,9 +569,11 @@ $okCount   = @($results | Where-Object { $_.status -eq 'OK'   }).Count
 $warnCount = @($results | Where-Object { $_.status -eq 'WARN' }).Count
 $ngCount   = @($results | Where-Object { $_.status -eq 'NG'   }).Count
 
-Write-Host ''
-Write-Host "Summary: $($results.Count) checked / OK=$okCount / WARN=$warnCount / NG=$ngCount"
-Write-Host ''
+if (-not $Json) {
+    Write-Host ''
+    Write-Host "Summary: $($results.Count) checked / OK=$okCount / WARN=$warnCount / NG=$ngCount"
+    Write-Host ''
+}
 
 if ($warnCount -gt 0 -or $ngCount -gt 0) {
     exit 1
