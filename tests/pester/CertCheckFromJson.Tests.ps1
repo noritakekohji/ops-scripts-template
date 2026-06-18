@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
     $script:ps1     = Join-Path (Get-RepoRoot) 'tools\cert-check\CertCheck.ps1'
