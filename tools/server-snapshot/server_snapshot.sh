@@ -223,6 +223,30 @@ def collect_os():
         info['swap_total_gb']   = to_gb_kb('SwapTotal')
         info['swap_free_gb']    = to_gb_kb('SwapFree')
     except Exception: pass
+    # hardware / virtualization
+    hw = {'manufacturer': '', 'model': '', 'bios_version': '', 'bios_date': '', 'virtualization': ''}
+    try:
+        def _read_dmi(p):
+            try: return Path(p).read_text().strip()
+            except Exception: return ''
+        hw['manufacturer'] = _read_dmi('/sys/class/dmi/id/sys_vendor')
+        hw['model']        = _read_dmi('/sys/class/dmi/id/product_name')
+        hw['bios_version'] = _read_dmi('/sys/class/dmi/id/bios_version')
+        hw['bios_date']    = _read_dmi('/sys/class/dmi/id/bios_date')
+        r = subprocess.run(['systemd-detect-virt'], capture_output=True, text=True, timeout=5)
+        hw['virtualization'] = r.stdout.strip() or 'none'
+    except Exception: pass
+    info['hardware'] = hw
+    # locale detail
+    info['locale_detail'] = {'lang': os.environ.get('LANG', ''), 'lc_all': os.environ.get('LC_ALL', '')}
+    # reboot pending
+    rp = {'pending': False, 'reasons': []}
+    try:
+        if os.path.exists('/var/run/reboot-required'):
+            rp['pending'] = True
+            rp['reasons'].append('reboot-required')
+    except Exception: pass
+    info['reboot_pending'] = rp
     return info
 
 def collect_network():

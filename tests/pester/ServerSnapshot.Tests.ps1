@@ -47,6 +47,23 @@ Describe 'ServerSnapshot tuning' {
     }
 }
 
+Describe 'ServerSnapshot os expansion' {
+    It 'os has hardware/locale_detail/reboot_pending' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','os','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $os = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).os
+            $os.PSObject.Properties.Name | Should -Contain 'hardware'
+            $os.PSObject.Properties.Name | Should -Contain 'locale_detail'
+            $os.PSObject.Properties.Name | Should -Contain 'reboot_pending'
+            $os.hostname | Should -Not -BeNullOrEmpty
+        } finally { Remove-TempPath $work }
+    }
+}
+
 Describe 'ServerSnapshot scheduled' {
     It 'scheduled has scheduled_tasks and startup keys' {
         $work = New-TempWorkdir

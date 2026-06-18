@@ -91,6 +91,36 @@ function Get-OsInfo {
         total_memory_gb   = $totalMemGb
         free_memory_gb    = $freeMemGb
         used_memory_gb    = [math]::Round($totalMemGb - $freeMemGb, 2)
+        hardware          = (Safe-Exec -Label 'os.hardware' -Block {
+            $bios = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue
+            $model = if ($cs) { "$($cs.Model)" } else { '' }
+            $manu  = if ($cs) { "$($cs.Manufacturer)" } else { '' }
+            $virt = 'physical'
+            if ($model -match 'Virtual|VMware|KVM|HVM' -or $manu -match 'VMware|Xen|QEMU|innotek|Microsoft Corporation') { $virt = 'virtual' }
+            @{
+                manufacturer   = $manu
+                model          = $model
+                bios_version   = if ($bios) { "$($bios.SMBIOSBIOSVersion)" } else { '' }
+                serial         = if ($bios) { "$($bios.SerialNumber)" } else { '' }
+                virtualization = $virt
+            }
+        })
+        locale_detail     = (Safe-Exec -Label 'os.locale' -Block {
+            $cp = (chcp) 2>$null
+            @{
+                system_locale = (Get-WinSystemLocale -ErrorAction SilentlyContinue).Name
+                code_page     = if ($cp) { ("$cp" -replace '[^0-9]','') } else { '' }
+                culture       = (Get-Culture -ErrorAction SilentlyContinue).Name
+            }
+        })
+        reboot_pending    = (Safe-Exec -Label 'os.reboot' -Block {
+            $reasons = @()
+            if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { $reasons += 'CBS' }
+            if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') { $reasons += 'WindowsUpdate' }
+            $pfr = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
+            if ($pfr) { $reasons += 'PendingFileRename' }
+            @{ pending = ($reasons.Count -gt 0); reasons = $reasons }
+        })
     }
 }
 
