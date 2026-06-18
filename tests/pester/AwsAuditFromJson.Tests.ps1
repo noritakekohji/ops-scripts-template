@@ -1,12 +1,13 @@
 ﻿#Requires -Version 5.1
+# Discovery 時に評価する（-Skip: は BeforeAll より先に走るため）
+$pyDisc = Get-Command python3 -ErrorAction SilentlyContinue
+if (-not $pyDisc) { $pyDisc = Get-Command python -ErrorAction SilentlyContinue }
+$HasPython = [bool]$pyDisc
+
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
     $script:ps1     = Join-Path (Get-RepoRoot) 'tools\aws-instance-audit\Get-AwsInstanceAudit.ps1'
     $script:fixture = Join-Path $PSScriptRoot 'fixtures\from-json\aws_sample.json'
-
-    $py = Get-Command python3 -ErrorAction SilentlyContinue
-    if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
-    $script:hasPython = [bool]$py
 }
 
 Describe 'Get-AwsInstanceAudit -FromJson' {
@@ -22,7 +23,7 @@ Describe 'Get-AwsInstanceAudit -FromJson' {
         } finally { Remove-TempPath $work }
     }
 
-    It 'generates an HTML report from saved JSON' -Skip:(-not $script:hasPython) {
+    It 'generates an HTML report from saved JSON' -Skip:(-not $HasPython) {
         $work = New-TempWorkdir
         try {
             $html = Join-Path $work 'aws.html'
