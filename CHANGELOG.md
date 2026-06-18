@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `server-snapshot` に収集カテゴリ `patches` / `tuning` / `scheduled` を追加し、`os`（HW/仮想化・ロケール詳細・再起動保留）・`network`（プロキシ・時刻同期）・`filesystem`（マウントオプション）・`security`（AppArmor/UAC）を拡張。compare 比較器も追加（`_volatile` は差分除外）
 - `cert-check` / `port-inventory` / `aws-instance-audit` に `-FromJson` を追加。保存済み JSON を読み込み、収集を再実行せずにレポート（コンソール / JSON / HTML）を再生成できる（Windows / PowerShell のみ）
 - `tools/collect-snapshot` — 断面情報収集ラッパー（server-snapshot / port-inventory / aws-instance-audit を一括実行し ZIP で保存）。CUI（全自動）と TUI（対話メニュー）に対応
 - service-wait: type=service / type=process のローカルノードチェックを追加 (v3 仕様)。

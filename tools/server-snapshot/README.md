@@ -110,16 +110,29 @@ tools/server-snapshot/
 
 | カテゴリ | 収集内容 |
 |---|---|
-| `os`          | OS バージョン、ホスト名、カーネル、CPU、メモリ、タイムゾーン |
-| `network`     | IP アドレス、ルーティング、DNS、hosts |
+| `os`          | OS バージョン、ホスト名、カーネル、CPU、メモリ、タイムゾーン、HW/仮想化、ロケール詳細、再起動保留 |
+| `network`     | IP アドレス、ルーティング、DNS、hosts、プロキシ設定、時刻同期（NTP） |
 | `services`    | サービス一覧（状態・起動設定） |
 | `packages`    | インストール済みパッケージとバージョン |
 | `users`       | ローカルユーザー・グループ |
-| `filesystem`  | ドライブ / マウントポイントの使用状況 |
+| `filesystem`  | ドライブ / マウントポイントの使用状況、マウントオプション |
 | `environment` | システム環境変数 |
-| `security`    | ファイアウォール設定・ルール |
+| `security`    | ファイアウォール設定・ルール、UAC (Win) / AppArmor (Linux) |
+| `patches`     | 適用済みパッチ/更新 (HotFix / rpm / dpkg) |
+| `tuning`      | 性能チューニング設定 (sysctl / CPU ガバナー / THP / ページファイル / 電源プラン) |
+| `scheduled`   | スケジュールタスク / スタートアップ / cron / systemd timers |
 
 既定値は `all`（全カテゴリ収集）。カンマ区切りで複数指定可能。
+
+```powershell
+# Windows: 新カテゴリ指定例
+.\server_snapshot.bat collect -Category tuning,patches,scheduled
+```
+
+```bash
+# Linux: 新カテゴリ指定例
+./server_snapshot.sh collect -c tuning,patches,scheduled
+```
 
 ---
 
