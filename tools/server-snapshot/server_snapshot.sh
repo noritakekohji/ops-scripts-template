@@ -278,7 +278,33 @@ def collect_network():
             if line:
                 parts = line.split()
                 if len(parts) >= 2: hosts.append({'ip': parts[0], 'hostnames': parts[1:]})
-    return {'interfaces': interfaces, 'routes': routes, 'dns_servers': dns_servers, 'hosts': hosts}
+    # proxy
+    proxy = {
+        'http_proxy':  os.environ.get('http_proxy', '') or os.environ.get('HTTP_PROXY', ''),
+        'https_proxy': os.environ.get('https_proxy', '') or os.environ.get('HTTPS_PROXY', ''),
+        'no_proxy':    os.environ.get('no_proxy', '') or os.environ.get('NO_PROXY', ''),
+    }
+    # time sync
+    ts = {'servers': [], 'synchronized': False, '_volatile': {}}
+    try:
+        r = subprocess.run(['chronyc', 'sources'], capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                if line and line[0] in '^=*#+-?x~':
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        ts['servers'].append(parts[1])
+        r2 = subprocess.run(['timedatectl', 'show', '-p', 'NTPSynchronized', '--value'],
+                           capture_output=True, text=True, timeout=5)
+        ts['synchronized'] = (r2.stdout.strip() == 'yes')
+        r3 = subprocess.run(['chronyc', 'tracking'], capture_output=True, text=True, timeout=5)
+        for line in r3.stdout.splitlines():
+            if 'Last offset' in line:
+                ts['_volatile']['last_offset'] = line.split(':', 1)[1].strip()
+    except Exception:
+        pass
+    return {'interfaces': interfaces, 'routes': routes, 'dns_servers': dns_servers,
+            'hosts': hosts, 'proxy': proxy, 'time_sync': ts}
 
 def collect_services():
     services = []

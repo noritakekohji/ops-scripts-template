@@ -64,6 +64,23 @@ Describe 'ServerSnapshot os expansion' {
     }
 }
 
+Describe 'ServerSnapshot network expansion' {
+    It 'network has proxy and time_sync with _volatile' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','network','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $net = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).network
+            $net.PSObject.Properties.Name | Should -Contain 'proxy'
+            $net.PSObject.Properties.Name | Should -Contain 'time_sync'
+            $net.time_sync.PSObject.Properties.Name | Should -Contain '_volatile'
+            $net.interfaces | Should -Not -BeNullOrEmpty
+        } finally { Remove-TempPath $work }
+    }
+}
+
 Describe 'ServerSnapshot scheduled' {
     It 'scheduled has scheduled_tasks and startup keys' {
         $work = New-TempWorkdir

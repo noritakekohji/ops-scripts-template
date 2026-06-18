@@ -152,7 +152,26 @@ function Get-NetworkInfo {
                 } | Where-Object { $_ }
         }
     })
-    @{ interfaces = $interfaces; routes = $routes; dns_servers = $dns; hosts = $hosts }
+    $proxy = Safe-Exec -Label 'network.proxy' -Block {
+        $enabled = $false; $server = ''
+        $reg = Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction SilentlyContinue
+        if ($reg) {
+            $pe = $reg.PSObject.Properties['ProxyEnable']; if ($pe) { $enabled = [bool]$pe.Value }
+            $ps = $reg.PSObject.Properties['ProxyServer']; if ($ps) { $server = "$($ps.Value)" }
+        }
+        @{ enabled = $enabled; server = $server }
+    }
+    $timeSync = Safe-Exec -Label 'network.time' -Block {
+        $servers = @(); $synchronized = $false
+        $status = (w32tm /query /status) 2>$null
+        if ($status) {
+            foreach ($line in $status) {
+                if ($line -match 'Source:\s*(.+)') { $servers += $Matches[1].Trim(); $synchronized = $true }
+            }
+        }
+        @{ servers = $servers; synchronized = $synchronized; _volatile = @{ last_sync = '' } }
+    }
+    @{ interfaces = $interfaces; routes = $routes; dns_servers = $dns; hosts = $hosts; proxy = $proxy; time_sync = $timeSync }
 }
 
 function Get-ServicesInfo {
