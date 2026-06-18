@@ -417,7 +417,41 @@ def collect_patches():
         # Swallow silently like the sibling collectors; return whatever we gathered.
         pass
     return out
-def collect_tuning():    return {}
+def collect_tuning():
+    info = {'sysctl': {}, 'limits': {}, 'cpu_governor': '', 'thp_enabled': '', 'thp_defrag': '', 'cpu_mitigations': {}}
+    keys = ['net.core.somaxconn','net.ipv4.tcp_tw_reuse','vm.swappiness','vm.dirty_ratio',
+            'kernel.shmmax','fs.file-max','fs.nr_open']
+    for k in keys:
+        try:
+            r = subprocess.run(['sysctl','-n',k], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0: info['sysctl'][k] = r.stdout.strip()
+        except Exception: pass
+    try:
+        import resource
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE); info['limits']['nofile'] = soft
+        soft, _ = resource.getrlimit(resource.RLIMIT_NPROC);  info['limits']['nproc'] = soft
+    except Exception: pass
+    try:
+        govs = set()
+        import glob
+        for f in glob.glob('/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'):
+            govs.add(open(f).read().strip())
+        if govs: info['cpu_governor'] = list(govs)[0] if len(govs) == 1 else sorted(govs)
+    except Exception: pass
+    for key, path in (('thp_enabled','/sys/kernel/mm/transparent_hugepage/enabled'),
+                      ('thp_defrag','/sys/kernel/mm/transparent_hugepage/defrag')):
+        try:
+            v = open(path).read().strip()
+            import re
+            m = re.search(r'\[(\w+)\]', v)
+            info[key] = m.group(1) if m else v
+        except Exception: pass
+    try:
+        import glob, os
+        for f in glob.glob('/sys/devices/system/cpu/vulnerabilities/*'):
+            info['cpu_mitigations'][os.path.basename(f)] = open(f).read().strip()
+    except Exception: pass
+    return info
 def collect_scheduled(): return {}
 
 CAT_MAP = {

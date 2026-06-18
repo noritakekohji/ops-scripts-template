@@ -32,3 +32,17 @@ Describe 'ServerSnapshot patches' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot tuning' {
+    It 'tuning is a dict with power_scheme key (Windows)' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','tuning','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $obj = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
+            $obj.tuning.PSObject.Properties.Name | Should -Contain 'power_scheme'
+        } finally { Remove-TempPath $work }
+    }
+}

@@ -266,7 +266,30 @@ function Get-PatchesInfo {
         } | Sort-Object { $_['id'] }
     })
 }
-function Get-TuningInfo    { Write-Host '  Collecting: tuning ...';    @{} }
+function Get-TuningInfo {
+    Write-Host '  Collecting: tuning ...'
+    $r = @{}
+    $r['pagefile'] = @(Safe-Exec -Label 'tuning.pagefile' -Block {
+        Get-CimInstance Win32_PageFileSetting -ErrorAction SilentlyContinue |
+            ForEach-Object { @{ path = "$($_.Name)"; initial_mb = [int]$_.InitialSize; maximum_mb = [int]$_.MaximumSize } }
+    })
+    $r['registry'] = Safe-Exec -Label 'tuning.registry' -Block {
+        $p = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+        $keys = 'TcpTimedWaitDelay','MaxUserPort','MaxFreeTcbs'
+        $h = @{}
+        $item = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue
+        foreach ($k in $keys) {
+            $pp = $item.PSObject.Properties[$k]
+            if ($pp) { $h[$k] = "$($pp.Value)" }
+        }
+        $h
+    }
+    $r['power_scheme'] = Safe-Exec -Label 'tuning.power' -Block {
+        $o = (powercfg /getactivescheme) 2>$null
+        if ($o) { "$o".Trim() } else { '' }
+    }
+    $r
+}
 function Get-ScheduledInfo { Write-Host '  Collecting: scheduled ...'; @{} }
 
 # ============================================================
