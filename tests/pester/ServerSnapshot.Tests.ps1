@@ -81,6 +81,22 @@ Describe 'ServerSnapshot network expansion' {
     }
 }
 
+Describe 'ServerSnapshot filesystem expansion' {
+    It 'each drive has mount_options key' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','filesystem','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $drives = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).filesystem.drives
+            if (@($drives).Count -gt 0) {
+                $drives[0].PSObject.Properties.Name | Should -Contain 'mount_options'
+            }
+        } finally { Remove-TempPath $work }
+    }
+}
+
 Describe 'ServerSnapshot scheduled' {
     It 'scheduled has scheduled_tasks and startup keys' {
         $work = New-TempWorkdir

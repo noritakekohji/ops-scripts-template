@@ -404,6 +404,16 @@ def collect_filesystem():
                 if len(parts) >= 4:
                     fstab.append({'device': parts[0], 'mount_point': parts[1], 'fstype': parts[2], 'options': parts[3]})
     except Exception: pass
+    # mount options from /proc/mounts keyed by mount point
+    mopts = {}
+    try:
+        for line in Path('/proc/mounts').read_text().splitlines():
+            p = line.split()
+            if len(p) >= 4:
+                mopts[p[1]] = p[3]
+    except Exception: pass
+    for d in drives:
+        d['mount_options'] = mopts.get(d.get('root', ''), '')
     return {'drives': drives, 'disks': disks, 'fstab': fstab}
 
 def collect_environment():

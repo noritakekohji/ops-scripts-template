@@ -249,15 +249,21 @@ function Get-FilesystemInfo {
                 $drv   = $_
                 $total = $drv.Used + $drv.Free
                 $vol   = Get-Volume -DriveLetter $drv.Name -ErrorAction SilentlyContinue
+                $mOpts = ''
+                if ($vol) {
+                    $dt = $vol.PSObject.Properties['DriveType']
+                    if ($dt) { $mOpts = "$($dt.Value)" }
+                }
                 @{
-                    drive    = $drv.Name
-                    root     = $drv.Root
-                    label    = if ($vol) { "$($vol.FileSystemLabel)" } else { '' }
-                    fstype   = if ($vol) { "$($vol.FileSystem)"       } else { '' }
-                    used_gb  = [math]::Round($drv.Used  / 1GB, 2)
-                    free_gb  = [math]::Round($drv.Free  / 1GB, 2)
-                    total_gb = [math]::Round($total      / 1GB, 2)
-                    used_pct = if ($total -gt 0) { [math]::Round($drv.Used / $total * 100, 1) } else { 0 }
+                    drive         = $drv.Name
+                    root          = $drv.Root
+                    label         = if ($vol) { "$($vol.FileSystemLabel)" } else { '' }
+                    fstype        = if ($vol) { "$($vol.FileSystem)"       } else { '' }
+                    used_gb       = [math]::Round($drv.Used  / 1GB, 2)
+                    free_gb       = [math]::Round($drv.Free  / 1GB, 2)
+                    total_gb      = [math]::Round($total      / 1GB, 2)
+                    used_pct      = if ($total -gt 0) { [math]::Round($drv.Used / $total * 100, 1) } else { 0 }
+                    mount_options = $mOpts
                 }
             } | Sort-Object { $_['drive'] }
     })
