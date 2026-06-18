@@ -452,7 +452,31 @@ def collect_tuning():
             info['cpu_mitigations'][Path(f).name] = Path(f).read_text().strip()
     except Exception: pass
     return info
-def collect_scheduled(): return {}
+def collect_scheduled():
+    info = {'cron': [], 'systemd_timers': []}
+    import glob as _glob
+    cron_sources = ['/etc/crontab']
+    cron_sources += _glob.glob('/etc/cron.d/*')
+    cron_sources += _glob.glob('/var/spool/cron/*') + _glob.glob('/var/spool/cron/crontabs/*')
+    for src in cron_sources:
+        try:
+            if os.path.isfile(src):
+                for line in Path(src).read_text(errors='replace').splitlines():
+                    s = line.strip()
+                    if s and not s.startswith('#'):
+                        info['cron'].append({'source': src, 'entry': s})
+        except Exception:
+            pass
+    try:
+        r = subprocess.run(['systemctl', 'list-timers', '--all', '--no-pager', '--no-legend'],
+                          capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            p = line.split()
+            if len(p) >= 2:
+                info['systemd_timers'].append({'unit': p[-1], 'raw': line.strip()})
+    except Exception:
+        pass
+    return info
 
 CAT_MAP = {
     'os': collect_os, 'network': collect_network, 'services': collect_services,

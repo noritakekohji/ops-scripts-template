@@ -290,7 +290,31 @@ function Get-TuningInfo {
     }
     $r
 }
-function Get-ScheduledInfo { Write-Host '  Collecting: scheduled ...'; @{} }
+function Get-ScheduledInfo {
+    Write-Host '  Collecting: scheduled ...'
+    $r = @{}
+    $r['scheduled_tasks'] = @(Safe-Exec -Label 'scheduled.tasks' -Block {
+        Get-ScheduledTask -ErrorAction SilentlyContinue |
+            Where-Object { $_.State -in @('Ready','Running') } |
+            ForEach-Object { @{ name = "$($_.TaskName)"; path = "$($_.TaskPath)"; state = "$($_.State)" } } |
+            Sort-Object { $_['path'] + $_['name'] }
+    })
+    $r['startup'] = @(Safe-Exec -Label 'scheduled.startup' -Block {
+        $items = @()
+        foreach ($hive in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+                            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run')) {
+            $scope = if ($hive -like 'HKLM*') { 'machine' } else { 'user' }
+            $props = Get-ItemProperty -Path $hive -ErrorAction SilentlyContinue
+            if ($props) {
+                $props.PSObject.Properties |
+                    Where-Object { $_.Name -notlike 'PS*' } |
+                    ForEach-Object { $items += @{ name = $_.Name; command = "$($_.Value)"; scope = $scope } }
+            }
+        }
+        $items
+    })
+    $r
+}
 
 # ============================================================
 # Section 3: Invoke-Collect

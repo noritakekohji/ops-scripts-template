@@ -46,3 +46,18 @@ Describe 'ServerSnapshot tuning' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot scheduled' {
+    It 'scheduled has scheduled_tasks and startup keys' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','scheduled','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $obj = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
+            $obj.scheduled.PSObject.Properties.Name | Should -Contain 'scheduled_tasks'
+            $obj.scheduled.PSObject.Properties.Name | Should -Contain 'startup'
+        } finally { Remove-TempPath $work }
+    }
+}
