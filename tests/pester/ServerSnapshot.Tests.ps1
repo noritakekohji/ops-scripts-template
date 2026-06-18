@@ -125,3 +125,28 @@ Describe 'ServerSnapshot scheduled' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot compare new categories' {
+    It 'detects tuning change and ignores time_sync _volatile' {
+        $work = New-TempWorkdir
+        try {
+            $before = Join-Path $work 'b.json'; $after = Join-Path $work 'a.json'
+            $b = @{ meta=@{hostname='h';os_type='windows';collected_at='t';categories=@('tuning','network')}
+                    tuning=@{power_scheme='Balanced'}
+                    network=@{ interfaces=@(); routes=@(); dns_servers=@(); hosts=@()
+                               proxy=@{enabled=$false;server=''}
+                               time_sync=@{ servers=@('s1'); synchronized=$true; _volatile=@{ last_sync='10:00' } } } }
+            $a = @{ meta=@{hostname='h';os_type='windows';collected_at='t2';categories=@('tuning','network')}
+                    tuning=@{power_scheme='High performance'}
+                    network=@{ interfaces=@(); routes=@(); dns_servers=@(); hosts=@()
+                               proxy=@{enabled=$false;server=''}
+                               time_sync=@{ servers=@('s1'); synchronized=$true; _volatile=@{ last_sync='11:00' } } } }
+            ($b | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $before -Encoding UTF8
+            ($a | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $after  -Encoding UTF8
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('compare','-BeforePath',$before,'-AfterPath',$after)
+            $r.Combined | Should -Match 'tuning'
+            $r.Combined | Should -Match 'Balanced'
+            $r.Combined | Should -Not -Match 'last_sync'
+        } finally { Remove-TempPath $work }
+    }
+}

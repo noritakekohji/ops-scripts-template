@@ -576,6 +576,22 @@ function Compare-Network($b, $a) {
     $results.Add((Compare-List (& $conv $b 'routes')      (& $conv $a 'routes')      'destination' @('gateway','interface')               'network/routes'))
     $results.Add((Compare-List (& $conv $b 'dns_servers') (& $conv $a 'dns_servers') 'interface'   @('servers')                           'network/dns'))
     $results.Add((Compare-List (& $conv $b 'hosts')       (& $conv $a 'hosts')       'ip'          @('hostnames')                         'network/hosts'))
+    # time_sync: strip _volatile before comparing
+    $bTs = Get-Prop $b 'time_sync'; $aTs = Get-Prop $a 'time_sync'
+    if ($null -ne $bTs -or $null -ne $aTs) {
+        $bd = if ($null -ne $bTs) { Obj-To-Dict $bTs } else { @{} }
+        $ad = if ($null -ne $aTs) { Obj-To-Dict $aTs } else { @{} }
+        $bd.Remove('_volatile') | Out-Null
+        $ad.Remove('_volatile') | Out-Null
+        $results.Add((Compare-Dict $bd $ad 'network/time_sync'))
+    }
+    # proxy
+    $bP = Get-Prop $b 'proxy'; $aP = Get-Prop $a 'proxy'
+    if ($null -ne $bP -or $null -ne $aP) {
+        $bd2 = if ($null -ne $bP) { Obj-To-Dict $bP } else { @{} }
+        $ad2 = if ($null -ne $aP) { Obj-To-Dict $aP } else { @{} }
+        $results.Add((Compare-Dict $bd2 $ad2 'network/proxy'))
+    }
     return $results
 }
 
@@ -634,6 +650,28 @@ function Compare-Security($b, $a) {
     $br = @(As-Array (Get-Prop $b 'firewall_rules') | ForEach-Object { Obj-To-Dict $_ })
     $ar = @(As-Array (Get-Prop $a 'firewall_rules') | ForEach-Object { Obj-To-Dict $_ })
     $results.Add((Compare-List $br $ar 'name' @('direction','action','profile') 'security/firewall_rules'))
+    return $results
+}
+
+function Compare-Patches($b, $a) {
+    $bl = @(As-Array $b | ForEach-Object { Obj-To-Dict $_ })
+    $al = @(As-Array $a | ForEach-Object { Obj-To-Dict $_ })
+    Compare-List $bl $al 'id' @('description','installed_on') 'patches'
+}
+
+function Compare-Tuning($b, $a) {
+    $bd = Obj-To-Dict $b; $ad = Obj-To-Dict $a
+    Compare-Dict $bd $ad 'tuning'
+}
+
+function Compare-Scheduled($b, $a) {
+    $results = [System.Collections.Generic.List[CategoryResult]]::new()
+    $bt = @(As-Array (Get-Prop $b 'scheduled_tasks') | ForEach-Object { Obj-To-Dict $_ })
+    $at = @(As-Array (Get-Prop $a 'scheduled_tasks') | ForEach-Object { Obj-To-Dict $_ })
+    $results.Add((Compare-List $bt $at 'name' @('state','path') 'scheduled/tasks'))
+    $bs = @(As-Array (Get-Prop $b 'startup') | ForEach-Object { Obj-To-Dict $_ })
+    $as = @(As-Array (Get-Prop $a 'startup') | ForEach-Object { Obj-To-Dict $_ })
+    $results.Add((Compare-List $bs $as 'name' @('command','scope') 'scheduled/startup'))
     return $results
 }
 
@@ -850,6 +888,9 @@ function Invoke-Compare {
             'filesystem'  { @(Compare-Filesystem  $bCat $aCat) }
             'environment' { @(Compare-Environment $bCat $aCat) }
             'security'    { @(Compare-Security    $bCat $aCat) }
+            'patches'     { @(Compare-Patches     $bCat $aCat) }
+            'tuning'      { @(Compare-Tuning      $bCat $aCat) }
+            'scheduled'   { @(Compare-Scheduled   $bCat $aCat) }
         }
         foreach ($cr in $catResults) { $allResults.Add($cr) }
     }
