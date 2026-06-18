@@ -501,7 +501,8 @@ function filterRows(cls,btn){
 
 $hasExpectedList = $false
 
-if ($ExpectedList) {
+# -FromJson takes precedence: ignore collection options like -ExpectedList
+if ($ExpectedList -and -not $FromJson) {
     if (-not (Test-Path $ExpectedList)) {
         Write-Host "ERROR: Expected list not found: $ExpectedList" -ForegroundColor Red
         exit 2
