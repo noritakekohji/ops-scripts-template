@@ -128,7 +128,7 @@ collect_snapshot() {
     fi
 
     # Resolve categories
-    local all_cats="os network services packages users filesystem environment security"
+    local all_cats="os network services packages users filesystem environment security patches tuning scheduled"
     local resolved
     if [[ "$snap_cats" == "all" ]]; then
         resolved="$all_cats"
@@ -393,10 +393,15 @@ def collect_security():
     if selinux: result['selinux'] = selinux.lower()
     return result
 
+def collect_patches():   return []
+def collect_tuning():    return {}
+def collect_scheduled(): return {}
+
 CAT_MAP = {
     'os': collect_os, 'network': collect_network, 'services': collect_services,
     'packages': collect_packages, 'users': collect_users, 'filesystem': collect_filesystem,
     'environment': collect_environment, 'security': collect_security,
+    'patches': collect_patches, 'tuning': collect_tuning, 'scheduled': collect_scheduled,
 }
 
 hostname = socket.gethostname()

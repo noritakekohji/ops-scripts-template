@@ -21,7 +21,6 @@ param(
     [ValidateSet('collect','before','after','compare','list')]
     [string]$Command = 'collect',
 
-    [ValidateSet('all','os','network','services','packages','users','filesystem','environment','security')]
     [string[]]$Category = @('all'),
     [string]$OutputPath = '',
     [string]$Label = '',
@@ -34,6 +33,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# Normalize -Category: accept comma-separated values (e.g. "os,network" from the
+# .bat wrapper) the same way the Bash tool does, then validate against the known set.
+$validCategories = @('all','os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled')
+$Category = @($Category | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if (-not $Category) { $Category = @('all') }
+foreach ($c in $Category) {
+    if ($validCategories -notcontains $c) {
+        [Console]::Error.WriteLine("[ERROR] Invalid -Category '$c'. Valid: $($validCategories -join ', ')")
+        exit 1
+    }
+}
 
 # ============================================================
 # Section 1: Helpers
@@ -237,6 +248,10 @@ function Get-SecurityInfo {
     $r
 }
 
+function Get-PatchesInfo   { Write-Host '  Collecting: patches ...';   @() }
+function Get-TuningInfo    { Write-Host '  Collecting: tuning ...';    @{} }
+function Get-ScheduledInfo { Write-Host '  Collecting: scheduled ...'; @{} }
+
 # ============================================================
 # Section 3: Invoke-Collect
 # ============================================================
@@ -249,7 +264,7 @@ function Invoke-Collect {
         [string]$SnapLabel
     )
     # Resolve categories
-    $allCategories = @('os','network','services','packages','users','filesystem','environment','security')
+    $allCategories = @('os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled')
     $resolved = if ($Categories -contains 'all') { $allCategories } else {
         $Categories | Where-Object { $allCategories -contains $_ }
     }
@@ -288,6 +303,9 @@ function Invoke-Collect {
             'filesystem'  { Get-FilesystemInfo }
             'environment' { Get-EnvironmentInfo }
             'security'    { Get-SecurityInfo }
+            'patches'     { Get-PatchesInfo }
+            'tuning'      { Get-TuningInfo }
+            'scheduled'   { Get-ScheduledInfo }
         }
     }
 
@@ -684,7 +702,7 @@ function Invoke-Compare {
     $bMeta = Obj-To-Dict ($bData['meta'])
     $aMeta = Obj-To-Dict ($aData['meta'])
 
-    $allCats   = @('os','network','services','packages','users','filesystem','environment','security')
+    $allCats   = @('os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled')
     $availCats = $allCats | Where-Object { $bData.ContainsKey($_) -and $aData.ContainsKey($_) }
     $compareCats = if ($Categories -contains 'all') { $availCats } else {
         $Categories | Where-Object { $availCats -contains $_ }
