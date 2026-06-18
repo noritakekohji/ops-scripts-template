@@ -6,6 +6,7 @@
 :: Usage:
 ::   cert_check.bat -TargetList <file> [-TimeoutSec sec] [-HtmlReport file]
 ::                  [-Json] [-FailOnly]
+::   cert_check.bat -FromJson <saved.json> [-HtmlReport file] [-Json] [-FailOnly]
 ::
 :: Examples:
 ::   cert_check.bat -TargetList cert_targets.lst

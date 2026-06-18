@@ -141,6 +141,18 @@ LISTEN 状態の TCP/UDP ポートを一覧表示します。プロセス名・�
 ./port_inventory.sh -e expected_ports.lst --json --fail-only
 ```
 
+### 保存済み JSON からレポート再生成（Windows のみ）
+
+過去に `-Json` で保存した結果を読み込み、収集せずにレポートを再生成できます。
+
+```powershell
+.\PortInventory.ps1 -FromJson saved.json -Json
+.\PortInventory.ps1 -FromJson saved.json -HtmlReport report.html
+.\PortInventory.ps1 -FromJson saved.json -FailOnly
+```
+
+判定（OK/NG/WARN/INFO）は JSON に保存された値をそのまま使うため、期待値リストは不要です。
+
 ---
 
 ## 出力モード

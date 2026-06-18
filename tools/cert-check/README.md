@@ -115,6 +115,23 @@ db.internal.example.com,  5432, 30, PostgreSQL TLS
 ./cert_check.sh -t cert_targets.lst --html report.html --fail-only --timeout 15
 ```
 
+### 保存済み JSON からレポート再生成（Windows のみ）
+
+過去に `-Json` で保存した結果を読み込み、収集せずにレポートを再生成できます。
+
+```powershell
+# JSON を再表示
+.\CertCheck.ps1 -FromJson saved.json -Json
+
+# HTML レポートを生成
+.\CertCheck.ps1 -FromJson saved.json -HtmlReport report.html
+
+# NG/WARN のみ
+.\CertCheck.ps1 -FromJson saved.json -FailOnly
+```
+
+判定（OK/WARN/NG）は JSON に保存された値をそのまま使うため、対象リストは不要です。
+
 ---
 
 ## 出力モード

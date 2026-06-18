@@ -6,6 +6,7 @@
 :: Usage:
 ::   aws_instance_audit.bat [-Category cats] [-OutputPath out.json]
 ::                          [-HtmlReport out.html] [-Region region]
+::   aws_instance_audit.bat -FromJson <saved.json> [-OutputPath file] [-HtmlReport file]
 ::
 :: Examples:
 ::   aws_instance_audit.bat

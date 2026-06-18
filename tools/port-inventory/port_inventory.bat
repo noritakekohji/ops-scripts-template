@@ -6,6 +6,7 @@
 :: Usage:
 ::   port_inventory.bat [-ExpectedList <file>] [-HtmlReport <file>]
 ::                      [-Json] [-FailOnly]
+::   port_inventory.bat -FromJson <saved.json> [-HtmlReport file] [-Json] [-FailOnly]
 ::
 :: Examples:
 ::   port_inventory.bat

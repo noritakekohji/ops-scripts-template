@@ -79,6 +79,18 @@ aws_instance_audit.bat -Category iam,sg -HtmlReport audit.html
 .\Get-AwsInstanceAudit.ps1 -Category all -OutputPath audit.json -HtmlReport audit.html
 ```
 
+### 保存済み JSON からレポート再生成（Windows のみ）
+
+過去に保存した監査 JSON を読み込み、aws CLI を呼ばずに HTML レポートを再生成できます。
+
+```powershell
+# HTML レポートを生成（python3 が必要）
+.\Get-AwsInstanceAudit.ps1 -FromJson saved.json -HtmlReport report.html
+
+# JSON を別パスへコピー
+.\Get-AwsInstanceAudit.ps1 -FromJson saved.json -OutputPath copy.json
+```
+
 ---
 
 ## 出力 JSON の構造（抜粋）
@@ -136,4 +148,4 @@ HTML レポート（`--html` / `-HtmlReport`）は同じ内容を表形式で見
 - 取得できる範囲は **インスタンスプロファイルのロールに付与された権限** に依存します。
   権限不足のカテゴリは WARN ログを出して空のまま続行します（全体は失敗しません）。
 - 出力 JSON にはアカウント ID・ARN・IP・SG ルールなどが含まれます。共有時は取り扱いに注意してください。
-- `change-detect` / `server-compare` と組み合わせれば、**変更前後の AWS 構成差分** も取れます。
+- `server-snapshot` と組み合わせれば、**変更前後の AWS 構成差分** も取れます。
