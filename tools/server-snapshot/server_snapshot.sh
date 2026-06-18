@@ -418,7 +418,7 @@ def collect_patches():
         pass
     return out
 def collect_tuning():
-    info = {'sysctl': {}, 'limits': {}, 'cpu_governor': '', 'thp_enabled': '', 'thp_defrag': '', 'cpu_mitigations': {}}
+    info = {'sysctl': {}, 'limits': {}, 'cpu_governor': [], 'thp_enabled': '', 'thp_defrag': '', 'cpu_mitigations': {}}
     keys = ['net.core.somaxconn','net.ipv4.tcp_tw_reuse','vm.swappiness','vm.dirty_ratio',
             'kernel.shmmax','fs.file-max','fs.nr_open']
     for k in keys:
@@ -435,21 +435,21 @@ def collect_tuning():
         govs = set()
         import glob
         for f in glob.glob('/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'):
-            govs.add(open(f).read().strip())
-        if govs: info['cpu_governor'] = list(govs)[0] if len(govs) == 1 else sorted(govs)
+            govs.add(Path(f).read_text().strip())
+        # Always a sorted list (stable JSON shape for compare), even with one entry.
+        info['cpu_governor'] = sorted(govs)
     except Exception: pass
     for key, path in (('thp_enabled','/sys/kernel/mm/transparent_hugepage/enabled'),
                       ('thp_defrag','/sys/kernel/mm/transparent_hugepage/defrag')):
         try:
-            v = open(path).read().strip()
-            import re
+            v = Path(path).read_text().strip()
             m = re.search(r'\[(\w+)\]', v)
             info[key] = m.group(1) if m else v
         except Exception: pass
     try:
-        import glob, os
+        import glob
         for f in glob.glob('/sys/devices/system/cpu/vulnerabilities/*'):
-            info['cpu_mitigations'][os.path.basename(f)] = open(f).read().strip()
+            info['cpu_mitigations'][Path(f).name] = Path(f).read_text().strip()
     except Exception: pass
     return info
 def collect_scheduled(): return {}
