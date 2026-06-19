@@ -639,20 +639,25 @@ def _mw_hana(conf):
             if sid and sid not in sids: sids.append(sid)
     result = []
     for sid in sids:
+        # edition/ports are best-effort fields reserved for a later MW task; left empty here.
         inst = {'sid': sid, 'instance_no': '', 'version': '', 'edition': '',
                 'state': '', 'ports': [], 'config_files': {}}
         for d in _glob.glob('/usr/sap/%s/HDB[0-9][0-9]' % sid):
-            inst['instance_no'] = d[-2:]; break
-        try:
-            r = subprocess.run(['su','-','%sadm' % sid.lower(), '-c', 'HDB version'],
-                               capture_output=True, text=True, timeout=15)
-            m = re.search(r'version:\s*([0-9.]+)', r.stdout)
-            if m: inst['version'] = m.group(1)
-        except Exception: pass
+            inst['instance_no'] = d[-2:]; break  # HDB<nr> glob guarantees 2 trailing digits
+        # `su - <sid>adm` only when running as root, else it prompts on the tty and would
+        # stall an unattended run (timeout would only mask it as a 15s-per-SID hang). Degrade
+        # to empty version off-root. stdin=DEVNULL hard-closes any prompt as a second guard.
+        if hasattr(os, 'geteuid') and os.geteuid() == 0:
+            try:
+                r = subprocess.run(['su','-','%sadm' % sid.lower(), '-c', 'HDB version'],
+                                   capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                m = re.search(r'version:\s*([0-9.]+)', r.stdout)
+                if m: inst['version'] = m.group(1)
+            except Exception: pass
         if inst['instance_no']:
             try:
                 r = subprocess.run(['sapcontrol','-nr',inst['instance_no'],'-function','GetProcessList'],
-                                   capture_output=True, text=True, timeout=15)
+                                   capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
                 if 'GREEN' in r.stdout: inst['state'] = 'GREEN'
                 elif 'YELLOW' in r.stdout: inst['state'] = 'YELLOW'
                 elif 'GRAY' in r.stdout: inst['state'] = 'GRAY'
