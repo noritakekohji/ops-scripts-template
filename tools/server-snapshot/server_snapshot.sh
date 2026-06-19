@@ -143,7 +143,7 @@ collect_snapshot() {
 
     export _OPS_CATEGORIES="$resolved"
     export _OPS_OUTPUT="$snap_file"
-    export _OPS_MW_CONF="${SCRIPT_DIR}/middleware.conf"
+    export _OPS_MW_CONF="${SCRIPT_DIR}/middleware.conf"   # consumed by _mw_load_conf (MW2)
 
     python3 - << 'PYEOF'
 import os, sys, json, subprocess, socket, platform, re, datetime
