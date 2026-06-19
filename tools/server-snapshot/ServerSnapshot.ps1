@@ -327,7 +327,10 @@ function Get-MiddlewareInfo {
 }
 
 # Stubs (real impl in later tasks)
-function Get-MwHana($conf)      { @() }
+function Get-MwHana($conf) {
+    # SAP HANA DB is Linux-only; on Windows nothing is detected and Get-MiddlewareInfo omits the key.
+    @()
+}
 function Get-MwSap($conf)       { @() }
 function Get-MwSqlServer($conf) { @() }
 function Get-MwTomcat($conf) {

@@ -630,7 +630,39 @@ def _mw_read_file(path, patterns, max_kb):
         entry['readable'] = False; entry['reason'] = 'permission_denied'; entry['sha256'] = ''
     return entry
 
-def _mw_hana(conf):      return []
+def _mw_hana(conf):
+    import glob as _glob
+    sids = list(conf.get('hana_sids', []))
+    if not sids:
+        for d in _glob.glob('/usr/sap/*/HDB[0-9][0-9]'):
+            sid = d.split('/usr/sap/')[1].split('/')[0]
+            if sid and sid not in sids: sids.append(sid)
+    result = []
+    for sid in sids:
+        inst = {'sid': sid, 'instance_no': '', 'version': '', 'edition': '',
+                'state': '', 'ports': [], 'config_files': {}}
+        for d in _glob.glob('/usr/sap/%s/HDB[0-9][0-9]' % sid):
+            inst['instance_no'] = d[-2:]; break
+        try:
+            r = subprocess.run(['su','-','%sadm' % sid.lower(), '-c', 'HDB version'],
+                               capture_output=True, text=True, timeout=15)
+            m = re.search(r'version:\s*([0-9.]+)', r.stdout)
+            if m: inst['version'] = m.group(1)
+        except Exception: pass
+        if inst['instance_no']:
+            try:
+                r = subprocess.run(['sapcontrol','-nr',inst['instance_no'],'-function','GetProcessList'],
+                                   capture_output=True, text=True, timeout=15)
+                if 'GREEN' in r.stdout: inst['state'] = 'GREEN'
+                elif 'YELLOW' in r.stdout: inst['state'] = 'YELLOW'
+                elif 'GRAY' in r.stdout: inst['state'] = 'GRAY'
+            except Exception: pass
+        for g in conf.get('hana_config_globs', []):
+            for p in _glob.glob(g.replace('%SID%', sid)):
+                if os.path.isfile(p):
+                    inst['config_files'][p] = _mw_read_file(p, conf['mask_patterns'], conf['max_file_kb'])
+        result.append(inst)
+    return result
 def _mw_sap(conf):       return []
 def _mw_sqlserver(conf): return []
 def _mw_tomcat(conf):

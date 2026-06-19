@@ -109,3 +109,36 @@ sx=[v for k,v in t[0]['config_files'].items() if k.endswith('server.xml')][0]
 assert 'secret=\"***\"' in sx['content']
 "
 }
+
+@test "server_snapshot: middleware collects hana ini from config_globs" {
+    if [[ "$(uname -s)" != "Linux" ]]; then skip "Linux only"; fi
+    if ! command -v python3 >/dev/null; then skip "python3 required"; fi
+    root="$WORK/usr_sap/PRD/SYS/global/hdb/custom/config"; mkdir -p "$root"
+    cat > "$root/global.ini" <<'EOF'
+[communication]
+listeninterface = .global
+[authentication]
+password = supersecret
+EOF
+    conf="$WORK/mw.conf"
+    cat > "$conf" <<EOF
+[hana]
+sids = PRD
+config_globs = $WORK/usr_sap/%SID%/SYS/global/hdb/custom/config/*.ini
+[masking]
+patterns = password,secret,key
+[limits]
+max_file_kb = 256
+EOF
+    _OPS_MW_CONF="$conf" run bash "$CTL" collect --category middleware --output "$WORK/snap.json"
+    [ "$status" -eq 0 ]
+    python3 -c "
+import json
+mw=json.load(open('$WORK/snap.json'))['middleware']
+h=[x for x in mw.get('hana',[]) if x['sid']=='PRD']
+assert h, 'hana PRD not found'
+gi=[v for k,v in h[0]['config_files'].items() if k.endswith('global.ini')][0]
+assert 'password = ***' in gi['content']
+assert 'listeninterface = .global' in gi['content']
+"
+}
