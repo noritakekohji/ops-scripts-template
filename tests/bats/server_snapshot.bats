@@ -142,3 +142,39 @@ assert 'password = ***' in gi['content']
 assert 'listeninterface = .global' in gi['content']
 "
 }
+
+@test "server_snapshot: middleware collects sap profiles from profile_globs" {
+    if [[ "$(uname -s)" != "Linux" ]]; then skip "Linux only"; fi
+    if ! command -v python3 >/dev/null; then skip "python3 required"; fi
+    prof="$WORK/usr_sap/PRD/SYS/profile"; mkdir -p "$prof"
+    cat > "$prof/DEFAULT.PFL" <<'EOF'
+SAPSYSTEMNAME = PRD
+rdisp/wp_no_dia = 10
+EOF
+    cat > "$prof/PRD_D00_host" <<'EOF'
+INSTANCE_NAME = D00
+ws/conn_password = topsecret
+EOF
+    conf="$WORK/mw.conf"
+    cat > "$conf" <<EOF
+[sap]
+sids = PRD
+profile_globs = $WORK/usr_sap/%SID%/SYS/profile/*
+[masking]
+patterns = password,secret,key
+[limits]
+max_file_kb = 256
+EOF
+    _OPS_MW_CONF="$conf" run bash "$CTL" collect --category middleware --output "$WORK/snap.json"
+    [ "$status" -eq 0 ]
+    python3 -c "
+import json
+mw=json.load(open('$WORK/snap.json'))['middleware']
+s=[x for x in mw.get('sap',[]) if x['sid']=='PRD']
+assert s, 'sap PRD not found'
+names=[k.split('/')[-1] for k in s[0]['profiles'].keys()]
+assert 'DEFAULT.PFL' in names and 'PRD_D00_host' in names
+pf=[v for k,v in s[0]['profiles'].items() if k.endswith('PRD_D00_host')][0]
+assert 'conn_password = ***' in pf['content']
+"
+}

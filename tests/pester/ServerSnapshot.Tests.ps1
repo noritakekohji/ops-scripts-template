@@ -226,3 +226,36 @@ Describe 'ServerSnapshot middleware tomcat' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot middleware sap (windows)' {
+    It 'detects a SAP SID profile dir and collects masked profiles' {
+        $work = New-TempWorkdir
+        try {
+            $prof = Join-Path $work 'usr\sap\PRD\SYS\profile'
+            New-Item -ItemType Directory -Path $prof -Force | Out-Null
+            "SAPSYSTEMNAME = PRD`nrdisp/wp_no_dia = 10`nlogin/password_downwards_compatibility = 0" |
+                Set-Content -LiteralPath (Join-Path $prof 'DEFAULT.PFL') -Encoding UTF8
+            "INSTANCE_NAME = D00`nws/conn_password = topsecret" |
+                Set-Content -LiteralPath (Join-Path $prof 'PRD_D00_host') -Encoding UTF8
+            $conf = Join-Path $work 'mw.conf'
+            @"
+[sap]
+sids = PRD
+profile_globs = $($work -replace '\\','\\')\usr\sap\%SID%\SYS\profile\*
+[limits]
+max_file_kb = 256
+"@ | Set-Content -LiteralPath $conf -Encoding UTF8
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('collect','-Category','middleware','-OutputPath',$out) -Env @{ _OPS_MW_CONF = $conf }
+            $r.ExitCode | Should -Be 0
+            $mw = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).middleware
+            $sap = @($mw.sap) | Where-Object { $_.sid -eq 'PRD' }
+            @($sap).Count | Should -BeGreaterThan 0
+            $names = @($sap.profiles.PSObject.Properties.Name | ForEach-Object { Split-Path $_ -Leaf })
+            $names | Should -Contain 'DEFAULT.PFL'
+            $names | Should -Contain 'PRD_D00_host'
+            $pf = $sap.profiles.PSObject.Properties | Where-Object { $_.Name -like '*PRD_D00_host' }
+            $pf.Value.content | Should -Match 'conn_password\s*=\s*\*\*\*'
+        } finally { Remove-TempPath $work }
+    }
+}

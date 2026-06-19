@@ -668,7 +668,43 @@ def _mw_hana(conf):
                     inst['config_files'][p] = _mw_read_file(p, conf['mask_patterns'], conf['max_file_kb'])
         result.append(inst)
     return result
-def _mw_sap(conf):       return []
+def _mw_sap(conf):
+    import glob as _glob
+    sids = list(conf.get('sap_sids', []))
+    if not sids:
+        for d in _glob.glob('/usr/sap/*/SYS/profile'):
+            sid = d.split('/usr/sap/')[1].split('/')[0]
+            if sid and sid != 'trans' and sid not in sids: sids.append(sid)
+    result = []
+    for sid in sids:
+        inst = {'sid': sid, 'instance': '', 'instance_no': '', 'type': '',
+                'kernel_version': '', 'state': '', 'ports': [], 'profiles': {}}
+        for d in _glob.glob('/usr/sap/%s/[A-Z]*[0-9][0-9]' % sid):
+            base = os.path.basename(d)
+            inst['instance'] = base
+            inst['instance_no'] = base[-2:]
+            m = re.match(r'^([A-Z]+)\d\d$', base)
+            if m: inst['type'] = m.group(1)
+            break
+        try:
+            r = subprocess.run(['disp+work','-v'], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+            m = re.search(r'kernel release\s+(\S+)', r.stdout)
+            if m: inst['kernel_version'] = m.group(1)
+        except Exception: pass
+        if inst['instance_no']:
+            try:
+                r = subprocess.run(['sapcontrol','-nr',inst['instance_no'],'-function','GetProcessList'],
+                                   capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                if 'GREEN' in r.stdout: inst['state'] = 'GREEN'
+                elif 'YELLOW' in r.stdout: inst['state'] = 'YELLOW'
+                elif 'GRAY' in r.stdout: inst['state'] = 'GRAY'
+            except Exception: pass
+        for g in conf.get('sap_profile_globs', []):
+            for p in _glob.glob(g.replace('%SID%', sid)):
+                if os.path.isfile(p):
+                    inst['profiles'][p] = _mw_read_file(p, conf['mask_patterns'], conf['max_file_kb'])
+        result.append(inst)
+    return result
 def _mw_sqlserver(conf): return []
 def _mw_tomcat(conf):
     import glob as _glob

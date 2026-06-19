@@ -331,7 +331,77 @@ function Get-MwHana($conf) {
     # SAP HANA DB is Linux-only; on Windows nothing is detected and Get-MiddlewareInfo omits the key.
     @()
 }
-function Get-MwSap($conf)       { @() }
+function Get-MwSap($conf) {
+    $sids = @($conf['sap_sids'])
+    $profileDirs = @{}   # sid -> profile dir
+    # 1) explicit absolute globs from conf (Windows paths), expand %SID%
+    foreach ($g in @($conf['sap_profile_globs'])) {
+        if ($g -match '[:\\]' -and $sids.Count) {
+            foreach ($sid in $sids) {
+                $dir = Split-Path -Parent ($g -replace '%SID%', $sid)
+                if (Test-Path -LiteralPath $dir) { $profileDirs[$sid] = $dir }
+            }
+        }
+    }
+    # 2) auto-detect: scan filesystem drive roots for \usr\sap\<SID>\SYS\profile
+    if (-not $profileDirs.Count) {
+        Safe-Exec -Label 'mw.sap.detect' -Block {
+            Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | ForEach-Object {
+                $base = Join-Path $_.Root 'usr\sap'
+                if (Test-Path -LiteralPath $base) {
+                    Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                        if ($_.Name -eq 'trans') { return }
+                        if ($sids.Count -and ($sids -notcontains $_.Name)) { return }
+                        $pdir = Join-Path $_.FullName 'SYS\profile'
+                        if ((Test-Path -LiteralPath $pdir) -and -not $profileDirs.ContainsKey($_.Name)) {
+                            $profileDirs[$_.Name] = $pdir
+                        }
+                    }
+                }
+            }
+        } | Out-Null
+    }
+    $result = @()
+    foreach ($sid in $profileDirs.Keys) {
+        $pdir = $profileDirs[$sid]
+        $inst = @{ sid = "$sid"; instance = ''; instance_no = ''; type = ''; kernel_version = ''; state = ''; ports = @(); profiles = @{} }
+        $sidRoot = Split-Path -Parent (Split-Path -Parent $pdir)   # ...\usr\sap\<SID>
+        Safe-Exec -Label 'mw.sap.inst' -Block {
+            Get-ChildItem -LiteralPath $sidRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^[A-Z]+\d\d$' } | Select-Object -First 1 | ForEach-Object {
+                    $inst.instance = $_.Name
+                    $inst.instance_no = $_.Name.Substring($_.Name.Length - 2)
+                    if ($_.Name -match '^([A-Z]+)\d\d$') { $inst.type = $Matches[1] }
+                }
+        } | Out-Null
+        $inst.kernel_version = Safe-Exec -Label 'mw.sap.kernel' -Block {
+            $dw = Get-Command 'disp+work.exe' -ErrorAction SilentlyContinue
+            if ($dw) {
+                $o = (& $dw.Source -v) 2>$null
+                $line = ($o | Where-Object { $_ -match 'kernel release\s+(\S+)' } | Select-Object -First 1)
+                if ($line -and $line -match 'kernel release\s+(\S+)') { return $Matches[1] }
+            }
+            ''
+        }
+        if ($inst.instance_no) {
+            $inst.state = Safe-Exec -Label 'mw.sap.state' -Block {
+                $sc = Get-Command 'sapcontrol.exe' -ErrorAction SilentlyContinue
+                if ($sc) {
+                    $txt = "$((& $sc.Source -nr $inst.instance_no -function GetProcessList) 2>$null)"
+                    if ($txt -match 'GREEN') { return 'GREEN' } elseif ($txt -match 'YELLOW') { return 'YELLOW' } elseif ($txt -match 'GRAY') { return 'GRAY' }
+                }
+                ''
+            }
+        }
+        Safe-Exec -Label 'mw.sap.profiles' -Block {
+            Get-ChildItem -LiteralPath $pdir -File -ErrorAction SilentlyContinue | ForEach-Object {
+                $inst.profiles["$($_.FullName)"] = Read-MwConfigFile -Path $_.FullName -MaskPatterns $conf['mask_patterns'] -MaxFileKb $conf['max_file_kb']
+            }
+        } | Out-Null
+        $result += $inst
+    }
+    return $result
+}
 function Get-MwSqlServer($conf) { @() }
 function Get-MwTomcat($conf) {
     $bases = New-Object System.Collections.Generic.List[string]
