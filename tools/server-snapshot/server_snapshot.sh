@@ -128,7 +128,7 @@ collect_snapshot() {
     fi
 
     # Resolve categories
-    local all_cats="os network services packages users filesystem environment security patches tuning scheduled"
+    local all_cats="os network services packages users filesystem environment security patches tuning scheduled middleware"
     local resolved
     if [[ "$snap_cats" == "all" ]]; then
         resolved="$all_cats"
@@ -143,6 +143,7 @@ collect_snapshot() {
 
     export _OPS_CATEGORIES="$resolved"
     export _OPS_OUTPUT="$snap_file"
+    export _OPS_MW_CONF="${SCRIPT_DIR}/middleware.conf"
 
     python3 - << 'PYEOF'
 import os, sys, json, subprocess, socket, platform, re, datetime
@@ -551,11 +552,34 @@ def collect_scheduled():
         pass
     return info
 
+def _mw_load_conf(): return {}   # real impl in Task 2
+def _mw_hana(conf):      return []
+def _mw_sap(conf):       return []
+def _mw_sqlserver(conf): return []
+def _mw_tomcat(conf):    return []
+
+def _mw_assemble(conf):
+    r = {}
+    for key, fn in (('hana', _mw_hana), ('sap', _mw_sap),
+                    ('sqlserver', _mw_sqlserver), ('tomcat', _mw_tomcat)):
+        try:
+            items = fn(conf)
+        except Exception:
+            items = []
+        if items:
+            r[key] = items
+    return r
+
+def collect_middleware():
+    conf = _mw_load_conf()
+    return _mw_assemble(conf)
+
 CAT_MAP = {
     'os': collect_os, 'network': collect_network, 'services': collect_services,
     'packages': collect_packages, 'users': collect_users, 'filesystem': collect_filesystem,
     'environment': collect_environment, 'security': collect_security,
     'patches': collect_patches, 'tuning': collect_tuning, 'scheduled': collect_scheduled,
+    'middleware': collect_middleware,
 }
 
 hostname = socket.gethostname()

@@ -150,3 +150,17 @@ Describe 'ServerSnapshot compare new categories' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot middleware scaffold' {
+    It 'collect accepts middleware and writes a middleware object' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 `
+                -Arguments @('collect','-Category','middleware','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $obj = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
+            $obj.PSObject.Properties.Name | Should -Contain 'middleware'
+        } finally { Remove-TempPath $work }
+    }
+}

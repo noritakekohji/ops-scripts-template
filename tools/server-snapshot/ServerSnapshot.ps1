@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 
 # Normalize -Category: accept comma-separated values (e.g. "os,network" from the
 # .bat wrapper) the same way the Bash tool does, then validate against the known set.
-$validCategories = @('all','os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled')
+$validCategories = @('all','os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled','middleware')
 $Category = @($Category | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ } | Select-Object -Unique)
 if (-not $Category) { $Category = @('all') }
 foreach ($c in $Category) {
@@ -312,6 +312,26 @@ function Get-SecurityInfo {
     $r
 }
 
+function Get-MiddlewareInfo {
+    Write-Host '  Collecting: middleware ...'
+    $conf = Read-MwConf
+    $r = [ordered]@{}
+    $hana = @(Get-MwHana      $conf); if ($hana.Count) { $r['hana']      = $hana }
+    $sap  = @(Get-MwSap       $conf); if ($sap.Count)  { $r['sap']       = $sap }
+    $sql  = @(Get-MwSqlServer $conf); if ($sql.Count)  { $r['sqlserver'] = $sql }
+    $tom  = @(Get-MwTomcat    $conf); if ($tom.Count)  { $r['tomcat']    = $tom }
+    $r
+}
+
+# Stubs (real impl in later tasks)
+function Get-MwHana($conf)      { @() }
+function Get-MwSap($conf)       { @() }
+function Get-MwSqlServer($conf) { @() }
+function Get-MwTomcat($conf)    { @() }
+
+# conf reader stub (real impl in Task 2)
+function Read-MwConf { @{} }
+
 function Get-PatchesInfo {
     Write-Host '  Collecting: patches ...'
     @(Safe-Exec -Label 'patches' -Block {
@@ -392,7 +412,7 @@ function Invoke-Collect {
         [string]$SnapLabel
     )
     # Resolve categories
-    $allCategories = @('os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled')
+    $allCategories = @('os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled','middleware')
     $resolved = if ($Categories -contains 'all') { $allCategories } else {
         $Categories | Where-Object { $allCategories -contains $_ }
     }
@@ -434,6 +454,7 @@ function Invoke-Collect {
             'patches'     { Get-PatchesInfo }
             'tuning'      { Get-TuningInfo }
             'scheduled'   { Get-ScheduledInfo }
+            'middleware'  { Get-MiddlewareInfo }
         }
     }
 
@@ -868,7 +889,7 @@ function Invoke-Compare {
     $bMeta = Obj-To-Dict ($bData['meta'])
     $aMeta = Obj-To-Dict ($aData['meta'])
 
-    $allCats   = @('os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled')
+    $allCats   = @('os','network','services','packages','users','filesystem','environment','security','patches','tuning','scheduled','middleware')
     $availCats = $allCats | Where-Object { $bData.ContainsKey($_) -and $aData.ContainsKey($_) }
     $compareCats = if ($Categories -contains 'all') { $availCats } else {
         $Categories | Where-Object { $availCats -contains $_ }
