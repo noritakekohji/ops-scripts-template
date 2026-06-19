@@ -55,6 +55,25 @@ function Safe-Exec([scriptblock]$Block, [string]$Label) {
     catch { Write-Warning "$Label : $($_.Exception.Message)"; $null }
 }
 
+function Invoke-BoundedExe {
+    # Run an external exe with a HARD timeout. PS5.1 has no native subprocess timeout,
+    # so use Start-Process + WaitForExit and kill on overrun. Returns captured stdout as
+    # a single string ('' on timeout/failure). Used by the middleware collectors (SAP
+    # sapcontrol / SQL Server sqlcmd / Tomcat version.bat) so a wedged external tool can
+    # never hang an unattended snapshot. Parity with the python side's subprocess timeout=.
+    param([string]$FilePath, [string[]]$Arguments = @(), [int]$TimeoutMs = 15000)
+    $outTmp = [IO.Path]::GetTempFileName(); $errTmp = [IO.Path]::GetTempFileName()
+    try {
+        $startArgs = @{ FilePath = $FilePath; NoNewWindow = $true; PassThru = $true
+                        RedirectStandardOutput = $outTmp; RedirectStandardError = $errTmp }
+        if ($Arguments.Count) { $startArgs['ArgumentList'] = $Arguments }
+        $p = Start-Process @startArgs
+        if (-not $p.WaitForExit($TimeoutMs)) { try { $p.Kill() } catch {}; return '' }
+        return (Get-Content -LiteralPath $outTmp -Raw)
+    } catch { return '' }
+    finally { Remove-Item -LiteralPath $outTmp, $errTmp -Force -ErrorAction SilentlyContinue }
+}
+
 # ============================================================
 # Section 2: Collection functions
 # ============================================================
@@ -389,21 +408,12 @@ function Get-MwSap($conf) {
         }
         if ($inst.instance_no) {
             $inst.state = Safe-Exec -Label 'mw.sap.state' -Block {
-                # sapcontrol connects to the local sapstartsrv and can block if the instance is hung.
-                # PS5.1 has no native subprocess timeout, so bound it with Start-Process + WaitForExit
-                # (parity with the python side's timeout=15 and the Tomcat version.bat guard).
+                # sapcontrol connects to the local sapstartsrv and can block if the instance is hung;
+                # Invoke-BoundedExe caps the runtime (parity with the python side's timeout=15).
                 $sc = Get-Command 'sapcontrol.exe' -ErrorAction SilentlyContinue
                 if (-not $sc) { return '' }
-                $outTmp = [IO.Path]::GetTempFileName(); $errTmp = [IO.Path]::GetTempFileName()
-                try {
-                    $p = Start-Process -FilePath $sc.Source -ArgumentList '-nr', $inst.instance_no, '-function', 'GetProcessList' `
-                            -NoNewWindow -PassThru -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp
-                    if (-not $p.WaitForExit(15000)) { try { $p.Kill() } catch {}; return '' }
-                    $txt = Get-Content -LiteralPath $outTmp -Raw
-                    if ($txt -match 'GREEN') { return 'GREEN' } elseif ($txt -match 'YELLOW') { return 'YELLOW' } elseif ($txt -match 'GRAY') { return 'GRAY' }
-                } finally {
-                    Remove-Item -LiteralPath $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
-                }
+                $txt = Invoke-BoundedExe -FilePath $sc.Source -Arguments @('-nr', $inst.instance_no, '-function', 'GetProcessList') -TimeoutMs 15000
+                if ($txt -match 'GREEN') { return 'GREEN' } elseif ($txt -match 'YELLOW') { return 'YELLOW' } elseif ($txt -match 'GRAY') { return 'GRAY' }
                 ''
             }
         }
@@ -439,35 +449,60 @@ function Get-MwSqlServer($conf) {
             $s = Get-Service -Name $svcName -ErrorAction SilentlyContinue
             if ($s) { $s.Status.ToString().ToLower() } else { '' }
         }
+        # connect='auto' (default) and 'on' both attempt integrated-auth; only 'off' skips.
         if ($conf['sqlserver_connect'] -ne 'off') {
             $sqlcmd = Get-Command sqlcmd -ErrorAction SilentlyContinue
             if ($sqlcmd) {
                 $target = if ($name -eq 'MSSQLSERVER') { '.' } else { ".\$name" }
+                # -l 15 caps login wait; Invoke-BoundedExe caps total runtime so a hung
+                # instance can't stall the snapshot (integrated auth only, no stored creds).
                 $cfg = Safe-Exec -Label 'mw.sql.spcfg' -Block {
-                    & sqlcmd -S $target -E -h -1 -W -s "|" -Q "SET NOCOUNT ON; EXEC sp_configure;" 2>$null
+                    Invoke-BoundedExe -FilePath $sqlcmd.Source -TimeoutMs 30000 -Arguments @(
+                        '-S', $target, '-E', '-l', '15', '-h', '-1', '-W', '-s', '|',
+                        '-Q', 'SET NOCOUNT ON; EXEC sp_configure;')
                 }
                 if ($cfg) {
                     $h = @{}
-                    foreach ($row in $cfg) {
+                    foreach ($row in ($cfg -split "`r?`n")) {
+                        # sp_configure columns: name|minimum|maximum|config_value|run_value
                         $cols = "$row" -split '\|'
-                        if ($cols.Count -ge 2 -and $cols[0].Trim()) { $h[$cols[0].Trim()] = $cols[1].Trim() }
+                        if ($cols.Count -ge 5) {
+                            $cn = $cols[0].Trim()
+                            if ($cn -and $cn -ne 'name' -and $cn -notmatch '^-+$') { $h[$cn] = $cols[4].Trim() }
+                        }
                     }
                     if ($h.Count) { $inst.sp_configure = $h; $inst.sp_configure_available = $true }
                 }
-                $ver = Safe-Exec -Label 'mw.sql.ver' -Block {
-                    $o = & sqlcmd -S $target -E -h -1 -W -Q "SET NOCOUNT ON; SELECT CONVERT(varchar,SERVERPROPERTY('ProductVersion'));" 2>$null
-                    ($o | Where-Object { $_ -match '^\d+\.' } | Select-Object -First 1)
+                $verEd = Safe-Exec -Label 'mw.sql.ver' -Block {
+                    Invoke-BoundedExe -FilePath $sqlcmd.Source -TimeoutMs 20000 -Arguments @(
+                        '-S', $target, '-E', '-l', '15', '-h', '-1', '-W',
+                        '-Q', "SET NOCOUNT ON; SELECT CONVERT(varchar,SERVERPROPERTY('ProductVersion')) + '|' + CONVERT(varchar,SERVERPROPERTY('Edition'));")
                 }
-                if ($ver) { $inst.version = "$ver".Trim() }
+                if ($verEd) {
+                    $line = ($verEd -split "`r?`n" | Where-Object { $_ -match '^\d+\.' } | Select-Object -First 1)
+                    if ($line) {
+                        $parts = "$line".Trim() -split '\|'
+                        $inst.version = $parts[0].Trim()
+                        if ($parts.Count -ge 2) { $inst.edition = $parts[1].Trim() }
+                    }
+                }
             }
         }
         $inst.port = Safe-Exec -Label 'mw.sql.port' -Block {
             $instId = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL' -ErrorAction SilentlyContinue).$name
-            if ($instId) {
-                $tp = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instId\MSSQLServer\SuperSocketNetLib\Tcp\IPAll"
-                $v = (Get-ItemProperty -Path $tp -ErrorAction SilentlyContinue).TcpPort
-                if ($v) { [int]$v } else { 0 }
-            } else { 0 }
+            if (-not $instId) { return 0 }
+            $tp = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instId\MSSQLServer\SuperSocketNetLib\Tcp\IPAll"
+            $props = Get-ItemProperty -Path $tp -ErrorAction SilentlyContinue
+            # TcpPort may be empty (dynamic-port instances use TcpDynamicPorts) or a comma list.
+            $tpProp = if ($props) { $props.PSObject.Properties['TcpPort'] } else { $null }
+            $v = if ($tpProp) { "$($tpProp.Value)" } else { '' }
+            if (-not $v) {
+                $dynProp = if ($props) { $props.PSObject.Properties['TcpDynamicPorts'] } else { $null }
+                if ($dynProp) { $v = "$($dynProp.Value)" }
+            }
+            $first = ($v -split ',' | Where-Object { $_.Trim() } | Select-Object -First 1)
+            $n = 0
+            if ($first -and [int]::TryParse($first.Trim(), [ref]$n)) { $n } else { 0 }
         }
         $result += $inst
     }
@@ -505,16 +540,8 @@ function Get-MwTomcat($conf) {
             }
             $bat = Join-Path $norm 'bin\version.bat'
             if (Test-Path -LiteralPath $bat) {
-                $outTmp = [IO.Path]::GetTempFileName(); $errTmp = [IO.Path]::GetTempFileName()
-                try {
-                    $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$bat`"" -NoNewWindow -PassThru `
-                            -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp
-                    if (-not $p.WaitForExit(15000)) { try { $p.Kill() } catch {}; return '' }
-                    $o = Get-Content -LiteralPath $outTmp -Raw
-                    if ($o -and $o -match 'Server version:\s*(.+)') { return $Matches[1].Trim() }
-                } finally {
-                    Remove-Item -LiteralPath $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
-                }
+                $o = Invoke-BoundedExe -FilePath 'cmd.exe' -Arguments @('/c', $bat) -TimeoutMs 15000
+                if ($o -and $o -match 'Server version:\s*(.+)') { return $Matches[1].Trim() }
             }
             ''
         }

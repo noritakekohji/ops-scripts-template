@@ -732,20 +732,27 @@ def _mw_sqlserver(conf):
         if not sqlcmd and which('sqlcmd'): sqlcmd = 'sqlcmd'
         if sqlcmd:
             try:
-                r = subprocess.run([sqlcmd,'-S','localhost','-E','-h','-1','-W','-s','|','-Q','SET NOCOUNT ON; EXEC sp_configure;'],
-                                   capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+                r = subprocess.run([sqlcmd,'-S','localhost','-E','-l','15','-h','-1','-W','-s','|','-Q','SET NOCOUNT ON; EXEC sp_configure;'],
+                                   capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
                 h = {}
                 for row in r.stdout.splitlines():
+                    # sp_configure columns: name|minimum|maximum|config_value|run_value
                     cols = row.split('|')
-                    if len(cols) >= 2 and cols[0].strip():
-                        h[cols[0].strip()] = cols[1].strip()
+                    if len(cols) >= 5:
+                        cn = cols[0].strip()
+                        if cn and cn != 'name' and cn.strip('-'):
+                            h[cn] = cols[4].strip()
                 if h: inst['sp_configure'] = h; inst['sp_configure_available'] = True
             except Exception: pass
             try:
-                r = subprocess.run([sqlcmd,'-S','localhost','-E','-h','-1','-W','-Q',"SET NOCOUNT ON; SELECT CONVERT(varchar,SERVERPROPERTY('ProductVersion'));"],
-                                   capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                r = subprocess.run([sqlcmd,'-S','localhost','-E','-l','15','-h','-1','-W','-Q',"SET NOCOUNT ON; SELECT CONVERT(varchar,SERVERPROPERTY('ProductVersion')) + '|' + CONVERT(varchar,SERVERPROPERTY('Edition'));"],
+                                   capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
                 for line in r.stdout.splitlines():
-                    if re.match(r'^\d+\.', line.strip()): inst['version'] = line.strip(); break
+                    if re.match(r'^\d+\.', line.strip()):
+                        parts = line.strip().split('|')
+                        inst['version'] = parts[0].strip()
+                        if len(parts) >= 2: inst['edition'] = parts[1].strip()
+                        break
             except Exception: pass
     result.append(inst)
     return result
