@@ -164,3 +164,23 @@ Describe 'ServerSnapshot middleware scaffold' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot middleware file helper' {
+    It 'masks secrets and records sha256/size; missing file flagged' {
+        $work = New-TempWorkdir
+        try {
+            $f = Join-Path $work 'app.conf'
+            "user = admin`npassword = s3cr3t`nport = 8080" | Set-Content -LiteralPath $f -Encoding UTF8
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('collect','-Category','middleware','-OutputPath',$out) -Env @{ _OPS_MW_PROBE = $f }
+            $r.ExitCode | Should -Be 0
+            $p = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).middleware._probe
+            $p.masked      | Should -BeTrue
+            $p.content     | Should -Match 'password\s*=\s*\*\*\*'
+            $p.content     | Should -Match 'user = admin'
+            $p.size_bytes  | Should -BeGreaterThan 0
+            $p.sha256      | Should -Match '^[0-9a-f]{64}$'
+            $p.readable    | Should -BeTrue
+        } finally { Remove-TempPath $work }
+    }
+}

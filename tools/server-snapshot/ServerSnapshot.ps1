@@ -315,6 +315,9 @@ function Get-SecurityInfo {
 function Get-MiddlewareInfo {
     Write-Host '  Collecting: middleware ...'
     $conf = Read-MwConf
+    if ($env:_OPS_MW_PROBE) {
+        return @{ _probe = (Read-MwConfigFile -Path $env:_OPS_MW_PROBE -MaskPatterns $conf['mask_patterns'] -MaxFileKb $conf['max_file_kb']) }
+    }
     $r = [ordered]@{}
     $hana = @(Get-MwHana      $conf); if ($hana.Count) { $r['hana']      = $hana }
     $sap  = @(Get-MwSap       $conf); if ($sap.Count)  { $r['sap']       = $sap }
@@ -329,8 +332,80 @@ function Get-MwSap($conf)       { @() }
 function Get-MwSqlServer($conf) { @() }
 function Get-MwTomcat($conf)    { @() }
 
-# conf reader stub (real impl in Task 2)
-function Read-MwConf { @{} }
+function Read-MwConf {
+    $conf = @{
+        hana_sids = @(); hana_config_globs = @('/usr/sap/%SID%/SYS/global/hdb/custom/config/*.ini')
+        sap_sids = @();  sap_profile_globs = @('/usr/sap/%SID%/SYS/profile/*')
+        sqlserver_instances = @(); sqlserver_connect = 'auto'
+        tomcat_bases = @(); tomcat_config_names = @('server.xml','web.xml','context.xml','catalina.properties','setenv.sh','setenv.bat')
+        mask_patterns = @('password','passwd','pwd','secret','key','credential','token','connectionstring')
+        max_file_kb = 256
+    }
+    # Honor _OPS_MW_CONF override (symmetric with the sh side; enables conf-driven tests).
+    $path = if ($env:_OPS_MW_CONF) { $env:_OPS_MW_CONF } else { Join-Path $PSScriptRoot 'middleware.conf' }
+    if (-not (Test-Path -LiteralPath $path)) { return $conf }
+    $section = ''
+    foreach ($line in (Get-Content -LiteralPath $path -ErrorAction SilentlyContinue)) {
+        $t = $line.Trim()
+        if (-not $t -or $t.StartsWith('#')) { continue }
+        if ($t -match '^\[(.+)\]$') { $section = $Matches[1].Trim().ToLower(); continue }
+        $kv = $t -split '=', 2
+        if ($kv.Count -lt 2) { continue }
+        $key = $kv[0].Trim().ToLower(); $val = $kv[1].Trim()
+        $list = @($val -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        switch ("$section.$key") {
+            'hana.sids'              { $conf.hana_sids = $list }
+            'hana.config_globs'      { if ($list.Count) { $conf.hana_config_globs = $list } }
+            'sap.sids'               { $conf.sap_sids = $list }
+            'sap.profile_globs'      { if ($list.Count) { $conf.sap_profile_globs = $list } }
+            'sqlserver.instances'    { $conf.sqlserver_instances = $list }
+            'sqlserver.connect'      { if ($val) { $conf.sqlserver_connect = $val.ToLower() } }
+            'tomcat.bases'           { $conf.tomcat_bases = $list }
+            'tomcat.config_names'    { if ($list.Count) { $conf.tomcat_config_names = $list } }
+            'masking.patterns'       { if ($list.Count) { $conf.mask_patterns = $list } }
+            'limits.max_file_kb'     { $n = 0; if ([int]::TryParse($val, [ref]$n) -and $n -gt 0) { $conf.max_file_kb = $n } }
+        }
+    }
+    return $conf
+}
+
+function Mask-MwSecrets {
+    param([string]$Text, [string[]]$Patterns)
+    if (-not $Text -or -not $Patterns -or $Patterns.Count -eq 0) { return @{ Text = "$Text"; Masked = $false } }
+    $alt = ($Patterns | ForEach-Object { [regex]::Escape($_) }) -join '|'
+    $didMask = $false
+    $lines = "$Text" -split "`n"
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ($line -imatch $alt) {
+            # XML attribute form: key="value"
+            $new = [regex]::Replace($line, '(?i)((?:' + $alt + ')[A-Za-z0-9_.-]*\s*=\s*")[^"]*(")', '${1}***${2}')
+            # key = value / key: value form
+            $new = [regex]::Replace($new, '(?i)^(\s*[A-Za-z0-9_.\-/]*(?:' + $alt + ')[A-Za-z0-9_.\-/]*\s*[:=]\s*)\S.*$', '${1}***')
+            if ($new -ne $line) { $didMask = $true; $lines[$i] = $new }
+        }
+    }
+    return @{ Text = ($lines -join "`n"); Masked = $didMask }
+}
+
+function Read-MwConfigFile {
+    param([string]$Path, [string[]]$MaskPatterns, [int]$MaxFileKb)
+    if (-not $MaxFileKb) { $MaxFileKb = 256 }
+    $entry = @{ content = ''; masked = $false; size_bytes = 0; sha256 = ''; readable = $true; reason = '' }
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { $entry.readable = $false; $entry.reason = 'not_found'; return $entry }
+        $fi = Get-Item -LiteralPath $Path -ErrorAction Stop
+        $entry.size_bytes = [int]$fi.Length
+        try { $entry.sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower() } catch {}
+        if ($fi.Length -gt ($MaxFileKb * 1024)) { $entry.reason = 'too_large'; return $entry }
+        $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        $m = Mask-MwSecrets -Text $raw -Patterns $MaskPatterns
+        $entry.content = $m.Text; $entry.masked = $m.Masked
+    } catch {
+        $entry.readable = $false; $entry.reason = 'permission_denied'; $entry.content = ''; $entry.sha256 = ''
+    }
+    return $entry
+}
 
 function Get-PatchesInfo {
     Write-Host '  Collecting: patches ...'

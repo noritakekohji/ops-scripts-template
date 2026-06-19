@@ -552,7 +552,83 @@ def collect_scheduled():
         pass
     return info
 
-def _mw_load_conf(): return {}   # real impl in Task 2
+def _mw_load_conf():
+    conf = {
+        'hana_sids': [], 'hana_config_globs': ['/usr/sap/%SID%/SYS/global/hdb/custom/config/*.ini'],
+        'sap_sids': [], 'sap_profile_globs': ['/usr/sap/%SID%/SYS/profile/*'],
+        'sqlserver_instances': [], 'sqlserver_connect': 'auto',
+        'tomcat_bases': [], 'tomcat_config_names': ['server.xml','web.xml','context.xml','catalina.properties','setenv.sh','setenv.bat'],
+        'mask_patterns': ['password','passwd','pwd','secret','key','credential','token','connectionstring'],
+        'max_file_kb': 256,
+    }
+    path = os.environ.get('_OPS_MW_CONF', '')
+    if not path or not os.path.isfile(path):
+        return conf
+    section = ''
+    listmap = {'hana.sids':'hana_sids','hana.config_globs':'hana_config_globs',
+               'sap.sids':'sap_sids','sap.profile_globs':'sap_profile_globs',
+               'sqlserver.instances':'sqlserver_instances','tomcat.bases':'tomcat_bases',
+               'tomcat.config_names':'tomcat_config_names','masking.patterns':'mask_patterns'}
+    try:
+        for line in Path(path).read_text().splitlines():
+            t = line.strip()
+            if not t or t.startswith('#'): continue
+            m = re.match(r'^\[(.+)\]$', t)
+            if m: section = m.group(1).strip().lower(); continue
+            if '=' not in t: continue
+            k, v = t.split('=', 1); k = k.strip().lower(); v = v.strip()
+            full = section + '.' + k
+            vals = [x.strip() for x in v.split(',') if x.strip()]
+            if full in listmap:
+                if vals: conf[listmap[full]] = vals
+            elif full == 'sqlserver.connect' and v:
+                conf['sqlserver_connect'] = v.lower()
+            elif full == 'limits.max_file_kb':
+                try:
+                    n = int(v)
+                    if n > 0: conf['max_file_kb'] = n
+                except Exception: pass
+    except Exception: pass
+    return conf
+
+def _mw_mask(text, patterns):
+    if not text or not patterns:
+        return text, False
+    alt = '|'.join(re.escape(p) for p in patterns)
+    did = [False]
+    attr_re = re.compile(r'(?i)((?:' + alt + r')[A-Za-z0-9_.\-]*\s*=\s*")[^"]*(")')
+    kv_re   = re.compile(r'(?i)^(\s*[A-Za-z0-9_.\-/]*(?:' + alt + r')[A-Za-z0-9_.\-/]*\s*[:=]\s*)\S.*$')
+    out = []
+    for line in text.split('\n'):
+        if re.search(r'(?i)' + alt, line):
+            new = attr_re.sub(r'\1***\2', line)
+            new = kv_re.sub(r'\1***', new)
+            if new != line: did[0] = True
+            out.append(new)
+        else:
+            out.append(line)
+    return '\n'.join(out), did[0]
+
+def _mw_read_file(path, patterns, max_kb):
+    entry = {'content': '', 'masked': False, 'size_bytes': 0, 'sha256': '', 'readable': True, 'reason': ''}
+    try:
+        if not os.path.isfile(path):
+            entry['readable'] = False; entry['reason'] = 'not_found'; return entry
+        import hashlib
+        raw = Path(path).read_bytes()
+        entry['size_bytes'] = len(raw)
+        entry['sha256'] = hashlib.sha256(raw).hexdigest()
+        if len(raw) > max_kb * 1024:
+            entry['reason'] = 'too_large'; return entry
+        text = raw.decode('utf-8', errors='replace')
+        masked, did = _mw_mask(text, patterns)
+        entry['content'] = masked; entry['masked'] = did
+    except PermissionError:
+        entry['readable'] = False; entry['reason'] = 'permission_denied'; entry['sha256'] = ''
+    except Exception:
+        entry['readable'] = False; entry['reason'] = 'permission_denied'; entry['sha256'] = ''
+    return entry
+
 def _mw_hana(conf):      return []
 def _mw_sap(conf):       return []
 def _mw_sqlserver(conf): return []
@@ -572,6 +648,9 @@ def _mw_assemble(conf):
 
 def collect_middleware():
     conf = _mw_load_conf()
+    probe = os.environ.get('_OPS_MW_PROBE', '')
+    if probe:
+        return {'_probe': _mw_read_file(probe, conf['mask_patterns'], conf['max_file_kb'])}
     return _mw_assemble(conf)
 
 CAT_MAP = {

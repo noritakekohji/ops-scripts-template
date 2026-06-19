@@ -73,3 +73,16 @@ assert d['meta']['categories'] == ['os'], 'unexpected categories: ' + str(d['met
     [ "$status" -eq 0 ]
     python3 -c "import json; d=json.load(open('$WORK/snap.json')); assert isinstance(d.get('tuning'), dict)"
 }
+
+@test "server_snapshot: middleware file helper masks secrets" {
+    if [[ "$(uname -s)" != "Linux" ]]; then skip "Linux only"; fi
+    if ! command -v python3 >/dev/null; then skip "python3 required"; fi
+    cat > "$WORK/app.conf" <<'EOF'
+user = admin
+password = s3cr3t
+port = 8080
+EOF
+    _OPS_MW_PROBE="$WORK/app.conf" run bash "$CTL" collect --category middleware --output "$WORK/snap.json"
+    [ "$status" -eq 0 ]
+    python3 -c "import json; p=json.load(open('$WORK/snap.json'))['middleware']['_probe']; assert p['masked'] is True; assert '***' in p['content']; assert 'user = admin' in p['content']; assert len(p['sha256'])==64"
+}
