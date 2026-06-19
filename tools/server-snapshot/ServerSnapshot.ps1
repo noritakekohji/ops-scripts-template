@@ -1012,6 +1012,45 @@ function Compare-Scheduled($b, $a) {
     return $results
 }
 
+function Compare-Middleware($b, $a) {
+    $results = [System.Collections.Generic.List[CategoryResult]]::new()
+    $bd = Obj-To-Dict $b; $ad = Obj-To-Dict $a
+    # product -> (key builder, scalar value fields, config field name)
+    $specs = @(
+        @{ prod='hana';      key={ param($x) "$($x['sid'])" };                          vals=@('version','instance_no','state'); cfg='config_files' },
+        @{ prod='sap';       key={ param($x) "$($x['sid'])/$($x['instance'])" };        vals=@('kernel_version','type','state'); cfg='profiles' },
+        @{ prod='sqlserver'; key={ param($x) "$($x['instance_name'])" };                vals=@('version','edition','state','port','sp_configure_available'); cfg='config_files' },
+        @{ prod='tomcat';    key={ param($x) "$($x['name'])@$($x['catalina_base'])" };  vals=@('version','java_version','state'); cfg='config_files' }
+    )
+    foreach ($s in $specs) {
+        $bl = @(As-Array $bd[$s.prod] | ForEach-Object { Obj-To-Dict $_ })
+        $al = @(As-Array $ad[$s.prod] | ForEach-Object { Obj-To-Dict $_ })
+        if (-not $bl.Count -and -not $al.Count) { continue }
+        # scalar fields: build keyed dicts carrying a 'name' field for Compare-List
+        $bScalar = @($bl | ForEach-Object { $h = @{ name = (& $s.key $_) }; foreach ($v in $s.vals) { $h[$v] = $_[$v] }; $h })
+        $aScalar = @($al | ForEach-Object { $h = @{ name = (& $s.key $_) }; foreach ($v in $s.vals) { $h[$v] = $_[$v] }; $h })
+        $results.Add((Compare-List $bScalar $aScalar 'name' $s.vals "middleware/$($s.prod)"))
+        # config files compared by sha256 (key = instanceKey::path, value = sha256)
+        $bCfg = @(); $aCfg = @()
+        foreach ($inst in $bl) {
+            $raw = $inst[$s.cfg]
+            if ($null -eq $raw) { continue }
+            $files = Obj-To-Dict $raw
+            foreach ($p in $files.Keys) { $bCfg += @{ name = "$(& $s.key $inst)::$p"; sha256 = (Obj-To-Dict $files[$p])['sha256'] } }
+        }
+        foreach ($inst in $al) {
+            $raw = $inst[$s.cfg]
+            if ($null -eq $raw) { continue }
+            $files = Obj-To-Dict $raw
+            foreach ($p in $files.Keys) { $aCfg += @{ name = "$(& $s.key $inst)::$p"; sha256 = (Obj-To-Dict $files[$p])['sha256'] } }
+        }
+        if ($bCfg.Count -or $aCfg.Count) {
+            $results.Add((Compare-List $bCfg $aCfg 'name' @('sha256') "middleware/$($s.prod)/files"))
+        }
+    }
+    return $results
+}
+
 # ============================================================
 # Console output
 # ============================================================
@@ -1194,6 +1233,9 @@ function Invoke-Compare {
             & $py.Source @pyArgs
             if ($LASTEXITCODE -eq 0) { return }
             Write-Warning "compare_server_info.py exited with $LASTEXITCODE; falling back to PS native compare"
+            # Reset so the leaked non-zero Python exit code does not become the
+            # script's exit code once the PS-native fallback completes successfully.
+            $global:LASTEXITCODE = 0
         }
     }
 
@@ -1228,6 +1270,7 @@ function Invoke-Compare {
             'patches'     { @(Compare-Patches     $bCat $aCat) }
             'tuning'      { @(Compare-Tuning      $bCat $aCat) }
             'scheduled'   { @(Compare-Scheduled   $bCat $aCat) }
+            'middleware'  { @(Compare-Middleware  $bCat $aCat) }
         }
         foreach ($cr in $catResults) { $allResults.Add($cr) }
     }

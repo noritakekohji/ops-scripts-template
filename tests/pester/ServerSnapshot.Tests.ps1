@@ -275,3 +275,28 @@ Describe 'ServerSnapshot middleware sqlserver' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot compare middleware' {
+    It 'detects tomcat version change and config sha256 change' {
+        $work = New-TempWorkdir
+        try {
+            $before = Join-Path $work 'b.json'; $after = Join-Path $work 'a.json'
+            $mk = {
+                param($ver,$sha)
+                @{ meta=@{hostname='h';os_type='windows';collected_at='t';categories=@('middleware')}
+                   middleware=@{ tomcat=@(@{
+                       name='t9'; catalina_base='/opt/t9'; version=$ver; java_version='17'; jvm_opts='';
+                       state='running'; pid=1; connector_ports=@(8080)
+                       config_files=@{ '/opt/t9/conf/server.xml' = @{ content='x'; masked=$false; size_bytes=10; sha256=$sha; readable=$true; reason='' } }
+                   }) } }
+            }
+            (& $mk 'Tomcat/9.0.1' 'aaa') | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $before -Encoding UTF8
+            (& $mk 'Tomcat/9.0.2' 'bbb') | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $after  -Encoding UTF8
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('compare','-BeforePath',$before,'-AfterPath',$after)
+            $r.ExitCode | Should -Be 0
+            $r.Combined | Should -Match 'middleware'
+            $r.Combined | Should -Match '9\.0\.2'           # version change shown
+            $r.Combined | Should -Match 'CHANGED'           # sha256 change detected
+        } finally { Remove-TempPath $work }
+    }
+}
