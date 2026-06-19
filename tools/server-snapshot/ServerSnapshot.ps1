@@ -334,7 +334,9 @@ function Get-MwHana($conf) {
 function Get-MwSap($conf) {
     $sids = @($conf['sap_sids'])
     $profileDirs = @{}   # sid -> profile dir
-    # 1) explicit absolute globs from conf (Windows paths), expand %SID%
+    # 1) explicit absolute globs from conf (Windows paths), expand %SID%.
+    #    NOTE: requires sap.sids to be set (the glob's %SID% needs the SID list to expand).
+    #    An absolute glob with empty sap.sids is skipped here and falls through to auto-detect.
     foreach ($g in @($conf['sap_profile_globs'])) {
         if ($g -match '[:\\]' -and $sids.Count) {
             foreach ($sid in $sids) {
@@ -367,6 +369,7 @@ function Get-MwSap($conf) {
         $inst = @{ sid = "$sid"; instance = ''; instance_no = ''; type = ''; kernel_version = ''; state = ''; ports = @(); profiles = @{} }
         $sidRoot = Split-Path -Parent (Split-Path -Parent $pdir)   # ...\usr\sap\<SID>
         Safe-Exec -Label 'mw.sap.inst' -Block {
+            # First instance dir only; a multi-instance SID (ASCS+ERS+PAS) reports just the first here.
             Get-ChildItem -LiteralPath $sidRoot -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -match '^[A-Z]+\d\d$' } | Select-Object -First 1 | ForEach-Object {
                     $inst.instance = $_.Name
@@ -375,6 +378,7 @@ function Get-MwSap($conf) {
                 }
         } | Out-Null
         $inst.kernel_version = Safe-Exec -Label 'mw.sap.kernel' -Block {
+            # disp+work -v just prints the kernel banner and exits; no block risk, so no timeout guard.
             $dw = Get-Command 'disp+work.exe' -ErrorAction SilentlyContinue
             if ($dw) {
                 $o = (& $dw.Source -v) 2>$null
@@ -385,10 +389,20 @@ function Get-MwSap($conf) {
         }
         if ($inst.instance_no) {
             $inst.state = Safe-Exec -Label 'mw.sap.state' -Block {
+                # sapcontrol connects to the local sapstartsrv and can block if the instance is hung.
+                # PS5.1 has no native subprocess timeout, so bound it with Start-Process + WaitForExit
+                # (parity with the python side's timeout=15 and the Tomcat version.bat guard).
                 $sc = Get-Command 'sapcontrol.exe' -ErrorAction SilentlyContinue
-                if ($sc) {
-                    $txt = "$((& $sc.Source -nr $inst.instance_no -function GetProcessList) 2>$null)"
+                if (-not $sc) { return '' }
+                $outTmp = [IO.Path]::GetTempFileName(); $errTmp = [IO.Path]::GetTempFileName()
+                try {
+                    $p = Start-Process -FilePath $sc.Source -ArgumentList '-nr', $inst.instance_no, '-function', 'GetProcessList' `
+                            -NoNewWindow -PassThru -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp
+                    if (-not $p.WaitForExit(15000)) { try { $p.Kill() } catch {}; return '' }
+                    $txt = Get-Content -LiteralPath $outTmp -Raw
                     if ($txt -match 'GREEN') { return 'GREEN' } elseif ($txt -match 'YELLOW') { return 'YELLOW' } elseif ($txt -match 'GRAY') { return 'GRAY' }
+                } finally {
+                    Remove-Item -LiteralPath $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
                 }
                 ''
             }
