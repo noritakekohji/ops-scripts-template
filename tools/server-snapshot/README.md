@@ -121,6 +121,7 @@ tools/server-snapshot/
 | `patches`     | 適用済みパッチ/更新 (HotFix / rpm / dpkg) |
 | `tuning`      | 性能チューニング設定 (sysctl / CPU ガバナー / THP / ページファイル / 電源プラン) |
 | `scheduled`   | スケジュールタスク / スタートアップ / cron / systemd timers |
+| `middleware`  | ミドルウェア（HANA / SAP / SQL Server / Tomcat）のバージョン・状態・Listen ポート・設定ファイル全文 |
 
 既定値は `all`（全カテゴリ収集）。カンマ区切りで複数指定可能。
 
@@ -133,6 +134,72 @@ tools/server-snapshot/
 # Linux: 新カテゴリ指定例
 ./server_snapshot.sh collect -c tuning,patches,scheduled
 ```
+
+---
+
+## `middleware` カテゴリ
+
+ミドルウェア製品ごとのバージョン・状態・Listen ポートと、設定ファイルの全文を収集します。
+出力は製品サブキー `hana` / `sap` / `sqlserver` / `tomcat` に分かれ、各サブキーは
+**インスタンスの配列**です。
+
+```powershell
+# Windows
+.\server_snapshot.bat collect -Category middleware
+```
+
+```bash
+# Linux
+bash server_snapshot.sh collect --category middleware
+```
+
+### 製品ごとの収集内容
+
+| 製品 | 対応 OS | 収集する値 | 設定ファイルの収集元 |
+|---|---|---|---|
+| `hana`      | **Linux のみ** | バージョン / 状態 / Listen ポート + 設定ファイル全文 | `/usr/sap/<SID>/SYS/global/hdb/custom/config` 配下の HANA ini |
+| `sap`       | Windows / Linux | バージョン / 状態 / Listen ポート + 設定ファイル全文 | SAP プロファイル（Linux: `/usr/sap/<SID>/SYS/profile`、Windows: `\usr\sap\<SID>\SYS\profile`） |
+| `sqlserver` | Windows / Linux | バージョン / 状態 / Listen ポート + 設定ファイル全文 + `sp_configure` | レジストリ / サービス / `mssql.conf`、`sp_configure` は統合認証で取得 |
+| `tomcat`    | Windows / Linux | バージョン / 状態 / Listen ポート + 設定ファイル全文 | `CATALINA_BASE` 配下の `server.xml` / `conf` |
+
+> HANA は Linux 専用です（Windows では収集されません）。SAP / SQL Server / Tomcat は両 OS で収集します。
+
+### `middleware.conf` — 検出パスとマスクの上書き
+
+ツールフォルダ内の `middleware.conf`（INI ライク）で、検出パス・マスクパターン・サイズ上限を
+環境ごとに上書きできます。
+
+| セクション | 制御内容 |
+|---|---|
+| `[hana]`      | `sids` — HANA SID のリスト（設定ファイル探索の `%SID%` グロブを展開） |
+| `[sap]`       | `sids` — SAP SID のリスト（プロファイル探索の `%SID%` グロブを展開） |
+| `[sqlserver]` | `instances` — SQL Server インスタンス名のリスト、`connect=auto\|off`（`sp_configure` 取得の有効/無効） |
+| `[tomcat]`    | `bases` — `CATALINA_BASE` のリスト |
+| `[masking]`   | 設定ファイル内の機密値をマスクする追加パターン |
+| `[limits]`    | `max_file_kb` — 全文収集する設定ファイルのサイズ上限（KB） |
+
+`sids` / `instances` / `bases` はカンマ区切りのリスト。パス中の `%SID%` は各 SID で展開されます。
+
+### セキュリティ / 挙動
+
+- **機密キーの自動マスク**: 設定ファイル内の既知キー（パスワード等のパターン）に一致する値は
+  `***` に置換してから保存します。`[masking]` で追加パターンを指定できます。
+- **読み取り不可のファイル**: アクセス権がなく読めなかったファイルは内容を保存せず、
+  `reason=permission_denied` として記録します。
+- **サイズ上限超過**: `max_file_kb` を超えるファイルは全文を保存せず、`sha256` とサイズのみを保存し
+  `reason=too_large` として記録します。
+- **SQL Server `sp_configure`**: 統合認証（integrated auth）で best-effort 取得します。
+  **資格情報は一切保存しません**。接続できない場合は `sp_configure_available=false` に degrade します。
+
+### compare の挙動と既知の制限
+
+`middleware` の比較は、各製品インスタンスのスカラ項目（バージョン・状態・ポート等）の差分に加え、
+**設定ファイルを sha256 で比較**します（全文テキスト diff ではなく、どのファイルが変わったかを検出）。
+
+> **既知の制限**: 設定ファイルは `instanceKey::絶対パス` をキーとして突き合わせます。
+> このため、同じ論理ファイルでも絶対パスが異なる場合（インストール先ディレクトリが違う、
+> あるいは Windows と Linux のスナップショット間の比較など）は、`CHANGED` ではなく
+> `REMOVED` + `ADDED` として表示されます。**同一ホストの before/after 比較では影響ありません。**
 
 ---
 
