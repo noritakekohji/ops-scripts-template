@@ -330,7 +330,56 @@ function Get-MiddlewareInfo {
 function Get-MwHana($conf)      { @() }
 function Get-MwSap($conf)       { @() }
 function Get-MwSqlServer($conf) { @() }
-function Get-MwTomcat($conf)    { @() }
+function Get-MwTomcat($conf) {
+    $bases = New-Object System.Collections.Generic.List[string]
+    foreach ($b in @($conf['tomcat_bases'])) { if ($b) { $bases.Add($b) } }
+    foreach ($e in @($env:CATALINA_BASE, $env:CATALINA_HOME)) { if ($e) { $bases.Add($e) } }
+    Safe-Exec -Label 'mw.tomcat.proc' -Block {
+        Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.CommandLine -and $_.CommandLine -match '-Dcatalina\.base=([^ "]+)') { $bases.Add($Matches[1]) }
+        }
+    } | Out-Null
+    $seen = @{}; $result = @()
+    foreach ($base in $bases) {
+        $norm = $base.TrimEnd('\','/')
+        if (-not $norm -or $seen[$norm.ToLower()]) { continue }
+        $serverXml = Join-Path $norm 'conf\server.xml'
+        if (-not (Test-Path -LiteralPath $serverXml)) { continue }
+        $seen[$norm.ToLower()] = $true
+        $inst = @{
+            name = (Split-Path $norm -Leaf); catalina_base = $norm
+            version = ''; java_version = ''; jvm_opts = ''; state = ''; pid = 0; connector_ports = @()
+            config_files = @{}
+        }
+        $inst.version = Safe-Exec -Label 'mw.tomcat.ver' -Block {
+            $bat = Join-Path $norm 'bin\version.bat'
+            if (Test-Path -LiteralPath $bat) {
+                $o = (& cmd /c "`"$bat`"" 2>$null) -join "`n"
+                if ($o -match 'Server version:\s*(.+)') { return $Matches[1].Trim() }
+            }
+            $rel = Join-Path $norm 'RELEASE-NOTES'
+            if (Test-Path -LiteralPath $rel) {
+                $line = (Get-Content -LiteralPath $rel | Where-Object { $_ -match 'Apache Tomcat Version' } | Select-Object -First 1)
+                if ($line) { return $line.Trim() }
+            }
+            ''
+        }
+        $inst.connector_ports = @(Safe-Exec -Label 'mw.tomcat.ports' -Block {
+            $ports = @()
+            [regex]::Matches((Get-Content -LiteralPath $serverXml -Raw), '<Connector[^>]*\bport="(\d+)"') | ForEach-Object { $ports += [int]$_.Groups[1].Value }
+            $ports
+        })
+        foreach ($name in @($conf['tomcat_config_names'])) {
+            $p = Join-Path (Join-Path $norm 'conf') $name
+            if ($name -like 'setenv*') { $p = Join-Path (Join-Path $norm 'bin') $name }
+            if (Test-Path -LiteralPath $p) {
+                $inst.config_files["$p"] = Read-MwConfigFile -Path $p -MaskPatterns $conf['mask_patterns'] -MaxFileKb $conf['max_file_kb']
+            }
+        }
+        $result += $inst
+    }
+    return $result
+}
 
 function Read-MwConf {
     $conf = @{

@@ -633,7 +633,60 @@ def _mw_read_file(path, patterns, max_kb):
 def _mw_hana(conf):      return []
 def _mw_sap(conf):       return []
 def _mw_sqlserver(conf): return []
-def _mw_tomcat(conf):    return []
+def _mw_tomcat(conf):
+    import glob as _glob
+    bases = []
+    for b in conf.get('tomcat_bases', []):
+        if b: bases.append(b)
+    for e in (os.environ.get('CATALINA_BASE',''), os.environ.get('CATALINA_HOME','')):
+        if e: bases.append(e)
+    for g in ('/opt/tomcat*', '/usr/share/tomcat*', '/opt/apache-tomcat*'):
+        bases.extend(_glob.glob(g))
+    try:
+        ps = subprocess.run(['ps','-eo','args'], capture_output=True, text=True, timeout=10)
+        for line in ps.stdout.splitlines():
+            m = re.search(r'-Dcatalina\.base=(\S+)', line)
+            if m: bases.append(m.group(1))
+    except Exception: pass
+    seen = set(); result = []
+    for base in bases:
+        norm = base.rstrip('/')
+        if not norm or norm.lower() in seen: continue
+        server_xml = os.path.join(norm, 'conf', 'server.xml')
+        if not os.path.isfile(server_xml): continue
+        seen.add(norm.lower())
+        inst = {'name': os.path.basename(norm), 'catalina_base': norm, 'version': '',
+                'java_version': '', 'jvm_opts': '', 'state': '', 'pid': 0,
+                'connector_ports': [], 'config_files': {}}
+        try:
+            sh = os.path.join(norm, 'bin', 'catalina.sh')
+            if os.path.isfile(sh):
+                r = subprocess.run([sh, 'version'], capture_output=True, text=True, timeout=15,
+                                   env=dict(os.environ, CATALINA_HOME=norm))
+                m = re.search(r'Server version:\s*(.+)', r.stdout)
+                if m: inst['version'] = m.group(1).strip()
+            if not inst['version']:
+                rel = os.path.join(norm, 'RELEASE-NOTES')
+                if os.path.isfile(rel):
+                    for line in Path(rel).read_text(errors='replace').splitlines():
+                        if 'Apache Tomcat Version' in line: inst['version'] = line.strip(); break
+        except Exception: pass
+        try:
+            r = subprocess.run(['java','-version'], capture_output=True, text=True, timeout=10)
+            m = re.search(r'version "([^"]+)"', (r.stderr or '') + (r.stdout or ''))
+            if m: inst['java_version'] = m.group(1)
+        except Exception: pass
+        try:
+            xml = Path(server_xml).read_text(errors='replace')
+            inst['connector_ports'] = [int(x) for x in re.findall(r'<Connector[^>]*\bport="(\d+)"', xml)]
+        except Exception: pass
+        for name in conf.get('tomcat_config_names', []):
+            sub = 'bin' if name.startswith('setenv') else 'conf'
+            p = os.path.join(norm, sub, name)
+            if os.path.isfile(p):
+                inst['config_files'][p] = _mw_read_file(p, conf['mask_patterns'], conf['max_file_kb'])
+        result.append(inst)
+    return result
 
 def _mw_assemble(conf):
     r = {}

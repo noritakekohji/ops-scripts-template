@@ -199,3 +199,30 @@ Describe 'ServerSnapshot middleware file helper' {
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot middleware tomcat' {
+    It 'detects a tomcat base via CATALINA_BASE and collects masked server.xml + ports' {
+        $work = New-TempWorkdir
+        try {
+            $base = Join-Path $work 'tomcat9'
+            New-Item -ItemType Directory -Path (Join-Path $base 'conf') -Force | Out-Null
+            @'
+<Server port="8005">
+  <Service name="Catalina">
+    <Connector port="8080" protocol="HTTP/1.1"/>
+    <Connector port="8443" secret="topsecret"/>
+  </Service>
+</Server>
+'@ | Set-Content -LiteralPath (Join-Path $base 'conf\server.xml') -Encoding UTF8
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('collect','-Category','middleware','-OutputPath',$out) -Env @{ CATALINA_BASE = $base }
+            $r.ExitCode | Should -Be 0
+            $mw = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).middleware
+            $inst = @($mw.tomcat) | Where-Object { $_.catalina_base -eq $base }
+            @($inst).Count | Should -BeGreaterThan 0
+            @($inst.connector_ports) | Should -Contain 8080
+            $sx = $inst.config_files.PSObject.Properties | Where-Object { $_.Name -like '*server.xml' }
+            $sx.Value.content | Should -Match 'secret="\*\*\*"'
+        } finally { Remove-TempPath $work }
+    }
+}
