@@ -705,7 +705,50 @@ def _mw_sap(conf):
                     inst['profiles'][p] = _mw_read_file(p, conf['mask_patterns'], conf['max_file_kb'])
         result.append(inst)
     return result
-def _mw_sqlserver(conf): return []
+def _mw_sqlserver(conf):
+    result = []
+    has_conf = os.path.isfile('/var/opt/mssql/mssql.conf')
+    present = has_conf
+    try:
+        r = subprocess.run(['systemctl','is-enabled','mssql-server'], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+        if r.returncode == 0 or 'enabled' in r.stdout or 'disabled' in r.stdout: present = True
+    except Exception: pass
+    if not present:
+        return result
+    inst = {'instance_name': 'MSSQLSERVER', 'version': '', 'edition': '', 'state': '',
+            'port': 1433, 'config_files': {}, 'sp_configure': None, 'sp_configure_available': False}
+    try:
+        r = subprocess.run(['systemctl','is-active','mssql-server'], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+        inst['state'] = r.stdout.strip()
+    except Exception: pass
+    if has_conf:
+        p = '/var/opt/mssql/mssql.conf'
+        inst['config_files'][p] = _mw_read_file(p, conf['mask_patterns'], conf['max_file_kb'])
+    if conf.get('sqlserver_connect') != 'off':
+        sqlcmd = None
+        from shutil import which
+        for cand in ('/opt/mssql-tools/bin/sqlcmd','/opt/mssql-tools18/bin/sqlcmd'):
+            if os.path.isfile(cand): sqlcmd = cand; break
+        if not sqlcmd and which('sqlcmd'): sqlcmd = 'sqlcmd'
+        if sqlcmd:
+            try:
+                r = subprocess.run([sqlcmd,'-S','localhost','-E','-h','-1','-W','-s','|','-Q','SET NOCOUNT ON; EXEC sp_configure;'],
+                                   capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+                h = {}
+                for row in r.stdout.splitlines():
+                    cols = row.split('|')
+                    if len(cols) >= 2 and cols[0].strip():
+                        h[cols[0].strip()] = cols[1].strip()
+                if h: inst['sp_configure'] = h; inst['sp_configure_available'] = True
+            except Exception: pass
+            try:
+                r = subprocess.run([sqlcmd,'-S','localhost','-E','-h','-1','-W','-Q',"SET NOCOUNT ON; SELECT CONVERT(varchar,SERVERPROPERTY('ProductVersion'));"],
+                                   capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                for line in r.stdout.splitlines():
+                    if re.match(r'^\d+\.', line.strip()): inst['version'] = line.strip(); break
+            except Exception: pass
+    result.append(inst)
+    return result
 def _mw_tomcat(conf):
     import glob as _glob
     bases = []

@@ -259,3 +259,19 @@ max_file_kb = 256
         } finally { Remove-TempPath $work }
     }
 }
+
+Describe 'ServerSnapshot middleware sqlserver' {
+    It 'sqlserver collection never throws; entries (if any) carry sp_configure_available' {
+        $work = New-TempWorkdir
+        try {
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('collect','-Category','middleware','-OutputPath',$out)
+            $r.ExitCode | Should -Be 0
+            $mw = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).middleware
+            # If SQL Server isn't installed, key is omitted (fine). If present, must carry the flag.
+            if ($mw.PSObject.Properties.Name -contains 'sqlserver') {
+                @($mw.sqlserver)[0].PSObject.Properties.Name | Should -Contain 'sp_configure_available'
+            }
+        } finally { Remove-TempPath $work }
+    }
+}

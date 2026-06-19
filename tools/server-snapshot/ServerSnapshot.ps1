@@ -416,7 +416,63 @@ function Get-MwSap($conf) {
     }
     return $result
 }
-function Get-MwSqlServer($conf) { @() }
+function Get-MwSqlServer($conf) {
+    $result = @()
+    $instances = @($conf['sqlserver_instances'])
+    if (-not $instances.Count) {
+        Safe-Exec -Label 'mw.sql.instances' -Block {
+            $p = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL'
+            $item = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue
+            if ($item) {
+                $item.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { $instances += $_.Name }
+            }
+        } | Out-Null
+    }
+    foreach ($name in $instances) {
+        if (-not $name) { continue }
+        $inst = @{
+            instance_name = "$name"; version = ''; edition = ''; state = ''; port = 0
+            config_files = @{}; sp_configure = $null; sp_configure_available = $false
+        }
+        $svcName = if ($name -eq 'MSSQLSERVER') { 'MSSQLSERVER' } else { "MSSQL`$$name" }
+        $inst.state = Safe-Exec -Label 'mw.sql.svc' -Block {
+            $s = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+            if ($s) { $s.Status.ToString().ToLower() } else { '' }
+        }
+        if ($conf['sqlserver_connect'] -ne 'off') {
+            $sqlcmd = Get-Command sqlcmd -ErrorAction SilentlyContinue
+            if ($sqlcmd) {
+                $target = if ($name -eq 'MSSQLSERVER') { '.' } else { ".\$name" }
+                $cfg = Safe-Exec -Label 'mw.sql.spcfg' -Block {
+                    & sqlcmd -S $target -E -h -1 -W -s "|" -Q "SET NOCOUNT ON; EXEC sp_configure;" 2>$null
+                }
+                if ($cfg) {
+                    $h = @{}
+                    foreach ($row in $cfg) {
+                        $cols = "$row" -split '\|'
+                        if ($cols.Count -ge 2 -and $cols[0].Trim()) { $h[$cols[0].Trim()] = $cols[1].Trim() }
+                    }
+                    if ($h.Count) { $inst.sp_configure = $h; $inst.sp_configure_available = $true }
+                }
+                $ver = Safe-Exec -Label 'mw.sql.ver' -Block {
+                    $o = & sqlcmd -S $target -E -h -1 -W -Q "SET NOCOUNT ON; SELECT CONVERT(varchar,SERVERPROPERTY('ProductVersion'));" 2>$null
+                    ($o | Where-Object { $_ -match '^\d+\.' } | Select-Object -First 1)
+                }
+                if ($ver) { $inst.version = "$ver".Trim() }
+            }
+        }
+        $inst.port = Safe-Exec -Label 'mw.sql.port' -Block {
+            $instId = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL' -ErrorAction SilentlyContinue).$name
+            if ($instId) {
+                $tp = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instId\MSSQLServer\SuperSocketNetLib\Tcp\IPAll"
+                $v = (Get-ItemProperty -Path $tp -ErrorAction SilentlyContinue).TcpPort
+                if ($v) { [int]$v } else { 0 }
+            } else { 0 }
+        }
+        $result += $inst
+    }
+    return $result
+}
 function Get-MwTomcat($conf) {
     $bases = New-Object System.Collections.Generic.List[string]
     foreach ($b in @($conf['tomcat_bases'])) { if ($b) { $bases.Add($b) } }
