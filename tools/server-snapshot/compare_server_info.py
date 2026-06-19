@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
 # ────────────────────────────────────────────────────────────────
 def _load(path: str) -> dict:
     try:
-        return json.loads(Path(path).read_text(encoding='utf-8'))
+        return json.loads(Path(path).read_text(encoding='utf-8-sig'))
     except Exception as e:
         print(f'Error loading {path}: {e}', file=sys.stderr)
         sys.exit(2)
@@ -135,6 +135,67 @@ def cat_security(b, a):
                         'name', ['direction', 'action'])
     return out
 
+def cat_patches(b, a):
+    return compare_list(b.get('patches', []), a.get('patches', []),
+                        'id', ['description', 'installed_on'])
+
+def cat_tuning(b, a):
+    return compare_dicts(b.get('tuning') or {}, a.get('tuning') or {})
+
+def cat_scheduled(b, a):
+    bs = (b.get('scheduled') or {}); as_ = (a.get('scheduled') or {})
+    out = compare_list(bs.get('scheduled_tasks', []), as_.get('scheduled_tasks', []),
+                       'name', ['state', 'path'])
+    out += compare_list(bs.get('startup', []),        as_.get('startup', []),
+                        'name', ['command', 'scope'])
+    return out
+
+# middleware: per-product scalar instance fields + config files compared by sha256.
+#   Mirrors ServerSnapshot.ps1 Compare-Middleware (the PS-native fallback) so the
+#   Python and PS compare engines emit identical middleware diffs.
+#   Config files are keyed by  instanceKey::absolute-path  (the same logical file at
+#   a different absolute path shows as REMOVED+ADDED, not CHANGED — same-host diffs OK).
+_MW_SPECS = [
+    # (product, key-builder, scalar value fields, config-files field name)
+    ('hana',      lambda x: f"{x.get('sid','')}",
+                  ['version', 'instance_no', 'state'], 'config_files'),
+    ('sap',       lambda x: f"{x.get('sid','')}/{x.get('instance','')}",
+                  ['kernel_version', 'type', 'state'], 'profiles'),
+    ('sqlserver', lambda x: f"{x.get('instance_name','')}",
+                  ['version', 'edition', 'state', 'port', 'sp_configure_available'], 'config_files'),
+    ('tomcat',    lambda x: f"{x.get('name','')}@{x.get('catalina_base','')}",
+                  ['version', 'java_version', 'state'], 'config_files'),
+]
+
+def cat_middleware(b, a):
+    bm = (b.get('middleware') or {}); am = (a.get('middleware') or {})
+    out = []
+    for prod, keyfn, vals, cfg_field in _MW_SPECS:
+        bl = bm.get(prod) or []; al = am.get(prod) or []
+        if not isinstance(bl, list): bl = []
+        if not isinstance(al, list): al = []
+        if not bl and not al:
+            continue
+        # scalar instance fields, keyed by the product key
+        b_scalar = [dict({'name': keyfn(i)}, **{v: i.get(v) for v in vals}) for i in bl]
+        a_scalar = [dict({'name': keyfn(i)}, **{v: i.get(v) for v in vals}) for i in al]
+        out += compare_list(b_scalar, a_scalar, 'name', vals)
+        # config files compared by sha256 (key = instanceKey::path)
+        def _cfg_rows(lst):
+            rows = []
+            for inst in lst:
+                files = inst.get(cfg_field) or {}
+                if not isinstance(files, dict):
+                    continue
+                for path, meta in files.items():
+                    sha = meta.get('sha256') if isinstance(meta, dict) else None
+                    rows.append({'name': f"{keyfn(inst)}::{path}", 'sha256': sha})
+            return rows
+        b_cfg = _cfg_rows(bl); a_cfg = _cfg_rows(al)
+        if b_cfg or a_cfg:
+            out += compare_list(b_cfg, a_cfg, 'name', ['sha256'])
+    return out
+
 CATEGORIES = [
     ('os',          cat_os),
     ('services',    cat_services),
@@ -144,6 +205,10 @@ CATEGORIES = [
     ('environment', cat_environment),
     ('network',     cat_network),
     ('security',    cat_security),
+    ('patches',     cat_patches),
+    ('tuning',      cat_tuning),
+    ('scheduled',   cat_scheduled),
+    ('middleware',  cat_middleware),
 ]
 
 # ────────────────────────────────────────────────────────────────
