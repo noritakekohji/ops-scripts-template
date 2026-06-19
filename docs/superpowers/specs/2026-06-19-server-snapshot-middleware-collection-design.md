@@ -126,12 +126,13 @@ server-snapshot の目的は「テスト環境断面の把握」と「性能テ�
 
 | 製品 | Linux | Windows |
 |---|---|---|
-| hana | ○ | 省略 |
-| sap  | ○ | 省略 |
+| hana | ○ | 省略（HANA DB は Linux 専用） |
+| sap  | ○ | ○（S/4・NW AS は Windows でも稼働。`\usr\sap\<SID>\SYS\profile\`） |
 | sqlserver | ○（インストール時のみ） | ○ |
 | tomcat | ○ | ○ |
 
-省略キーは JSON に出さない（既存 1:1 規約に従う）。
+省略キーは JSON に出さない（既存 1:1 規約に従う）。HANA のみ Windows で省略され、
+SAP AS は両 OS で収集する（DB=HANA on Linux + AS=S/4 on Windows という分離トポロジも想定）。
 
 ---
 
@@ -142,7 +143,7 @@ server-snapshot の目的は「テスト環境断面の把握」と「性能テ�
 | 製品 | 自動検出 | conf 上書き |
 |---|---|---|
 | hana | `/usr/sap/<SID>/HDB<nr>` ディレクトリ走査、`/hana/shared/<SID>` | `[hana] sids=`, `config_globs=` |
-| sap  | `/usr/sap/<SID>/SYS/profile/`、`/usr/sap/<SID>/<INST>` | `[sap] sids=`, `profile_globs=` |
+| sap  | Linux: `/usr/sap/<SID>/SYS/profile/`、`/usr/sap/<SID>/<INST>`。Windows: `<drive>:\usr\sap\<SID>\SYS\profile\`（各ドライブ走査）、サービス `SAP<SID>_<NR>` | `[sap] sids=`, `profile_globs=`（`%SID%` 展開。OS に応じた区切り） |
 | sqlserver | Win: レジストリ `HKLM\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL`。Linux: `/var/opt/mssql`, `systemctl` | `[sqlserver] instances=`, `connect=auto|off` |
 | tomcat | 環境変数 `CATALINA_HOME`/`CATALINA_BASE`、`/opt/tomcat*`・`/usr/share/tomcat*`、Win サービス `Tomcat*`、稼働プロセスの `-Dcatalina.base` | `[tomcat] bases=` |
 
@@ -154,7 +155,10 @@ server-snapshot の目的は「テスト環境断面の把握」と「性能テ�
 
 - **HANA**: version=`HDB version`（sidadm 環境）。state/ports=`sapcontrol -nr <nr> -function GetProcessList`
   と Listen ポート（`ss -ltnp` / CIM 相当）から。取得不可は空。
-- **SAP**: kernel=`disp+work -v`。state=`sapcontrol GetProcessList`。
+- **SAP**（両OS）: kernel=`disp+work -v`（Windows は `disp+work.exe -v`）。state=`sapcontrol GetProcessList`
+  （Windows は `sapcontrol.exe`）。profile はテキストのため両 OS で全文収集（マスク適用）。
+  Windows ではプロファイルパスのドライブが環境により異なるため、固定ドライブ系列＋`\usr\sap` を走査し、
+  `[sap] profile_globs=` で明示も可能。
 - **SQL Server**: version/edition=`SERVERPROPERTY`（接続可時）またはレジストリ。state=サービス。
   port=レジストリ `Tcp\IPAll\TcpPort` / `ss`。`sp_configure`=統合認証 best-effort（4.3）。
 - **Tomcat**: version=`catalina.sh version` / `RELEASE-NOTES` / `catalina.jar` MANIFEST。
@@ -290,6 +294,7 @@ max_file_kb = 256
 | 自動検出 + conf 上書き | 4.1 / 7章 |
 | バージョン/状態/ポート | 4.2 |
 | 設定ファイル全文 + マスク | 3.1 / 5.1 |
+| SAP AS 両OS収集（Windows `\usr\sap` 含む） | 3.2 / 4.1 / 4.2 |
 | SQL Server sp_configure best-effort・資格情報非保存 | 4.3 |
 | 権限・サイズのフォールバック | 5.2 / 5.3 / 3.1 |
 | compare（sha256 ベース） | 6章 |

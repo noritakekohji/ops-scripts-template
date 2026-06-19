@@ -274,7 +274,8 @@ function Read-MwConf {
         mask_patterns = @('password','passwd','pwd','secret','key','credential','token','connectionstring')
         max_file_kb = 256
     }
-    $path = Join-Path $PSScriptRoot 'middleware.conf'
+    # Honor _OPS_MW_CONF override (symmetric with the sh side; enables conf-driven tests).
+    $path = if ($env:_OPS_MW_CONF) { $env:_OPS_MW_CONF } else { Join-Path $PSScriptRoot 'middleware.conf' }
     if (-not (Test-Path -LiteralPath $path)) { return $conf }
     $section = ''
     foreach ($line in (Get-Content -LiteralPath $path -ErrorAction SilentlyContinue)) {
@@ -781,14 +782,14 @@ git commit -m "feat(server-snapshot): collect SAP HANA middleware (ini/version/s
 
 ---
 
-## Task 5: SAP NW/S4 コレクタ（Linux 主体）
+## Task 5: SAP NW/S4 コレクタ（両 OS）
 
-`_mw_sap`（python3）を実装。`Get-MwSap` は空配列維持。
+`_mw_sap`（python3, Linux）と `Get-MwSap`（PowerShell, Windows）を実装。S/4・NW のアプリケーションサーバは Windows でも稼働するため両 OS で収集する（プロファイルは `\usr\sap\<SID>\SYS\profile\`、kernel=`disp+work.exe -v`、state=`sapcontrol.exe`）。HANA DB のみ Linux 専用（Task 4）。
 
 **Files:**
 - Modify: `tools/server-snapshot/server_snapshot.sh`（`_mw_sap` stub 置換）
-- Modify: `tools/server-snapshot/ServerSnapshot.ps1`（`Get-MwSap` コメントのみ）
-- Test: `tests/bats/server_snapshot.bats`
+- Modify: `tools/server-snapshot/ServerSnapshot.ps1`（`Get-MwSap` stub 置換＝Windows 実装）
+- Test: `tests/pester/ServerSnapshot.Tests.ps1` / `tests/bats/server_snapshot.bats`
 
 - [ ] **Step 1: bats テスト（失敗）** — 擬似プロファイルツリー
 
@@ -872,22 +873,128 @@ def _mw_sap(conf):
     return result
 ```
 
-- [ ] **Step 4: PS 側はコメントのみ**
+- [ ] **Step 4: Pester テスト（失敗・Windows）** — 擬似 `\usr\sap` ツリー + 一時 conf を `_OPS_MW_CONF` で指定
 
 ```powershell
-function Get-MwSap($conf) {
-    # SAP NW/S4 application server is Linux-only here; nothing detected on Windows.
-    @()
+Describe 'ServerSnapshot middleware sap (windows)' {
+    It 'detects a SAP SID profile dir and collects masked profiles' {
+        $work = New-TempWorkdir
+        try {
+            $prof = Join-Path $work 'usr\sap\PRD\SYS\profile'
+            New-Item -ItemType Directory -Path $prof -Force | Out-Null
+            "SAPSYSTEMNAME = PRD`nrdisp/wp_no_dia = 10`nlogin/password_downwards_compatibility = 0" |
+                Set-Content -LiteralPath (Join-Path $prof 'DEFAULT.PFL') -Encoding UTF8
+            "INSTANCE_NAME = D00`nws/conn_password = topsecret" |
+                Set-Content -LiteralPath (Join-Path $prof 'PRD_D00_host') -Encoding UTF8
+            $conf = Join-Path $work 'mw.conf'
+            @"
+[sap]
+sids = PRD
+profile_globs = $($work -replace '\\','\\')\usr\sap\%SID%\SYS\profile\*
+[limits]
+max_file_kb = 256
+"@ | Set-Content -LiteralPath $conf -Encoding UTF8
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('collect','-Category','middleware','-OutputPath',$out) -Env @{ _OPS_MW_CONF = $conf }
+            $r.ExitCode | Should -Be 0
+            $mw = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).middleware
+            $sap = @($mw.sap) | Where-Object { $_.sid -eq 'PRD' }
+            @($sap).Count | Should -BeGreaterThan 0
+            $names = @($sap.profiles.PSObject.Properties.Name | ForEach-Object { Split-Path $_ -Leaf })
+            $names | Should -Contain 'DEFAULT.PFL'
+            $names | Should -Contain 'PRD_D00_host'
+            $pf = $sap.profiles.PSObject.Properties | Where-Object { $_.Name -like '*PRD_D00_host' }
+            $pf.Value.content | Should -Match 'conn_password\s*=\s*\*\*\*'
+        } finally { Remove-TempPath $work }
+    }
 }
 ```
 
-- [ ] **Step 5: テスト + 構文確認 + コミット**
+> 注: `profile_globs` に絶対 Windows パス（`%SID%` 展開）を与えると `Get-MwSap` はそれを直接使う。
+> conf を与えない実運用では各ドライブ直下の `\usr\sap` を自動走査する。
+
+- [ ] **Step 5: 失敗を確認 → `Get-MwSap` を実装（Windows）**
+
+```powershell
+function Get-MwSap($conf) {
+    $sids = @($conf['sap_sids'])
+    # Resolve profile dirs: prefer explicit absolute globs from conf, else auto-detect drives.
+    $profileDirs = @{}   # sid -> profile dir
+    foreach ($g in @($conf['sap_profile_globs'])) {
+        if ($g -match '[:\\]' -and $sids.Count) {       # looks like a Windows/absolute glob
+            foreach ($sid in $sids) {
+                $dir = Split-Path -Parent ($g -replace '%SID%', $sid)
+                if (Test-Path -LiteralPath $dir) { $profileDirs[$sid] = $dir }
+            }
+        }
+    }
+    if (-not $profileDirs.Count) {
+        Safe-Exec -Label 'mw.sap.detect' -Block {
+            Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | ForEach-Object {
+                $base = Join-Path $_.Root 'usr\sap'
+                if (Test-Path -LiteralPath $base) {
+                    Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                        if ($_.Name -eq 'trans') { return }
+                        if ($sids.Count -and ($sids -notcontains $_.Name)) { return }
+                        $pdir = Join-Path $_.FullName 'SYS\profile'
+                        if ((Test-Path -LiteralPath $pdir) -and -not $profileDirs.ContainsKey($_.Name)) {
+                            $profileDirs[$_.Name] = $pdir
+                        }
+                    }
+                }
+            }
+        } | Out-Null
+    }
+    $result = @()
+    foreach ($sid in $profileDirs.Keys) {
+        $pdir = $profileDirs[$sid]
+        $inst = @{ sid = "$sid"; instance = ''; instance_no = ''; type = ''; kernel_version = ''; state = ''; ports = @(); profiles = @{} }
+        $sidRoot = Split-Path -Parent (Split-Path -Parent $pdir)   # ...\usr\sap\<SID>
+        Safe-Exec -Label 'mw.sap.inst' -Block {
+            Get-ChildItem -LiteralPath $sidRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^[A-Z]+\d\d$' } | Select-Object -First 1 | ForEach-Object {
+                    $inst.instance = $_.Name
+                    $inst.instance_no = $_.Name.Substring($_.Name.Length - 2)
+                    if ($_.Name -match '^([A-Z]+)\d\d$') { $inst.type = $Matches[1] }
+                }
+        } | Out-Null
+        $inst.kernel_version = Safe-Exec -Label 'mw.sap.kernel' -Block {
+            $dw = Get-Command 'disp+work.exe' -ErrorAction SilentlyContinue
+            if ($dw) {
+                $o = (& $dw.Source -v) 2>$null
+                $line = ($o | Where-Object { $_ -match 'kernel release\s+(\S+)' } | Select-Object -First 1)
+                if ($line -and $line -match 'kernel release\s+(\S+)') { return $Matches[1] }
+            }
+            ''
+        }
+        if ($inst.instance_no) {
+            $inst.state = Safe-Exec -Label 'mw.sap.state' -Block {
+                $sc = Get-Command 'sapcontrol.exe' -ErrorAction SilentlyContinue
+                if ($sc) {
+                    $txt = "$((& $sc.Source -nr $inst.instance_no -function GetProcessList) 2>$null)"
+                    if ($txt -match 'GREEN') { return 'GREEN' } elseif ($txt -match 'YELLOW') { return 'YELLOW' } elseif ($txt -match 'GRAY') { return 'GRAY' }
+                }
+                ''
+            }
+        }
+        Safe-Exec -Label 'mw.sap.profiles' -Block {
+            Get-ChildItem -LiteralPath $pdir -File -ErrorAction SilentlyContinue | ForEach-Object {
+                $inst.profiles["$($_.FullName)"] = Read-MwConfigFile -Path $_.FullName -MaskPatterns $conf['mask_patterns'] -MaxFileKb $conf['max_file_kb']
+            }
+        } | Out-Null
+        $result += $inst
+    }
+    return $result
+}
+```
+
+- [ ] **Step 6: テスト + 構文確認 + コミット**
 
 ```bash
-start=$(grep -n "python3 - << 'PYEOF'" tools/server-snapshot/server_snapshot.sh | head -1 | cut -d: -f1); end=$(awk 'NR>'"$start"' && /^PYEOF$/{print NR; exit}' tools/server-snapshot/server_snapshot.sh); sed -n "$((start+1)),$((end-1))p" tools/server-snapshot/server_snapshot.sh | python -c "import ast,sys; ast.parse(sys.stdin.read()); print('PY OK')"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester 'tests\pester\ServerSnapshot.Tests.ps1' -Output Detailed"
-git add tools/server-snapshot/ServerSnapshot.ps1 tools/server-snapshot/server_snapshot.sh tests/bats/server_snapshot.bats
-git commit -m "feat(server-snapshot): collect SAP NW/S4 middleware (profiles/kernel/state)"
+start=$(grep -n "python3 - << 'PYEOF'" tools/server-snapshot/server_snapshot.sh | head -1 | cut -d: -f1); end=$(awk 'NR>'"$start"' && /^PYEOF$/{print NR; exit}' tools/server-snapshot/server_snapshot.sh); sed -n "$((start+1)),$((end-1))p" tools/server-snapshot/server_snapshot.sh | python -c "import ast,sys; ast.parse(sys.stdin.read()); print('PY OK')"
+git add tools/server-snapshot/ServerSnapshot.ps1 tools/server-snapshot/server_snapshot.sh tests/pester/ServerSnapshot.Tests.ps1 tests/bats/server_snapshot.bats
+git commit -m "feat(server-snapshot): collect SAP NW/S4 middleware (profiles/kernel/state, both OS)"
 ```
 
 ---
@@ -1202,7 +1309,7 @@ git commit -m "docs(server-snapshot): document middleware category and middlewar
 | conf パーサ + FileEntry/マスク（単一実装点） | Task 2 |
 | Tomcat 収集（両OS, version/ports/config） | Task 3 |
 | HANA 収集（ini/version/state, Linux） | Task 4 |
-| SAP NW/S4 収集（profile/kernel/state, Linux） | Task 5 |
+| SAP NW/S4 収集（profile/kernel/state, 両OS: Win `\usr\sap` + Linux `/usr/sap`） | Task 5 |
 | SQL Server 収集（registry/service/port/sp_configure best-effort, 両OS） | Task 6 |
 | compare（スカラ + config sha256） | Task 7 |
 | 機密マスク・権限・サイズ（reason） | Task 2（各コレクタが共通ヘルパ経由） |
