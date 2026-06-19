@@ -183,4 +183,19 @@ Describe 'ServerSnapshot middleware file helper' {
             $p.readable    | Should -BeTrue
         } finally { Remove-TempPath $work }
     }
+
+    It 'masks secrets in JSON quoted-key form' {
+        $work = New-TempWorkdir
+        try {
+            $f = Join-Path $work 'app.json'
+            "{`n  `"username`": `"admin`",`n  `"password`": `"s3cr3t`"`n}" | Set-Content -LiteralPath $f -Encoding UTF8
+            $out = Join-Path $work 'snap.json'
+            $r = Invoke-Controller -ScriptPath $script:ps1 -Arguments @('collect','-Category','middleware','-OutputPath',$out) -Env @{ _OPS_MW_PROBE = $f }
+            $r.ExitCode | Should -Be 0
+            $p = (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).middleware._probe
+            $p.masked  | Should -BeTrue
+            $p.content | Should -Match '"password"\s*:\s*"\*\*\*"'
+            $p.content | Should -Match '"username"\s*:\s*"admin"'
+        } finally { Remove-TempPath $work }
+    }
 }

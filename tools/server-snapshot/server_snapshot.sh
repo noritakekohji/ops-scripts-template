@@ -595,19 +595,21 @@ def _mw_mask(text, patterns):
     if not text or not patterns:
         return text, False
     alt = '|'.join(re.escape(p) for p in patterns)
-    did = [False]
+    did = False
     attr_re = re.compile(r'(?i)((?:' + alt + r')[A-Za-z0-9_.\-]*\s*=\s*")[^"]*(")')
+    json_re = re.compile(r'(?i)("[A-Za-z0-9_.\-/]*(?:' + alt + r')[A-Za-z0-9_.\-/]*"\s*:\s*")[^"]*(")')
     kv_re   = re.compile(r'(?i)^(\s*[A-Za-z0-9_.\-/]*(?:' + alt + r')[A-Za-z0-9_.\-/]*\s*[:=]\s*)\S.*$')
     out = []
     for line in text.split('\n'):
         if re.search(r'(?i)' + alt, line):
             new = attr_re.sub(r'\1***\2', line)
+            new = json_re.sub(r'\1***\2', new)
             new = kv_re.sub(r'\1***', new)
-            if new != line: did[0] = True
+            if new != line: did = True
             out.append(new)
         else:
             out.append(line)
-    return '\n'.join(out), did[0]
+    return '\n'.join(out), did
 
 def _mw_read_file(path, patterns, max_kb):
     entry = {'content': '', 'masked': False, 'size_bytes': 0, 'sha256': '', 'readable': True, 'reason': ''}
@@ -623,9 +625,8 @@ def _mw_read_file(path, patterns, max_kb):
         text = raw.decode('utf-8', errors='replace')
         masked, did = _mw_mask(text, patterns)
         entry['content'] = masked; entry['masked'] = did
-    except PermissionError:
-        entry['readable'] = False; entry['reason'] = 'permission_denied'; entry['sha256'] = ''
     except Exception:
+        # Unreadable for any reason (permission, IO race, etc.) -> degrade, don't fail the run.
         entry['readable'] = False; entry['reason'] = 'permission_denied'; entry['sha256'] = ''
     return entry
 

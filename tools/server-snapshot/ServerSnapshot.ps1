@@ -380,7 +380,9 @@ function Mask-MwSecrets {
         if ($line -imatch $alt) {
             # XML attribute form: key="value"
             $new = [regex]::Replace($line, '(?i)((?:' + $alt + ')[A-Za-z0-9_.-]*\s*=\s*")[^"]*(")', '${1}***${2}')
-            # key = value / key: value form
+            # JSON form: "key": "value"
+            $new = [regex]::Replace($new, '(?i)("[A-Za-z0-9_.\-/]*(?:' + $alt + ')[A-Za-z0-9_.\-/]*"\s*:\s*")[^"]*(")', '${1}***${2}')
+            # key = value / key: value form (unquoted keys)
             $new = [regex]::Replace($new, '(?i)^(\s*[A-Za-z0-9_.\-/]*(?:' + $alt + ')[A-Za-z0-9_.\-/]*\s*[:=]\s*)\S.*$', '${1}***')
             if ($new -ne $line) { $didMask = $true; $lines[$i] = $new }
         }
