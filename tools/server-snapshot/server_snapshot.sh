@@ -655,6 +655,7 @@ def _mw_tomcat(conf):
         server_xml = os.path.join(norm, 'conf', 'server.xml')
         if not os.path.isfile(server_xml): continue
         seen.add(norm.lower())
+        # jvm_opts/state/pid are best-effort fields reserved for a later MW task; left empty here.
         inst = {'name': os.path.basename(norm), 'catalina_base': norm, 'version': '',
                 'java_version': '', 'jvm_opts': '', 'state': '', 'pid': 0,
                 'connector_ports': [], 'config_files': {}}

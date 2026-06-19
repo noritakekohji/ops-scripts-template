@@ -348,19 +348,39 @@ function Get-MwTomcat($conf) {
         $seen[$norm.ToLower()] = $true
         $inst = @{
             name = (Split-Path $norm -Leaf); catalina_base = $norm
+            # jvm_opts/state/pid are best-effort fields reserved for a later MW task; left empty here.
             version = ''; java_version = ''; jvm_opts = ''; state = ''; pid = 0; connector_ports = @()
             config_files = @{}
         }
         $inst.version = Safe-Exec -Label 'mw.tomcat.ver' -Block {
-            $bat = Join-Path $norm 'bin\version.bat'
-            if (Test-Path -LiteralPath $bat) {
-                $o = (& cmd /c "`"$bat`"" 2>$null) -join "`n"
-                if ($o -match 'Server version:\s*(.+)') { return $Matches[1].Trim() }
-            }
+            # Prefer RELEASE-NOTES (plain text, no JVM, no hang risk); only fall back to
+            # version.bat (which spawns a JVM) with a bounded wait so an unattended run can't hang.
             $rel = Join-Path $norm 'RELEASE-NOTES'
             if (Test-Path -LiteralPath $rel) {
                 $line = (Get-Content -LiteralPath $rel | Where-Object { $_ -match 'Apache Tomcat Version' } | Select-Object -First 1)
                 if ($line) { return $line.Trim() }
+            }
+            $bat = Join-Path $norm 'bin\version.bat'
+            if (Test-Path -LiteralPath $bat) {
+                $outTmp = [IO.Path]::GetTempFileName(); $errTmp = [IO.Path]::GetTempFileName()
+                try {
+                    $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$bat`"" -NoNewWindow -PassThru `
+                            -RedirectStandardOutput $outTmp -RedirectStandardError $errTmp
+                    if (-not $p.WaitForExit(15000)) { try { $p.Kill() } catch {}; return '' }
+                    $o = Get-Content -LiteralPath $outTmp -Raw
+                    if ($o -and $o -match 'Server version:\s*(.+)') { return $Matches[1].Trim() }
+                } finally {
+                    Remove-Item -LiteralPath $outTmp, $errTmp -Force -ErrorAction SilentlyContinue
+                }
+            }
+            ''
+        }
+        $inst.java_version = Safe-Exec -Label 'mw.tomcat.java' -Block {
+            $java = Get-Command 'java.exe' -ErrorAction SilentlyContinue
+            if (-not $java) { $java = Get-Command 'java' -ErrorAction SilentlyContinue }
+            if ($java) {
+                $o = (& $java.Source -version 2>&1) -join "`n"
+                if ($o -match 'version "([^"]+)"') { return $Matches[1] }
             }
             ''
         }
