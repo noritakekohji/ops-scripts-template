@@ -766,7 +766,7 @@ def _mw_tomcat(conf):
     for g in ('/opt/tomcat*', '/usr/share/tomcat*', '/opt/apache-tomcat*'):
         bases.extend(_glob.glob(g))
     try:
-        ps = subprocess.run(['ps','-eo','args'], capture_output=True, text=True, timeout=10)
+        ps = subprocess.run(['ps','-eo','args'], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
         for line in ps.stdout.splitlines():
             m = re.search(r'-Dcatalina\.base=(\S+)', line)
             if m: bases.append(m.group(1))
@@ -786,7 +786,7 @@ def _mw_tomcat(conf):
             sh = os.path.join(norm, 'bin', 'catalina.sh')
             if os.path.isfile(sh):
                 r = subprocess.run([sh, 'version'], capture_output=True, text=True, timeout=15,
-                                   env=dict(os.environ, CATALINA_HOME=norm))
+                                   env=dict(os.environ, CATALINA_HOME=norm), stdin=subprocess.DEVNULL)
                 m = re.search(r'Server version:\s*(.+)', r.stdout)
                 if m: inst['version'] = m.group(1).strip()
             if not inst['version']:
@@ -796,7 +796,7 @@ def _mw_tomcat(conf):
                         if 'Apache Tomcat Version' in line: inst['version'] = line.strip(); break
         except Exception: pass
         try:
-            r = subprocess.run(['java','-version'], capture_output=True, text=True, timeout=10)
+            r = subprocess.run(['java','-version'], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             m = re.search(r'version "([^"]+)"', (r.stderr or '') + (r.stdout or ''))
             if m: inst['java_version'] = m.group(1)
         except Exception: pass
