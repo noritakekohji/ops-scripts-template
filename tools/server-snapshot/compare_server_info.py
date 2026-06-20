@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
 # ────────────────────────────────────────────────────────────────
 def _load(path: str) -> dict:
     try:
-        return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+        return json.loads(Path(path).read_text(encoding='utf-8'))
     except Exception as e:
         print(f'Error loading {path}: {e}', file=sys.stderr)
         sys.exit(2)
