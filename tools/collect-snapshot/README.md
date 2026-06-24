@@ -10,6 +10,8 @@ tools/collect-snapshot/
 ├── CollectSnapshot.ps1      # Windows 本体（CUI + TUI）
 ├── collect_snapshot.sh      # Linux 本体（CUI + TUI）
 ├── collect_snapshot.bat     # Windows 起動バッチ（ダブルクリックで TUI）
+├── ReportSnapshot.ps1       # ZIP 解凍 + HTML レポート生成（Windows）
+├── report_snapshot.bat      # レポート起動バッチ
 └── README.md
 ```
 
@@ -90,6 +92,70 @@ ZIP ファイル名: `<hostname>_<label>_<timestamp>.zip`（ラベルなし時: 
 | 0 | 全ツール正常完了 |
 | 1 | 1つ以上のツールが失敗、または ZIP 圧縮失敗 |
 | 10 | 前提コマンド不足 |
+
+## レポート生成（ReportSnapshot）
+
+収集済み ZIP を解凍し、JSON から HTML レポートを一括生成します（Windows のみ）。
+
+### 単一スナップショットレポート
+
+```powershell
+# ZIP からサマリ HTML を生成
+.\ReportSnapshot.ps1 -ZipPath .\snapshots\host_label_20260617.zip
+
+# 出力先を指定
+.\ReportSnapshot.ps1 -ZipPath .\snapshots\host_label_20260617.zip -OutputDir .\reports
+
+# bat 経由
+.\report_snapshot.bat .\snapshots\host_label_20260617.zip
+```
+
+### 2 つのスナップショットを比較
+
+2 つの ZIP を指定すると `server-snapshot/compare_server_info.py` を使って差分レポートを生成します。
+
+```powershell
+# before / after の差分レポート
+.\ReportSnapshot.ps1 -ZipPath before.zip -CompareWith after.zip
+
+# 差分のみ表示
+.\ReportSnapshot.ps1 -ZipPath before.zip -CompareWith after.zip -DiffOnly
+```
+
+### オプション
+
+| パラメータ | 説明 |
+|---|---|
+| `-ZipPath` | 対象 ZIP ファイルパス（必須） |
+| `-CompareWith` | 比較対象の ZIP。指定すると差分レポートモード |
+| `-OutputDir` | レポート出力先。既定は ZIP と同じディレクトリ |
+| `-DiffOnly` | Compare モードで差分のみ表示 |
+| `-KeepExtracted` | 解凍ファイルを削除せず残す |
+
+### レポート出力例
+
+```
+snapshots/
+├── host_label_20260617.zip
+├── report_host_label_20260617.html              # 単一レポート
+└── compare_before_vs_after.html                  # 差分レポート
+```
+
+### 前提（レポート生成）
+
+| モード | 必要なもの |
+|---|---|
+| 単一レポート | PowerShell 5.1+ のみ |
+| 差分レポート | PowerShell 5.1+ + `python3`（compare_server_info.py 用） |
+
+### 終了コード（ReportSnapshot）
+
+| Code | 意味 |
+|---|---|
+| 0 | 成功 |
+| 1 | 引数不正 / ZIP 未検出 |
+| 2 | ZIP 内に JSON が見つからない |
+| 10 | 前提コマンド不足（compare モードで python3 なし） |
 
 ## テスト
 
