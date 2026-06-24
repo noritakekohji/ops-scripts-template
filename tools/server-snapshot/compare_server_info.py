@@ -78,10 +78,13 @@ def compare_list(bl, al, key_field, val_fields):
 
 # ────────────────────────────────────────────────────────────────
 # カテゴリ別比較（Linux / Windows 共通）
-#   volatile （計測時刻で揺れる値）は除外する。
+#   volatile （計測時刻で揺れる値）は除外する。ServerSnapshot.ps1 の
+#   PS ネイティブ比較器（Compare-*）と同一フィールド・同一除外で動くこと。
 #   除外ルール:
-#     - os:         free_memory_gb / used_memory_gb / swap_free_gb
-#     - filesystem: used_gb / free_gb / used_pct（drives）
+#     - os:           free_memory_gb / used_memory_gb / swap_free_gb
+#     - filesystem:   used_gb / free_gb / used_pct（drives。mount_options は
+#                     PS が比較しないため対象外）
+#     - network:      time_sync の _volatile キー（last_sync 等）
 # ────────────────────────────────────────────────────────────────
 _VOLATILE_OS = {'free_memory_gb', 'used_memory_gb', 'swap_free_gb'}
 
@@ -96,35 +99,60 @@ def cat_services(b, a):
 
 def cat_packages(b, a):
     return compare_list(b.get('packages', []), a.get('packages', []),
-                        'name', ['version'])
+                        'name', ['version', 'vendor'])
 
 def cat_users(b, a):
     bu = (b.get('users') or {}); au = (a.get('users') or {})
     out = compare_list(bu.get('local_users', []),  au.get('local_users', []),
-                       'name', ['enabled', 'shell'])
+                       'name', ['enabled', 'shell', 'full_name'])
     out += compare_list(bu.get('local_groups', []), au.get('local_groups', []),
                        'name', ['members'])
     return out
 
 def cat_filesystem(b, a):
     bf = (b.get('filesystem') or {}); af = (a.get('filesystem') or {})
-    # stable fields only — used_gb / free_gb / used_pct fluctuate
+    # Stable drive attributes only (mirrors PS Compare-Filesystem: total_gb /
+    # fstype / label). used_gb / free_gb / used_pct fluctuate continuously and
+    # are excluded; mount_options is collected but NOT compared by PS native, so
+    # it is omitted here to keep both engines field-equivalent.
     out = compare_list(bf.get('drives', []), af.get('drives', []),
-                       'drive', ['total_gb', 'fstype'])
+                       'drive', ['total_gb', 'fstype', 'label'])
+    # disks is a Linux-only collection (the PS native engine never runs against
+    # it); comparing it here cannot diverge from PS while preserving Linux detail.
     out += compare_list(bf.get('disks', []),  af.get('disks', []),
                         'name', ['size_gb', 'type', 'model'])
     return out
 
 def cat_environment(b, a):
-    return compare_dicts((b.get('environment') or {}).get('machine', {}),
-                         (a.get('environment') or {}).get('machine', {}))
+    be = (b.get('environment') or {}); ae = (a.get('environment') or {})
+    out = compare_dicts(be.get('machine', {}), ae.get('machine', {}))
+    # user env block compared only when present in either snapshot (PS parity).
+    bu = be.get('user'); au = ae.get('user')
+    if bu or au:
+        out += compare_dicts(bu or {}, au or {})
+    return out
 
 def cat_network(b, a):
     bn = (b.get('network') or {}); an = (a.get('network') or {})
     out = compare_list(bn.get('interfaces', []),  an.get('interfaces', []),
                        'name', ['address', 'prefix'])
+    out += compare_list(bn.get('routes', []),      an.get('routes', []),
+                        'destination', ['gateway', 'interface'])
     out += compare_list(bn.get('dns_servers', []), an.get('dns_servers', []),
                         'interface', ['servers'])
+    out += compare_list(bn.get('hosts', []),       an.get('hosts', []),
+                        'ip', ['hostnames'])
+    # time_sync: scalar dict, but drop _volatile (last-sync timestamps etc.)
+    # before comparing — same exclusion as PS Compare-Network.
+    bts = bn.get('time_sync'); ats = an.get('time_sync')
+    if bts is not None or ats is not None:
+        btd = {k: v for k, v in (bts or {}).items() if k != '_volatile'}
+        atd = {k: v for k, v in (ats or {}).items() if k != '_volatile'}
+        out += compare_dicts(btd, atd)
+    # proxy: scalar dict, compared as-is when present in either snapshot.
+    bp = bn.get('proxy'); ap = an.get('proxy')
+    if bp is not None or ap is not None:
+        out += compare_dicts(bp or {}, ap or {})
     return out
 
 def cat_security(b, a):
@@ -132,7 +160,9 @@ def cat_security(b, a):
     out = compare_list(bs.get('firewall_profiles', []), as_.get('firewall_profiles', []),
                        'name', ['enabled', 'inbound_action', 'outbound_action'])
     out += compare_list(bs.get('firewall_rules', []),    as_.get('firewall_rules', []),
-                        'name', ['direction', 'action'])
+                        'name', ['direction', 'action', 'profile'])
+    # NOTE: uac / defender / apparmor are collected but NOT compared by PS native
+    # Compare-Security; omitted here so both engines stay field-equivalent.
     return out
 
 def cat_patches(b, a):

@@ -178,7 +178,7 @@ servers:
 | `scripts_linux/lib/logging.sh` | `scripts_linux/` | `lib/logging.sh` |
 | `scripts_linux/os/rotate_log.sh` | `scripts_linux/` | `os/rotate_log.sh` |
 | `config/default/global.conf` | `config/default/` | `global.conf` |
-| `tools/server-compare/` | なし（そのまま） | `tools/server-compare/` |
+| `tools/server-snapshot/` | なし（そのまま） | `tools/server-snapshot/` |
 
 ### ディレクトリ指定時の展開例
 

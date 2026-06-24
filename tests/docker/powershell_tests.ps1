@@ -311,28 +311,7 @@ foreach ($f in @(
 }
 
 # ============================================================
-# Suite 10: tools/server-compare — PS scripts
-# ============================================================
-Suite "tools/server-compare — PS scripts"
-
-foreach ($f in @(
-    "$Repo/tools/server-compare/Get-ServerInfo.ps1",
-    "$Repo/tools/server-compare/Compare-ServerInfo.ps1"
-)) {
-    $name = Split-Path -Leaf $f
-    Check "file exists: $name" { Test-Path $f }
-    SyntaxCheck $f
-}
-
-$toolsHtml = "$Tmp/tools_compare.html"
-Check "Compare-ServerInfo (tools) runs with test JSON" {
-    & pwsh -NonInteractive -File "$Repo/tools/server-compare/Compare-ServerInfo.ps1" `
-        -Before $beforeFile -After $afterFile -HtmlReport $toolsHtml 2>/dev/null
-    Test-Path $toolsHtml
-}
-
-# ============================================================
-# Suite 11: tools/network-check — PS script
+# Suite 10: tools/network-check — PS script
 # ============================================================
 Suite "tools/network-check — Check-NetworkConnectivity.ps1"
 
@@ -361,17 +340,7 @@ Check "HTML report has content" {
 }
 
 # ============================================================
-# Suite 12: tools/change-detect — PS script
-# ============================================================
-Suite "tools/change-detect — Change-Detect.ps1"
-
-$ChangeDetect = "$Repo/tools/change-detect/Change-Detect.ps1"
-
-Check "file exists" { Test-Path $ChangeDetect }
-SyntaxCheck $ChangeDetect
-
-# ============================================================
-# Suite 13: tools/perf-monitor
+# Suite 11: tools/perf-monitor
 # ============================================================
 Suite "tools/perf-monitor"
 

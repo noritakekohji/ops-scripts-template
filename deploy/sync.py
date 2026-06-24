@@ -81,7 +81,7 @@ def target_rel(src_str: str) -> str:
     """
     'scripts_windows/lib/Logging.psm1' -> 'lib/Logging.psm1'
     'config/default/global.conf'       -> 'global.conf'
-    'tools/server-compare/'            -> 'tools/server-compare/'  (そのまま)
+    'tools/server-snapshot/'           -> 'tools/server-snapshot/'  (そのまま)
     """
     for prefix in _STRIP_PREFIXES:
         if src_str.startswith(prefix):

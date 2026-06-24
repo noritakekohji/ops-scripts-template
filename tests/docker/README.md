@@ -51,9 +51,7 @@ bash run_tests.sh --shell-ps
 | scripts_linux/os — deploy_scripts.sh | dry-run（-n フラグ） |
 | scripts_linux/aws | 構文チェック（AWS 認証不要） |
 | scripts_linux/sqlserver + tomcat | 構文チェック |
-| tools/server-compare | get_server_info 収集・JSON 検証 |
 | tools/network-check | DNS・TCP チェック・HTML 生成 |
-| tools/change-detect | before/after/compare・HTML 生成 |
 
 ### PowerShell (`powershell_tests.ps1`)
 
@@ -68,9 +66,7 @@ bash run_tests.sh --shell-ps
 | scripts_windows/os — Deploy-Scripts.ps1 | 構文 + -WhatIf dry-run |
 | scripts_windows/aws | 構文チェック |
 | scripts_windows/sqlserver + tomcat | 構文チェック |
-| tools/server-compare (PS) | 構文 + Compare-ServerInfo 実行 |
 | tools/network-check (PS) | 構文 + 実行・HTML 生成 |
-| tools/change-detect (PS) | 構文チェック |
 
 ## 注意事項
 

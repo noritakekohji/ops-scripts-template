@@ -521,9 +521,11 @@ ops-scripts-template/
 │   └── default/           # デフォルト設定ファイル (*.conf)
 │
 ├── tools/                  # スタンドアロンツール
-│   ├── server-compare/    # サーバー情報比較
+│   ├── server-snapshot/   # サーバ情報スナップショット収集・比較
 │   ├── network-check/     # ネットワーク疎通確認
-│   ├── change-detect/     # 変更検出
+│   ├── cert-check/        # TLS 証明書有効期限チェック
+│   ├── port-inventory/    # 待受ポート棚卸し
+│   ├── log-collector/     # ログ収集
 │   └── perf-monitor/      # 性能テスト用リソースモニター
 │
 ├── docs_linux/             # Linux スクリプト仕様書

@@ -72,7 +72,7 @@ bash tests/run_unit.sh --coverage
 | HANACtl | `hanactl.bats` | (Windows 版なし) |
 | AWS 系 | `aws_scripts.bats` | `Aws-Scripts.Tests.ps1` |
 | Get-ServerInfo | `get_server_info.bats` (smoke) | `Get-ServerInfo.Tests.ps1` (smoke) |
-| Change-Detect | `change_detect.bats` | `Change-Detect.Tests.ps1` |
+| ServerSnapshot | `server_snapshot.bats` | `ServerSnapshot.Tests.ps1` |
 
 カバー観点:
 
@@ -95,7 +95,7 @@ bash tests/run_unit.sh --coverage
 | rotate_log | tmpdir に 2MB のダミーログを作って rotate / retention / gzip を検証 |
 | perf-monitor | `start -i 1 -d 3` で 3 秒間 collector を実プロセスとして走らせ、`data.jsonl` が書かれて report HTML が生成されるまで |
 | network-check | `127.0.0.1` を ping / TCP（CI で ICMP がブロックされる場合は exit 1 も許容） |
-| change-detect / compare_server_info.py | `tests/fixtures/server_info_{before,after}.json` を渡して比較。HTML レポートの中身まで確認 |
+| server-snapshot | `tests/fixtures/server_info_{before,after}.json` を渡して比較。HTML レポートの中身まで確認 |
 
 ---
 

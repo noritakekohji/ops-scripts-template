@@ -27,7 +27,6 @@ scripts_windows/<domain>/ PowerShell 実装（domain は Linux 側と 1:1 対応
 config/{default,dev,staging,production}/  環境別設定
 docs_{linux,windows}/<domain>/<file>.md   各スクリプトの仕様書
 tools/{perf-monitor,network-check,server-snapshot,cert-check,port-inventory,log-collector,aws-instance-audit,templates}/  自己完結ツール
-      {server-compare,change-detect}/  非推奨 → server-snapshot への委譲ラッパー
 deploy/    別リポジトリ同期 (sync.py + servers.yaml + SPEC.md)
 tests/{pester,bats,docker}/  ユニット & Docker E2E
 ci/{lint,security,test,deploy,template-check}/  GitLab CI 定義
@@ -119,13 +118,11 @@ GPO / AppLocker で以下がブロックされることがある。代替手段:
 |---|---|---|
 | `perf-monitor` | 負荷テスト中のリソース定期収集 + HTML レポート | サブコマンドの参照実装 |
 | `network-check` | DNS/Ping/TCP 疎通チェック + targets-editor.xlsm | 対象リスト形式の参照実装 |
-| `server-snapshot` | サーバ情報スナップショットの収集・比較（server-compare + change-detect 統合） | 統合ツールの参照実装 |
+| `server-snapshot` | サーバ情報スナップショットの収集・比較 | 統合ツールの参照実装 |
 | `cert-check` | TLS 証明書有効期限チェック | 単機能ツールの参照実装 |
 | `port-inventory` | 待受ポート棚卸し・期待値監査 | 判定ロジックの参照実装 |
 | `log-collector` | 障害時の証跡（ログファイル）収集 → ZIP | conf 設計の参照実装 |
 | `aws-instance-audit` | AWS EC2 インスタンス棚卸し | — |
-| `server-compare` | **非推奨** → server-snapshot 委譲ラッパー | 委譲パターンの参照実装 |
-| `change-detect` | **非推奨** → server-snapshot 委譲ラッパー | 同上 |
 
 #### ファイル構成の必須パターン
 
@@ -229,27 +226,6 @@ max_file_size_mb = 100
 | `ng` | 期待と異なる（存在する） | **NG** |
 | `-` | — | INFO（判定なし） |
 | （リスト外） | 検出された | **WARN**（unexpected） |
-
-#### 委譲ラッパーパターン（非推奨ツール用）
-
-統合されたツールの旧エントリポイントを維持する場合:
-
-```powershell
-# PS1 ラッパー
-$target = Join-Path (Split-Path $PSScriptRoot) 'server-snapshot\ServerSnapshot.ps1'
-if (-not (Test-Path $target)) { Write-Error "..."; exit 10 }
-Write-Warning "[DEPRECATED] ... is deprecated. Use: ServerSnapshot.ps1 <subcommand>"
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $target <subcommand> @args
-exit $LASTEXITCODE
-```
-
-```bash
-# sh ラッパー
-TARGET="${SCRIPT_DIR}/../server-snapshot/server_snapshot.sh"
-[[ -f "$TARGET" ]] || { echo "[ERROR] ..."; exit 10; }
-echo "[WARN] ... is deprecated. Use: server_snapshot.sh <subcommand>" >&2
-exec bash "$TARGET" <subcommand> "$@"
-```
 
 #### 新規ツール追加時のチェックリスト
 
@@ -368,7 +344,7 @@ DRY_RUN=true python deploy/sync.py
 # 疎通チェック
 .\tools\network-check\Check-NetworkConnectivity.bat -TargetList targets.lst
 
-# サーバ情報スナップショット（server-compare + change-detect 統合先）
+# サーバ情報スナップショット
 .\tools\server-snapshot\server_snapshot.bat collect
 .\tools\server-snapshot\server_snapshot.bat before -Label deploy-v1
 .\tools\server-snapshot\server_snapshot.bat after  -Label deploy-v1 -HtmlReport report.html
@@ -406,7 +382,6 @@ DRY_RUN=true python deploy/sync.py
 - 対象リストのパーサを各ツール独自に書く → CSV + `#` コメント + セクション区切りの共通形式に従う
 - SAN 取得で `FriendlyName` を使う → 日本語 Windows で壊れる。`Oid.Value -eq '2.5.29.17'` を使う
 - PS5.1 で `@($list)` の要素数を `.Count` で取る → 要素 1 つの場合ハッシュテーブルのキー数が返る。`, @($list)` でカンマ演算子を使う
-- 非推奨ツールのラッパーで `exit 10` 以外のコードを返す → ターゲット不在は常に `exit 10`
 
 ---
 

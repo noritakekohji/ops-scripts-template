@@ -18,7 +18,7 @@ violations=0
 # Directories that are excluded from the strict library-import rule.
 # These are stand-alone runtime tools that intentionally do not depend on
 # scripts_*/lib (they ship inside tools/ and must remain self-contained).
-EXCLUDE_LIB_RULE_REGEX='/tools/(perf-monitor|network-check|change-detect|server-compare|templates)/'
+EXCLUDE_LIB_RULE_REGEX='/tools/(perf-monitor|network-check|templates)/'
 
 violation() {
     echo "VIOLATION: $1 -- $2" >&2

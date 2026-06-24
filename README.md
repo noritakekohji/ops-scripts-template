@@ -1,6 +1,6 @@
 # ops-scripts-template
 
-エンタープライズ向け運用スクリプト（PowerShell / Bash / SQL 混在）の **共通テンプレートリポジトリ**です。GitLab CI 設定一式に加えて、AWS / OS / 各種ミドルウェア（PostgreSQL / MySQL / SAP HANA / S4HANA / SQL Server / Tomcat）の **制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / change-detect / server-compare）、**仕様書**を同梱しています。
+エンタープライズ向け運用スクリプト（PowerShell / Bash / SQL 混在）の **共通テンプレートリポジトリ**です。GitLab CI 設定一式に加えて、AWS / OS / 各種ミドルウェア（PostgreSQL / MySQL / SAP HANA / S4HANA / SQL Server / Tomcat）の **制御スクリプト本体**、**運用補助ツール**（perf-monitor / network-check / server-snapshot / cert-check / port-inventory / log-collector / aws-instance-audit）、**仕様書**を同梱しています。
 
 別リポジトリへの配備は `deploy/sync.py` または GitLab CI（`ci/deploy/sync.gitlab-ci.yml`）で行います。
 
@@ -31,8 +31,10 @@ ops-scripts-template/
 ├── tools/           # 運用補助ツール
 │   ├── perf-monitor/      # 負荷テスト中のリソース監視＋HTML レポート
 │   ├── network-check/     # DNS/Ping/TCP 接続性チェック
-│   ├── change-detect/     # サーバ情報の前後比較
-│   ├── server-compare/    # サーバ情報収集と差分検出
+│   ├── server-snapshot/   # サーバ情報スナップショットの収集・比較
+│   ├── cert-check/        # TLS 証明書有効期限チェック
+│   ├── port-inventory/    # 待受ポート棚卸し・期待値監査
+│   ├── log-collector/     # 障害時の証跡（ログ）収集
 │   ├── aws-instance-audit/ # EC2 自インスタンスの IAM/SG/VPC 監査
 │   └── templates/         # 新規スクリプト用テンプレート
 ├── deploy/          # 別リポジトリへの同期スクリプト (sync.py / servers.yaml)

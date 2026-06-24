@@ -240,35 +240,7 @@ for f in "$REPO/scripts_linux/sqlserver/sqlserverctl.sh" \
 done
 
 # ============================================================
-# Suite 9: tools/server-compare
-# ============================================================
-suite "tools/server-compare"
-
-TOOLS_GI="$REPO/tools/server-compare/get_server_info.sh"
-SI_OUT="$TMP/tools_si.json"
-
-check "file exists: get_server_info.sh"  test -f "$TOOLS_GI"
-syntax_check "get_server_info.sh"         "$TOOLS_GI"
-check "collect os,filesystem"             bash "$TOOLS_GI" -c os,filesystem -o "$SI_OUT"
-check_json_key "meta.os_type"             "$SI_OUT" "meta.os_type"
-check_json_key "os.architecture"          "$SI_OUT" "os.architecture"
-
-# Save a second snapshot for compare
-bash "$TOOLS_GI" -c os,filesystem -o "$TMP/tools_si_after.json"
-
-# Patch before to force a detectable change
-python3 -c "
-import json
-d = json.load(open('$TMP/tools_si.json'))
-d.get('os', {})['test_marker'] = 'before_value'
-with open('$TMP/tools_si_before.json', 'w') as f:
-    json.dump(d, f)
-"
-
-check "file exists: Compare-ServerInfo (n/a for bash)" bash -c "true"  # no bash compare — PS only
-
-# ============================================================
-# Suite 10: tools/network-check
+# Suite 9: tools/network-check
 # ============================================================
 suite "tools/network-check"
 
@@ -300,44 +272,7 @@ import socket; s=socket.socket(); s.settimeout(5); s.connect(('google.com',443))
 "
 
 # ============================================================
-# Suite 11: tools/change-detect
-# ============================================================
-suite "tools/change-detect"
-
-CD="$REPO/tools/change-detect/change_detect.sh"
-CD_DIR="$TMP/change_detect"
-mkdir -p "$CD_DIR"
-
-check "file exists"    test -f "$CD"
-syntax_check "script"  "$CD"
-
-check "before snapshot" bash -c "
-    cd '$CD_DIR' && bash '$CD' before -l docker-test -c os,filesystem
-"
-check "before JSON created" bash -c "
-    ls '$CD_DIR'/*_before_docker-test_*.json 1>/dev/null
-"
-check "after snapshot + auto-compare" bash -c "
-    cd '$CD_DIR' && bash '$CD' after -l docker-test -c os,filesystem
-"
-check "HTML from compare" bash -c "
-    B=\$(ls '$CD_DIR'/*_before_docker-test_*.json | head -1)
-    A=\$(ls '$CD_DIR'/*_after_docker-test_*.json  | head -1)
-    cd '$CD_DIR' && bash '$CD' compare \"\$B\" \"\$A\" --html '$CD_DIR/report.html'
-"
-check "HTML report created" test -f "$CD_DIR/report.html"
-check "HTML valid content"  python3 -c "
-s = open('$CD_DIR/report.html').read()
-assert 'Change Detection Report' in s or 'change' in s.lower(), 'Report title not found'
-"
-check "0 changes detected" bash -c "
-    B=\$(ls '$CD_DIR'/*_before_docker-test_*.json | head -1)
-    A=\$(ls '$CD_DIR'/*_after_docker-test_*.json  | head -1)
-    cd '$CD_DIR' && bash '$CD' compare \"\$B\" \"\$A\" 2>&1 | grep -q 'Total changes: 0'
-"
-
-# ============================================================
-# Suite 12: tools/perf-monitor
+# Suite 10: tools/perf-monitor
 # ============================================================
 suite "tools/perf-monitor"
 

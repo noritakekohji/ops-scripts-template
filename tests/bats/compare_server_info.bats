@@ -3,7 +3,7 @@
 
 load test_helper
 
-CTL="${TOOLS_DIR}/server-compare/compare_server_info.py"
+CTL="${TOOLS_DIR}/server-snapshot/compare_server_info.py"
 FIXTURES="${REPO_ROOT}/tests/fixtures"
 BEFORE="${FIXTURES}/server_info_before.json"
 AFTER="${FIXTURES}/server_info_after.json"

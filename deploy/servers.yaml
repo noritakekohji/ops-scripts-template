@@ -11,7 +11,7 @@
 # パス変換ルール (src → scripts_dir 内の相対パス):
 #   scripts_windows/lib/  → lib/
 #   scripts_linux/os/     → os/
-#   tools/server-compare/ → tools/server-compare/
+#   tools/server-snapshot/ → tools/server-snapshot/
 #   config/default/*.conf → (config_dir 直下)
 # ============================================================
 
@@ -64,7 +64,7 @@ servers:
       - scripts_windows/os/Rotate-Log.ps1
       - scripts_windows/os/Deploy-Scripts.ps1
       - scripts_windows/os/Compare-ServerInfo.ps1
-      # - tools/server-compare/        # ツールも配置する場合
+      # - tools/server-snapshot/        # ツールも配置する場合
 
     configs:
       - config/default/global.conf

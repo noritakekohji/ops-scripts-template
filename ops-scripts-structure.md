@@ -79,8 +79,10 @@ ops-scripts-template/
 ├── tools/                         # 運用補助ツール（OS 両対応のスタンドアロン）
 │   ├── perf-monitor/              # 負荷テスト中のリソース監視＋HTML レポート
 │   ├── network-check/             # DNS / Ping / TCP 疎通確認
-│   ├── change-detect/             # サーバ情報の前後比較ワークフロー
-│   ├── server-compare/            # サーバ情報収集と差分検出
+│   ├── server-snapshot/           # サーバ情報スナップショットの収集・比較
+│   ├── cert-check/                # TLS 証明書有効期限チェック
+│   ├── port-inventory/            # 待受ポート棚卸し・期待値監査
+│   ├── log-collector/             # 障害時の証跡（ログ）収集
 │   ├── aws-instance-audit/        # EC2 自インスタンスの IAM/SG/VPC 等を監査
 │   └── templates/                 # 新規スクリプト用テンプレート（5-phase 構造）
 │
@@ -186,12 +188,14 @@ scripts_windows/lib/
 
 | ツール | 説明 |
 |---|---|
-| `perf-monitor/`    | 負荷テスト中のリソース監視＋HTML レポート |
-| `network-check/`   | DNS / Ping / TCP 疎通チェック |
-| `change-detect/`   | サーバ情報の現新差分検出ワークフロー |
-| `server-compare/`  | サーバ情報収集と差分検出 |
+| `perf-monitor/`       | 負荷テスト中のリソース監視＋HTML レポート |
+| `network-check/`      | DNS / Ping / TCP 疎通チェック |
+| `server-snapshot/`    | サーバ情報スナップショットの収集・比較（旧 server-compare / change-detect を統合） |
+| `cert-check/`         | TLS 証明書有効期限チェック |
+| `port-inventory/`     | 待受ポート棚卸し・期待値監査 |
+| `log-collector/`      | 障害時の証跡（ログ）収集 |
 | `aws-instance-audit/` | EC2 自インスタンスの IAM ロール / SG / VPC・Subnet・ENI・Route / メタデータを IMDSv2 + AWS CLI で収集 |
-| `templates/`       | 新規スクリプト雛形（5-phase 構造の動くデモ） |
+| `templates/`          | 新規スクリプト雛形（5-phase 構造の動くデモ） |
 
 各ツールは `.ps1` + `.bat`（Windows）と `.sh`（Linux）を同梱し、`README.md` を持ちます。
 

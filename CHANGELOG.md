@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   4 列目以降の文字列を含む行は `extra_columns` で exit 2。
 
 ### Changed
+- `server-snapshot`: Python 比較器 `compare_server_info.py` を PS ネイティブ比較器
+  (`ServerSnapshot.ps1` の `Compare-*`) と**フィールド等価**に揃えた。`network` に
+  `routes` / `hosts` / `proxy` / `time_sync`（`_volatile` は差分除外）を追加し、
+  `packages.vendor` / `users.full_name` / `filesystem.drives.label` /
+  `security.firewall_rules.profile` / `environment.user` の比較を追加。これにより
+  どちらの比較エンジンが選ばれても同一差分が出る。なお `mount_options` /
+  `uac` / `apparmor` / `defender` は収集はするが PS native が比較対象外のため、
+  等価性維持のため Python 側でも比較しない。
 - aws-instance-audit: **JSON 出力を python3 / jq に非依存化**。Linux 版は
   `aws --query`(JMESPath) + `--output text` で値を抽出し bash ネイティブで JSON を
   組み立て、Windows 版は `ConvertFrom-Json` / `ConvertTo-Json` で組み立てる。

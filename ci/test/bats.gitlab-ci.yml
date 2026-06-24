@@ -14,7 +14,6 @@ bats:
         - "tests/run_unit.sh"
         - "tests/run_all.sh"
         - "tests/fixtures/**/*"
-        - "tools/server-compare/compare_server_info.py"
         - "ci/test/bats.gitlab-ci.yml"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   before_script:
